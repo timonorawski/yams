@@ -1,0 +1,174 @@
+# modes/classic_ducks.yaml
+
+# Metadata
+name: "Classic Duck Hunt"
+id: "classic_ducks"
+version: "1.0.0"
+description: "Original Duck Hunt gameplay with curved trajectories and 3D depth simulation"
+author: "Core Team"
+unlock_requirement: 0  # Available from start
+
+# Link to presentation theme
+theme: "classic_ducks"  # References themes/classic_ducks/
+
+# Trajectory algorithm selection
+trajectory:
+  algorithm: "bezier_3d"  # 3D curved trajectories with depth simulation
+  depth_direction: "away"  # Ducks fly away from player (receding)
+  curvature_factor: 1.0  # Full parabolic curves (0.0 = straight line, 1.0 = full curve)
+
+# Spawn configuration
+spawning:
+  spawn_sides: ["left", "right"]  # Where targets can spawn
+  spawn_rate_base: 2.0  # Base seconds between spawns
+  max_active: 3  # Max simultaneous targets
+
+# Win/Loss conditions
+rules:
+  game_type: "endless"  # Endless mode with progressive difficulty
+  # Optional: score_target: 50
+  # Optional: max_misses: 10
+  # Optional: time_limit: 120
+
+# Per-level difficulty progression
+# Each level introduces faster, smaller targets with more exaggerated curves
+levels:
+  - level: 1
+    target:
+      size: 100.0  # Larger targets for initial levels
+      speed: 100.0  # Moderate speed
+      depth_range: [1.0, 2.0]  # Z-axis distance multiplier (slight depth variation)
+    trajectory:
+      algorithm: "bezier_3d"
+      depth_direction: "away"
+      curvature_factor: 0.8  # Slight curves (easier to predict)
+    spawning:
+      spawn_sides: ["left", "right"]
+      spawn_rate_base: 2.5  # Slower spawn rate
+      max_active: 1  # Only one target at a time
+    scoring:
+      apex_bonus: 25  # Bonus points for hitting at trajectory apex
+
+  - level: 2
+    target:
+      size: 75.0  # Slightly smaller
+      speed: 120.0  # Faster movement
+      depth_range: [1.0, 2.5]  # More depth variation
+    trajectory:
+      algorithm: "bezier_3d"
+      depth_direction: "away"
+      curvature_factor: 1.0  # Full curves
+    spawning:
+      spawn_sides: ["left", "right"]
+      spawn_rate_base: 2.2  # Faster spawning
+      max_active: 2  # Two targets simultaneously
+    scoring:
+      apex_bonus: 35  # Higher apex bonus
+
+  - level: 3
+    target:
+      size: 50.0  # Smaller targets
+      speed: 150.0  # Much faster
+      depth_range: [1.0, 3.0]  # Maximum depth variation
+    trajectory:
+      algorithm: "bezier_3d"
+      depth_direction: "away"
+      curvature_factor: 1.2  # Exaggerated curves (harder to predict)
+    spawning:
+      spawn_sides: ["left", "right"]
+      spawn_rate_base: 2.0  # Fast spawning
+      max_active: 2  # Two targets
+    scoring:
+      apex_bonus: 50  # Maximum apex bonus
+
+  - level: 4
+    target:
+      size: 38.0  # Even smaller
+      speed: 180.0  # Very fast
+      depth_range: [1.0, 3.5]  # Extreme depth variation
+    trajectory:
+      algorithm: "bezier_3d"
+      depth_direction: "away"
+      curvature_factor: 1.3  # Very exaggerated curves
+    spawning:
+      spawn_sides: ["left", "right"]
+      spawn_rate_base: 1.8  # Very fast spawning
+      max_active: 3  # Three targets simultaneously
+    scoring:
+      apex_bonus: 60  # High difficulty bonus
+
+  - level: 5
+    target:
+      size: 35.0  # Small targets
+      speed: 220.0  # Extremely fast
+      depth_range: [1.0, 4.0]  # Maximum depth range
+    trajectory:
+      algorithm: "bezier_3d"
+      depth_direction: "away"
+      curvature_factor: 1.5  # Maximum curve complexity
+    spawning:
+      spawn_sides: ["left", "right"]
+      spawn_rate_base: 1.5  # Maximum spawn rate
+      max_active: 3  # Three targets
+    scoring:
+      apex_bonus: 75  # Expert-level bonus
+
+  - level: 6
+    target:
+      size: 32.0  # Very small targets
+      speed: 250.0  # Near maximum speed
+      depth_range: [1.0, 4.5]  # Extreme depth range
+    trajectory:
+      algorithm: "bezier_3d"
+      depth_direction: "away"
+      curvature_factor: 1.6  # Complex arcing patterns
+    spawning:
+      spawn_sides: ["left", "right"]
+      spawn_rate_base: 1.3  # Very fast spawning
+      max_active: 4  # Four targets simultaneously
+    scoring:
+      apex_bonus: 90  # Expert bonus
+
+  - level: 7
+    target:
+      size: 30.0  # Minimum practical size
+      speed: 280.0  # Maximum speed
+      depth_range: [1.0, 5.0]  # Full depth range
+    trajectory:
+      algorithm: "bezier_3d"
+      depth_direction: "away"
+      curvature_factor: 1.8  # Extreme curves
+    spawning:
+      spawn_sides: ["left", "right"]
+      spawn_rate_base: 1.2  # Fastest spawn rate
+      max_active: 5  # Maximum targets
+    scoring:
+      apex_bonus: 100  # Master-level bonus
+
+# Scoring configuration
+scoring:
+  base_hit_points: 100  # Base points per hit
+  combo_multiplier: true  # Enable combo multiplier system
+  combo_threshold: 3  # Hits needed to start combo bonus
+  miss_penalty: 0  # No point penalty for misses
+  apex_bonus: 50  # Default bonus for hitting at trajectory apex
+  speed_bonus: true  # Award bonus for hitting faster targets
+  depth_bonus: true  # Award bonus for hitting distant targets
+
+# Target lifetime
+target:
+  lifetime: 6.0  # Seconds before target escapes (slightly longer for curved paths)
+  hit_display_time: 0.5  # How long hit targets remain visible
+
+# Visual/Audio feedback
+feedback:
+  hit_effect_duration: 0.5  # Hit effect animation duration
+  miss_effect_duration: 0.3  # Miss effect animation duration
+  score_popup_duration: 1.0  # Score popup display time
+  audio_enabled: true  # Audio feedback enabled
+  combo_sound_enabled: true  # Play special sound for combos
+
+# Level progression
+progression:
+  hits_per_level: 10  # Number of hits required to advance to next level
+  continuous_difficulty: false  # Use discrete levels (not continuous scaling)

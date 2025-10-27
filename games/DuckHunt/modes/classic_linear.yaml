@@ -1,0 +1,77 @@
+# modes/classic_linear.yaml
+
+# Metadata
+name: "Classic Linear Mode"
+id: "classic_linear"
+version: "1.0.0"
+description: "Current straight-line horizontal movement mode (validation test for YAML system)"
+author: "Core Team"
+unlock_requirement: 0  # Available from start
+
+# Link to presentation theme
+theme: "classic"  # References themes/classic/
+
+# Trajectory algorithm selection
+trajectory:
+  algorithm: "linear"  # Linear horizontal movement
+  depth_direction: "away"  # Required field (but no depth scaling used for linear)
+  curvature_factor: 0.0  # Straight lines only
+
+# Spawn configuration
+spawning:
+  spawn_sides: ["left", "right"]  # Horizontal spawn from edges
+  spawn_rate_base: 2.0  # Seconds between spawns (TARGET_SPAWN_RATE)
+  max_active: 3  # Max simultaneous targets (TARGET_MAX_ACTIVE)
+
+# Win/Loss conditions
+rules:
+  game_type: "endless"  # Endless mode (no win condition)
+  # Optional: score_target: null
+  # Optional: max_misses: null
+  # Optional: time_limit: null
+
+# Per-level difficulty progression
+# This mode uses continuous difficulty scaling (not discrete levels)
+# but we can represent it as progression levels
+levels:
+  - level: 1
+    target:
+      size: 50.0  # TARGET_DEFAULT_SIZE
+      speed: 80.0  # CLASSIC_INITIAL_SPEED
+      depth_range: [1.0, 1.01]  # Minimal depth variation (essentially 2D)
+    trajectory:
+      algorithm: "linear"
+      depth_direction: "away"
+      curvature_factor: 0.0  # Straight lines
+    spawning:
+      spawn_sides: ["left", "right"]
+      spawn_rate_base: 2.0  # TARGET_SPAWN_RATE
+      max_active: 3  # TARGET_MAX_ACTIVE
+    progression:
+      speed_increase_per_hit: 10.0  # CLASSIC_SPEED_INCREASE
+      max_speed: 300.0  # CLASSIC_MAX_SPEED
+
+  # Note: This mode uses continuous difficulty scaling rather than discrete levels
+  # The speed increases by 10 px/s per hit up to 300 px/s max
+  # Additional levels not needed since progression is continuous
+
+# Scoring configuration
+scoring:
+  base_hit_points: 100  # POINTS_PER_HIT
+  combo_multiplier: true  # Combo system enabled
+  combo_threshold: 5  # Combo milestone for audio feedback
+  miss_penalty: 0  # PENALTY_PER_MISS
+  speed_bonus: false  # No speed-based scoring
+  apex_bonus: 0  # No apex bonus (no curved trajectories)
+
+# Target lifetime
+target:
+  lifetime: 5.0  # CLASSIC_TARGET_LIFETIME (seconds before escape)
+  hit_display_time: 0.5  # How long hit targets remain visible
+
+# Visual/Audio feedback
+feedback:
+  hit_effect_duration: 0.5  # HIT_EFFECT_DURATION
+  miss_effect_duration: 0.3  # MISS_EFFECT_DURATION
+  score_popup_duration: 1.0  # SCORE_POPUP_DURATION
+  audio_enabled: true  # Audio feedback enabled by default
