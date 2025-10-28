@@ -19,7 +19,7 @@ from typing import List, Optional
 import yaml
 from pydantic import ValidationError
 
-from models.game_mode_config import GameModeConfig
+from models.duckhunt import GameModeConfig
 
 
 class GameModeLoader:
