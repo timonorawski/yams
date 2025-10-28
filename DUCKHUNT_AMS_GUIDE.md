@@ -1,24 +1,33 @@
 # Duck Hunt with AMS Integration
 
-Play Duck Hunt with multiple input methods: mouse (for development) or laser pointer (for projection setups).
+Play Duck Hunt with multiple input methods: mouse (for development), laser pointer (for projection setups), or object detection (for physical projectiles).
 
 ## Quick Start
 
 ### Mouse Mode (Development)
 ```bash
-python duckhunt_ams.py
+python ams_game.py --game duckhunt --backend mouse
 ```
 
 ### Laser Mode (Projection Setup)
 ```bash
 # First run - calibrate
-python duckhunt_ams.py --backend laser --fullscreen --display 1
+python ams_game.py --game duckhunt --backend laser --fullscreen --display 1
 
 # Press 'C' to calibrate with ArUco markers
 # Position camera to see all markers, press SPACE
 
 # Subsequent runs - calibration auto-loads
-python duckhunt_ams.py --backend laser --fullscreen --display 1
+python ams_game.py --game duckhunt --backend laser --fullscreen --display 1
+```
+
+### Object Detection Mode (Nerf Darts / Physical Projectiles)
+```bash
+# First run - calibrate
+python ams_game.py --game duckhunt --backend object --fullscreen --display 1
+
+# Press 'C' to calibrate, then shoot objects at targets
+python ams_game.py --game duckhunt --backend object --fullscreen --display 1 --mode classic_archery
 ```
 
 ## Game Modes
@@ -27,7 +36,7 @@ Three classic Duck Hunt modes available:
 
 ### Classic Archery (Default)
 ```bash
-python duckhunt_ams.py --mode classic_archery
+python ams_game.py --game duckhunt --mode classic_archery
 ```
 - Archery-style targets
 - 3 rounds
@@ -35,7 +44,7 @@ python duckhunt_ams.py --mode classic_archery
 
 ### Classic Ducks
 ```bash
-python duckhunt_ams.py --mode classic_ducks
+python ams_game.py --game duckhunt --mode classic_ducks
 ```
 - Traditional duck hunting
 - Animated duck sprites
@@ -43,7 +52,7 @@ python duckhunt_ams.py --mode classic_ducks
 
 ### Classic Linear
 ```bash
-python duckhunt_ams.py --mode classic_linear
+python ams_game.py --game duckhunt --mode classic_linear
 ```
 - Simple linear trajectory targets
 - Good for testing and calibration
@@ -77,13 +86,13 @@ python duckhunt_ams.py --mode classic_linear
 
 ### 1. Test with Mouse
 ```bash
-python duckhunt_ams.py --mode classic_archery
+python ams_game.py --game duckhunt --mode classic_archery
 ```
 Verify game works with mouse input.
 
 ### 2. Calibrate for Laser
 ```bash
-python duckhunt_ams.py --backend laser --fullscreen --display 1
+python ams_game.py --game duckhunt --backend laser --fullscreen --display 1
 ```
 - ArUco pattern displays on projector
 - Camera preview window shows marker detection
@@ -104,7 +113,7 @@ Press **B** for B/W threshold view:
 ### 4. Play!
 Once calibrated and tuned:
 ```bash
-python duckhunt_ams.py --backend laser --fullscreen --display 1 --mode classic_archery
+python ams_game.py --game duckhunt --backend laser --fullscreen --display 1 --mode classic_archery
 ```
 
 ## Troubleshooting

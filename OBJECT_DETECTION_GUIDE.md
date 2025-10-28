@@ -14,24 +14,24 @@ The object detection backend uses:
 
 ### Mouse Mode (Development/Testing)
 ```bash
-python ams_demo.py --backend mouse
+python ams_game.py --game simple_targets --backend mouse
 ```
 
 ### Object Detection Mode (Nerf Darts)
 ```bash
 # First run - calibrate with ArUco markers
-python ams_demo.py --backend object --fullscreen --display 1
+python ams_game.py --game simple_targets --backend object --fullscreen --display 1
 
 # Press 'C' to calibrate with ArUco markers
 # Position camera to see all markers, press SPACE
 
 # Subsequent runs - calibration auto-loads
-python ams_demo.py --backend object --fullscreen --display 1
+python ams_game.py --game simple_targets --backend object --fullscreen --display 1
 ```
 
 ### Duck Hunt with Object Detection
 ```bash
-python duckhunt_ams.py --backend object --fullscreen --display 1 --mode classic_archery
+python ams_game.py --game duckhunt --backend object --fullscreen --display 1 --mode classic_archery
 ```
 
 ## How It Works
@@ -192,7 +192,7 @@ Press **D** to see:
 
 ### 1. Setup
 ```bash
-python ams_demo.py --backend object --fullscreen --display 1
+python ams_game.py --game simple_targets --backend object --fullscreen --display 1
 ```
 
 ### 2. Calibrate (First Run)
@@ -218,7 +218,7 @@ Press **D** to see debug view:
 ### 5. Play!
 Once calibrated and tuned:
 ```bash
-python duckhunt_ams.py --backend object --fullscreen --display 1
+python ams_game.py --game duckhunt --backend object --fullscreen --display 1
 ```
 
 ## Troubleshooting
@@ -231,7 +231,7 @@ python duckhunt_ams.py --backend object --fullscreen --display 1
   - Increase `value_min` if too dark
   - Decrease `saturation_min` if color too faint
   - Adjust `hue_min`/`hue_max` for different color
-- Edit ranges in `ams_demo.py` or `duckhunt_ams.py`
+- Edit ranges in `ams_game.py`
 
 ### "Objects detected everywhere"
 **Solution**: Narrow color range or increase area filter
