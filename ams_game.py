@@ -252,12 +252,13 @@ def launch_simple_targets(args, screen, detection_backend, ams):
         dt = clock.tick(60) / 1000.0  # 60 FPS
 
         # Update target overlay for laser/object backend debug view
-        if args.backend in ['laser', 'object'] and detection_backend.debug_mode:
+        if args.backend in ['laser', 'object'] and hasattr(detection_backend, 'debug_mode') and detection_backend.debug_mode:
             target_info = []
             for target in game.targets:
                 if target.alive:
                     target_info.append((target.x, target.y, target.radius, target.color))
-            detection_backend.set_game_targets(target_info)
+            if hasattr(detection_backend, 'set_game_targets'):
+                detection_backend.set_game_targets(target_info)
 
         # Update AMS
         ams.update(dt)
@@ -277,9 +278,11 @@ def launch_simple_targets(args, screen, detection_backend, ams):
                     )
                     print("Calibration complete!")
                 elif event.key == pygame.K_d and args.backend in ['laser', 'object']:
-                    detection_backend.set_debug_mode(not detection_backend.debug_mode)
+                    if hasattr(detection_backend, 'set_debug_mode') and hasattr(detection_backend, 'debug_mode'):
+                        detection_backend.set_debug_mode(not detection_backend.debug_mode)
                 elif event.key == pygame.K_b and args.backend == 'laser':
-                    detection_backend.toggle_bw_mode()
+                    if hasattr(detection_backend, 'toggle_bw_mode'):
+                        detection_backend.toggle_bw_mode()
                 elif event.key in [pygame.K_EQUALS, pygame.K_PLUS] and args.backend in ['laser', 'object']:
                     if hasattr(detection_backend, 'set_brightness_threshold'):
                         detection_backend.set_brightness_threshold(
@@ -359,7 +362,7 @@ def launch_simple_targets(args, screen, detection_backend, ams):
         pygame.display.flip()
 
         # Show debug visualization if enabled
-        if args.backend in ['laser', 'object'] and detection_backend.debug_mode:
+        if args.backend in ['laser', 'object'] and hasattr(detection_backend, 'debug_mode') and detection_backend.debug_mode:
             debug_frame = detection_backend.get_debug_frame()
             if debug_frame is not None:
                 import cv2
@@ -468,9 +471,11 @@ def launch_duckhunt(args, screen, detection_backend, ams):
                     )
                     print("Calibration complete!")
                 elif event.key == pygame.K_d and args.backend in ['laser', 'object']:
-                    detection_backend.set_debug_mode(not detection_backend.debug_mode)
+                    if hasattr(detection_backend, 'set_debug_mode') and hasattr(detection_backend, 'debug_mode'):
+                        detection_backend.set_debug_mode(not detection_backend.debug_mode)
                 elif event.key == pygame.K_b and args.backend == 'laser':
-                    detection_backend.toggle_bw_mode()
+                    if hasattr(detection_backend, 'toggle_bw_mode'):
+                        detection_backend.toggle_bw_mode()
                 elif event.key in [pygame.K_EQUALS, pygame.K_PLUS] and args.backend in ['laser', 'object']:
                     if hasattr(detection_backend, 'set_brightness_threshold'):
                         detection_backend.set_brightness_threshold(
@@ -509,7 +514,7 @@ def launch_duckhunt(args, screen, detection_backend, ams):
         pygame.display.flip()
 
         # Show debug visualization if enabled
-        if args.backend in ['laser', 'object'] and detection_backend.debug_mode:
+        if args.backend in ['laser', 'object'] and hasattr(detection_backend, 'debug_mode') and detection_backend.debug_mode:
             debug_frame = detection_backend.get_debug_frame()
             if debug_frame is not None:
                 import cv2
