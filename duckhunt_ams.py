@@ -249,11 +249,34 @@ def main():
         return 1
 
     mode_config = load_game_mode_config(mode_path)
-    print(f"   Mode: {mode_config.metadata.name}")
-    print(f"   Description: {mode_config.metadata.description}")
+    print(f"   Mode: {mode_config.name}")
+    print(f"   Description: {mode_config.description}")
 
     # Create game instance
-    game_mode = ClassicMode(DISPLAY_WIDTH, DISPLAY_HEIGHT, mode_config)
+    # Extract parameters from config
+    max_misses = mode_config.rules.max_misses
+    target_score = mode_config.rules.score_target
+
+    # Use first level's speed as initial speed
+    initial_speed = None
+    if mode_config.levels and len(mode_config.levels) > 0:
+        initial_speed = mode_config.levels[0].target.speed * 100.0  # Scale to pixels/sec
+
+    # Create game mode with config parameters
+    if initial_speed:
+        game_mode = ClassicMode(
+            max_misses=max_misses,
+            target_score=target_score,
+            initial_speed=initial_speed,
+            audio_enabled=True
+        )
+    else:
+        game_mode = ClassicMode(
+            max_misses=max_misses,
+            target_score=target_score,
+            audio_enabled=True
+        )
+
     print(f"   Game initialized")
 
     # Game loop
