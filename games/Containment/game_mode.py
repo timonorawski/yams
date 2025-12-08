@@ -14,6 +14,7 @@ from games.common.base_game import BaseGame
 from games.Containment.ball import Ball, create_ball
 from games.Containment.deflector import DeflectorManager
 from games.Containment.gap import GapManager
+from games.Containment.spinner import SpinnerManager
 from games.Containment import config
 
 
@@ -45,6 +46,14 @@ class ContainmentMode(BaseGame):
             'help': 'Pacing preset: archery, throwing, blaster'
         },
 
+        # Game mode
+        {
+            'name': '--mode',
+            'type': str,
+            'default': 'classic',
+            'help': 'Game mode: classic (static walls), dynamic (rotating spinners)'
+        },
+
         # Game-specific difficulty
         {
             'name': '--tempo',
@@ -59,7 +68,7 @@ class ContainmentMode(BaseGame):
             'help': 'AI level: dumb, reactive, strategic'
         },
 
-        # Game mode
+        # Time/scoring
         {
             'name': '--time-limit',
             'type': int,
@@ -70,7 +79,13 @@ class ContainmentMode(BaseGame):
             'name': '--gap-count',
             'type': int,
             'default': None,
-            'help': 'Number of gaps (overrides preset)'
+            'help': 'Number of gaps (overrides preset, classic mode only)'
+        },
+        {
+            'name': '--spinner-count',
+            'type': int,
+            'default': 3,
+            'help': 'Number of spinners (dynamic mode only)'
         },
 
         # Physical constraints (standard AMS parameters)
@@ -86,13 +101,16 @@ class ContainmentMode(BaseGame):
         self,
         # Pacing (device speed)
         pacing: str = 'throwing',
+        # Game mode
+        mode: str = 'classic',
         # Tempo (game intensity)
         tempo: str = 'mid',
         # AI behavior
         ai: str = 'dumb',
-        # Game mode
+        # Time/scoring
         time_limit: int = 60,
         gap_count: Optional[int] = None,
+        spinner_count: int = 3,
         # Physical constraints
         max_deflectors: Optional[int] = None,
         quiver_size: Optional[int] = None,
@@ -106,10 +124,12 @@ class ContainmentMode(BaseGame):
 
         Args:
             pacing: Device pacing preset (archery, throwing, blaster)
+            mode: Game mode - 'classic' (static walls) or 'dynamic' (rotating spinners)
             tempo: Game intensity preset (zen, mid, wild)
             ai: AI behavior level (dumb, reactive, strategic)
             time_limit: Seconds to survive (0 = endless)
-            gap_count: Number of gaps (None = use preset)
+            gap_count: Number of gaps (None = use preset, classic mode only)
+            spinner_count: Number of spinners (dynamic mode only)
             max_deflectors: Maximum deflectors allowed (None = unlimited)
             quiver_size: Shots before retrieval (None = use preset)
             retrieval_pause: Seconds for retrieval (0 = manual)
@@ -120,12 +140,14 @@ class ContainmentMode(BaseGame):
         self._pacing = config.get_pacing_preset(pacing)
         self._tempo = config.get_tempo_preset(tempo)
         self._ai_level = ai
+        self._game_mode = mode  # 'classic' or 'dynamic'
 
         # Calculate effective parameters
         self._ball_speed = self._pacing.ball_speed * self._tempo.ball_speed_multiplier
         self._gap_count = gap_count if gap_count is not None else max(
             1, self._pacing.gap_count + self._tempo.gap_count_modifier
         )
+        self._spinner_count = spinner_count
         self._time_limit = time_limit
         self._max_deflectors = max_deflectors
 
@@ -154,6 +176,7 @@ class ContainmentMode(BaseGame):
         self._ball: Optional[Ball] = None
         self._deflectors: Optional[DeflectorManager] = None
         self._gaps: Optional[GapManager] = None
+        self._spinners: Optional[SpinnerManager] = None
 
         # Initialize game
         self._init_game()
@@ -185,13 +208,26 @@ class ContainmentMode(BaseGame):
         deflector_color = self._palette.get_ui_color()
         self._deflectors.default_color = deflector_color
 
-        # Create gap manager
-        self._gaps = GapManager(
-            screen_width=self._screen_width,
-            screen_height=self._screen_height,
-            gap_width=self._pacing.gap_width,
-        )
-        self._gaps.create_gaps(self._gap_count)
+        if self._game_mode == 'classic':
+            # Classic mode: static walls with gaps
+            self._gaps = GapManager(
+                screen_width=self._screen_width,
+                screen_height=self._screen_height,
+                gap_width=self._pacing.gap_width,
+            )
+            self._gaps.create_gaps(self._gap_count)
+            self._spinners = None
+        else:
+            # Dynamic mode: rotating spinners, no static gaps
+            self._gaps = None
+            self._spinners = SpinnerManager()
+            spinner_color = self._palette.get_ui_color()
+            self._spinners.create_default_layout(
+                screen_width=self._screen_width,
+                screen_height=self._screen_height,
+                count=self._spinner_count,
+                color=spinner_color,
+            )
 
         # Reset state
         self._state = GameState.PLAYING
@@ -252,7 +288,7 @@ class ContainmentMode(BaseGame):
         if self._state != GameState.PLAYING:
             return
 
-        if self._ball is None or self._gaps is None:
+        if self._ball is None:
             return
 
         # Update time
@@ -267,21 +303,39 @@ class ContainmentMode(BaseGame):
         # Update ball position
         self._ball.update(dt)
 
-        # Check wall collisions
-        wall_hit = self._gaps.check_wall_collision(
-            self._ball.position,
-            self._ball.radius,
-            self._ball.velocity
-        )
-        if wall_hit == 'horizontal':
-            self._ball.bounce_off_horizontal()
-            # Clamp position to screen
-            self._clamp_ball_position()
-        elif wall_hit == 'vertical':
-            self._ball.bounce_off_vertical()
-            self._clamp_ball_position()
+        # Update spinners (dynamic mode)
+        if self._spinners:
+            self._spinners.update(dt)
 
-        # Check deflector collisions
+        # Mode-specific collision handling
+        if self._game_mode == 'classic' and self._gaps:
+            # Classic mode: check wall/gap collisions
+            wall_hit = self._gaps.check_wall_collision(
+                self._ball.position,
+                self._ball.radius,
+                self._ball.velocity
+            )
+            if wall_hit == 'horizontal':
+                self._ball.bounce_off_horizontal()
+                self._clamp_ball_position()
+            elif wall_hit == 'vertical':
+                self._ball.bounce_off_vertical()
+                self._clamp_ball_position()
+        else:
+            # Dynamic mode: bounce off all screen edges
+            self._check_screen_edge_collision()
+
+        # Check spinner collisions (dynamic mode)
+        if self._spinners:
+            collision = self._spinners.check_ball_collision(
+                self._ball.position,
+                self._ball.radius
+            )
+            if collision:
+                normal, penetration = collision
+                self._ball.bounce_off_surface(normal, push_out=penetration)
+
+        # Check deflector collisions (both modes)
         if self._deflectors:
             collision = self._deflectors.check_ball_collision(
                 self._ball.position,
@@ -291,10 +345,43 @@ class ContainmentMode(BaseGame):
                 normal, penetration = collision
                 self._ball.bounce_off_surface(normal, push_out=penetration)
 
-        # Check escape
-        if self._gaps.check_escape(self._ball.position, self._ball.radius):
+        # Check escape (classic mode only)
+        if self._gaps and self._gaps.check_escape(self._ball.position, self._ball.radius):
             self._state = GameState.GAME_OVER
             self._score = int(self._time_elapsed)
+
+    def _check_screen_edge_collision(self) -> None:
+        """Check and handle collisions with screen edges (dynamic mode)."""
+        if self._ball is None:
+            return
+
+        bounced = False
+        pos = self._ball.position
+        radius = self._ball.radius
+
+        # Left edge
+        if pos.x - radius <= 0:
+            self._ball.bounce_off_vertical()
+            self._ball.position = Vector2D(x=radius + 1, y=pos.y)
+            bounced = True
+        # Right edge
+        elif pos.x + radius >= self._screen_width:
+            self._ball.bounce_off_vertical()
+            self._ball.position = Vector2D(x=self._screen_width - radius - 1, y=pos.y)
+            bounced = True
+
+        pos = self._ball.position  # Get updated position
+
+        # Top edge
+        if pos.y - radius <= 0:
+            self._ball.bounce_off_horizontal()
+            self._ball.position = Vector2D(x=pos.x, y=radius + 1)
+            bounced = True
+        # Bottom edge
+        elif pos.y + radius >= self._screen_height:
+            self._ball.bounce_off_horizontal()
+            self._ball.position = Vector2D(x=pos.x, y=self._screen_height - radius - 1)
+            bounced = True
 
     def _clamp_ball_position(self) -> None:
         """Keep ball within screen bounds (except gaps)."""
@@ -327,8 +414,11 @@ class ContainmentMode(BaseGame):
         # Draw walls (screen edges that aren't gaps)
         self._render_walls(screen)
 
-        # Draw gaps (highlighted danger zones)
+        # Draw gaps (highlighted danger zones) - classic mode
         self._render_gaps(screen)
+
+        # Draw spinners - dynamic mode
+        self._render_spinners(screen)
 
         # Draw deflectors
         self._render_deflectors(screen)
@@ -378,6 +468,24 @@ class ContainmentMode(BaseGame):
         for gap in self._gaps.gaps:
             start, end = gap.get_render_line()
             pygame.draw.line(screen, gap_color, start, end, thickness)
+
+    def _render_spinners(self, screen: pygame.Surface) -> None:
+        """Render rotating spinner obstacles."""
+        if self._spinners is None:
+            return
+
+        for spinner in self._spinners.spinners:
+            # Draw filled polygon
+            points = spinner.get_render_points()
+            if len(points) >= 3:
+                pygame.draw.polygon(screen, spinner.color, points, 0)  # Filled
+                # Draw outline for better visibility
+                outline_color = tuple(min(255, c + 50) for c in spinner.color)
+                pygame.draw.polygon(screen, outline_color, points, 2)  # Outline
+
+            # Draw center point
+            center = (int(spinner.position.x), int(spinner.position.y))
+            pygame.draw.circle(screen, spinner.color, center, 4)
 
     def _render_deflectors(self, screen: pygame.Surface) -> None:
         """Render all placed deflectors."""
@@ -462,8 +570,8 @@ class ContainmentMode(BaseGame):
             text = font_small.render(bounce_text, True, hud_color)
             screen.blit(text, (x_offset, y_offset))
 
-        # Pacing/tempo indicator (top right)
-        mode_text = f"{self._pacing.name} / {self._tempo.name}"
+        # Mode/pacing/tempo indicator (top right)
+        mode_text = f"{self._game_mode.upper()} | {self._pacing.name} / {self._tempo.name}"
         text = font_small.render(mode_text, True, (150, 150, 150))
         screen.blit(text, (self._screen_width - text.get_width() - 20, 20))
 
