@@ -388,11 +388,45 @@ Projectiles themselves spawn rotating/morphing obstacles:
 - Or continuously morph vertices
 - Adds chaos and unpredictability to your own placements
 
+**Size dynamics:**
+
+- **Pulsating:** Geometry breathes in/out over time (sinusoidal size)
+- **Growth on grouping:** Hit within existing geometry = that geometry grows larger
+  - Creates risk/reward: intentional grouping builds bigger walls, but requires precision
+  - Accidental grouping might block areas you didn't intend
+- **Decay:** Geometry slowly shrinks over time, needs "feeding" with more hits to maintain
+
+```python
+class SpawnedGeometry:
+    def __init__(self, position, base_size=50):
+        self.position = position
+        self.base_size = base_size
+        self.growth_level = 1.0  # Multiplier from grouping
+        self.pulse_phase = 0.0
+
+    def add_grouped_hit(self):
+        """Another projectile landed within this geometry."""
+        self.growth_level += 0.3  # Grow by 30%
+
+    def get_current_size(self, time):
+        pulse = 1.0 + 0.15 * math.sin(self.pulse_phase + time * 2)  # ±15% pulsation
+        return self.base_size * self.growth_level * pulse
+
+    def contains(self, point) -> bool:
+        """Check if point is within current geometry bounds."""
+        # Used to detect grouping hits
+        pass
+```
+
 **Variants to test:**
+
 - Random shape on spawn
 - Shape cycles through variants over time
 - Shape determined by hit timing (hit during certain phase = certain shape)
 - Side count increases/decreases rhythmically
+- **Pulsation speed** varies by shape type
+- **Growth cap** or unlimited scaling?
+- **Decay rate** balanced against growth rate
 
 ---
 
