@@ -261,22 +261,302 @@ This document captures game ideas for the AMS platform. Games should leverage th
 - Key insight: Protective stakes create fundamentally different motivation than score accumulation - something bad happens to something you care about if you fail
 - Retrieval windows (safe zones/tunnels) become narrative rhythm, not game pauses
 
+**33. Sweet Physics (Cut the Rope Style)
+Core Concept:
+Physics puzzle game where you cut ropes, pop bubbles, and trigger mechanisms by shooting targets to guide an object (candy/ball/creature) to a goal. Precision + timing + strategy layered together.
+Novel Mechanic:
+Projectile-based interaction with physics puzzles. Unlike touchscreen swipe (instant, costless), each shot is a commitment with physical constraints. The economy of limited arrows transforms casual puzzling into deliberate decision-making.
+Gameplay Loop:
+
+Level presents: suspended object, goal location, obstacles, collectibles (stars)
+Player studies physics setup - ropes, bubbles, air cushions, mechanisms
+Player shoots targets to trigger physics changes
+Object moves according to physics
+Success = object reaches goal; bonus = collect stars along the way
+
+Skill Layers (Progressive Depth):
+
+Basic: Get object to goal (completion)
+Precision: Collect stars en route (optimization)
+Economy: Fewer shots = better score (efficiency, especially meaningful with quiver limits)
+Timing: Speed bonus / time pressure variants (flow state)
+
+Physics Elements (Targets You Can Hit):
+
+Ropes: Cut to drop/swing object
+Bubbles: Pop to release floating object
+Air cushions: Trigger to boost object trajectory
+Triggers/buttons: Activate mechanisms (platforms, doors, conveyors)
+Bumpers: Change object direction on contact
+Portals: Teleport object across level
+
+Archery-Specific Value:
+
+Timing accuracy: Waiting for right moment in swing arc, holding draw
+Physical accuracy: Hitting small targets (rope attachment points)
+Deliberate shooting: Opposite of reactive - patience rewarded
+Economy pressure: 6 arrows, 8 cuts needed = which cuts can wait for retrieval?
+Retrieval as puzzle phase: Natural pause to study next sequence
+
+Quiver Constraint as Feature:
+Unlike touchscreen where cuts are free, limited arrows mean:
+
+Can't brute force solutions
+Each shot is commitment
+Star collection has real cost (arrow you can't use elsewhere)
+Some levels may require retrieval mid-puzzle (built into design)
+
+Difficulty Axes:
+
+Puzzle complexity: Number of elements, physics interactions
+Target size: Larger rope targets (easy) vs small precise trigger points (hard)
+Timing windows: Generous swing cycles vs tight timing requirements
+Star placement: Easy path vs requiring detour/extra shots
+Arrow budget: Generous vs exactly-enough vs requires retrieval planning
+
+Level Design Principles:
+
+Clear visual language for each element type
+Multiple solutions possible (emergent, not scripted)
+Stars as optional mastery challenges, not completion requirements
+Progressive introduction of elements
+"Aha moment" potential - realizing a clever sequence
+
+Theme Variants:
+
+Classic: Candy + cute creature (Om Nom style)
+Abstract: Geometric shapes, pure physics aesthetic
+Nature: Acorn to squirrel, fish through water currents
+Spooky: Ghost to haunted house, chains instead of ropes
+Rube Goldberg: Elaborate chain reaction emphasis
+Holiday: Seasonal theming (present to tree, egg to basket)
+
+Training Value:
+
+Patience and timing (holding draw for right moment)
+Strategic thinking (planning sequence before shooting)
+Precision under low pressure (deliberate, not reactive)
+Economy of action (making each shot count)
+Physics intuition (predicting swing arcs, momentum)
+
+Dopamine Profile:
+
+Satisfaction of clean, well-timed cut
+Chain reaction joy (one shot triggers cascade)
+Puzzle solution "aha" moment
+Star collection completionism
+Improvement visible through fewer shots / better times
+
+Level Format (YAML-driven like Containment):
+yamlname: "Swing and Drop"
+difficulty: 2
+stars: 3
+arrow_budget: 4  # null = unlimited
+
+elements:
+  - type: candy
+    position: [0.5, 0.2]
+    attached_to: [rope_1, rope_2]
+
+  - type: rope
+    id: rope_1
+    anchor: [0.3, 0.0]
+    length: 0.25
+    cuttable: true
+
+  - type: rope
+    id: rope_2
+    anchor: [0.7, 0.0]
+    length: 0.2
+    cuttable: true
+
+  - type: bubble
+    position: [0.5, 0.5]
+
+  - type: star
+    position: [0.3, 0.4]
+
+  - type: star
+    position: [0.7, 0.4]
+
+  - type: star
+    position: [0.5, 0.7]
+
+  - type: goal
+    position: [0.5, 0.9]
+    radius: 0.08
+
+physics:
+  gravity: 9.8
+  rope_elasticity: 0.1
+  bubble_float_speed: 0.5
+Implementation Notes:
+
+Physics engine needed (pymunk or similar)
+Rope as segmented physics body with cuttable joints
+Clear visual feedback for "what's targetable"
+Trajectory preview for object after cut (optional, for easier modes)
+Replay system to watch successful solutions
+
+Community Potential:
+
+Level editor (visual or YAML)
+Level sharing / curated packs
+Community challenges (fewest shots, fastest time)
+Theme/asset packs
+
+Comparison to Containment:
+AspectContainmentSweet PhysicsPressureReactive, real-timeDeliberate, self-pacedSkill typeTracking + chaos managementTiming + precisionFailure modeBall escapes (sudden)Candy lost (recoverable via retry)Cognitive loadHigh (constant adaptation)Medium (plan then execute)Archery trainingSnap shooting, instinctHeld draw, patience
+Both valuable, different modes of engagement.
+
+**34. Love-O-Meter (Carnival Rate Challenge)
+Core Concept:
+Classic carnival high-striker reimagined. Hit the target repeatedly to fill a thermometer that's constantly draining. Pure speed vs. accuracy under escalating pressure.
+The Hook:
+Can you shoot fast enough to outpace the drain? The answer is always "barely" - difficulty adapts to keep you at your edge.
+Core Loop:
+
+Thermometer starts partially filled (or empty)
+Each hit adds to the meter
+Meter constantly drains
+Fill it completely to win / survive as long as possible
+Difficulty escalates: drain increases, target shrinks, target moves
+
+Difficulty Axes (Compound Pressure):
+AxisEasyHardTraining EffectDrain rateSlowFastTempo, urgencyTarget sizeLargeSmallPrecision under pressureTarget movementStaticDriftingInstinctive shooting
+The axes combine: shrinking target makes you want to slow down, increasing drain punishes slowing down. The tension between impulses is where skill lives.
+Movement Speed as Teaching Dial:
+
+Static: Mechanical aiming works, conscious alignment
+Slow drift: Can track consciously, but harder
+Medium movement: Conscious aiming fails, instinct must emerge
+Fast movement: Pure instinct or pure miss
+
+Moving target removes the "aim, hold, verify" crutch - the body must learn to solve the problem without conscious involvement.
+Modality Split:
+NERF:
+
+Pure chaos energy
+Volume compensates for accuracy (until target shrinks)
+Dump magazine, reload, dump again
+Friends feeding you blasters
+Party game, everyone participates
+Builds: speed, aggression, comfort with chaos
+
+Archery:
+
+Meditative brutality
+No spray option - every arrow must land
+Draw cycle is your rate limiter
+Drain rate tuned to just exceed comfortable pace
+Miss once = feel it immediately
+Miss twice = recovery mode
+Builds: form under pressure, tempo control, mental resilience
+
+Training Value (Archery):
+
+Economy of motion (wasted movement = lost time)
+Consistent anchor (no time to find it, must be automatic)
+Smooth draw cycle (jerky = slow)
+Recovery after release (next arrow NOW)
+Performance under stress (competition simulation)
+Instinctive shooting (when target moves)
+
+The Psychological Screw:
+The game engineers a state where the analytical mind can't keep up. Target moving + drain pressure = conscious aiming overwhelmed. The body has to take over. That's when instinctive shooting emerges - not as choice but as only viable option.
+Biofeedback Loop:
+The meter tells you when you're in flow. It climbs when you let go, drops when you tense up and try to control. Visible feedback for an internal state.
+Game Modes:
+ModeDescriptionSprintFill meter completely, fastest time winsEnduranceKeep meter above threshold, how long can you last?PressureDrain rate increases until inevitable failureAdaptiveDifficulty responds to performance, keeps you at edgeVersusTwo meters, first to fill winsTug-of-WarYour hits drain opponent's meter
+Carnival Framing:
+The silly theme matters. "Love-O-Meter" is inherently unserious. You can fail and laugh. Lower stakes framing for high-pressure skill development. The training is real, the vibe is play.
+Physical Exercise (Hidden Workout):
+
+Repeated draws at real weight (25-50 lb)
+Sustained shooting rate = cardio
+Core engagement for stability
+Shoulder/back/arm fatigue accumulating
+Walking retrieval = active rest intervals
+30 minutes of love-o-meter = real workout
+
+Range Etiquette:
+
+Sound via earbuds (private feedback, no noise pollution)
+Visual spectacle draws curiosity without imposing
+Normal retrieval rhythm (designed around it)
+Standard safety protocols unchanged
+
+Visual Design:
+
+Thermometer/meter as central UI element
+Target clearly visible with current size indicated
+Movement path subtle or invisible (don't aid prediction)
+Hit feedback: satisfying pulse on meter rise
+Miss feedback: meter drop emphasized
+Near-fail state: visual urgency (pulsing, color shift)
+
+YAML Configuration:
+yamlname: "Love-O-Meter"
+mode: adaptive  # sprint | endurance | pressure | adaptive
+
+meter:
+  initial_fill: 0.3
+  drain_rate: 0.05  # per second, base rate
+  fill_per_hit: 0.08
+  win_threshold: 1.0  # fill completely to win
+
+target:
+  initial_size: 120  # pixels radius
+  minimum_size: 30
+  shrink_rate: 0.5  # pixels per second
+  movement:
+    enabled: true
+    speed: 50  # pixels per second
+    pattern: drift  # drift | orbit | random | bounce
+
+difficulty:
+  adaptive: true
+  drain_increase_rate: 0.002  # per second
+  shrink_increase_rate: 0.1  # per second
+  
+pacing:
+  archery:
+    meter.drain_rate: 0.03
+    target.initial_size: 150
+    target.movement.speed: 30
+  nerf:
+    meter.drain_rate: 0.12
+    target.initial_size: 100
+    target.movement.speed: 80
+Success Metrics:
+
+ "One more try" compulsion
+ Visible improvement across sessions
+ Flow state achievable (meter climbing steadily)
+ Failure feels fair ("I missed" not "game cheated")
+ Physical tiredness after extended play
+ NERF version causes party chaos
+ Archery version builds competition readiness
+
+Comparison to Other Games:
+AspectContainmentSweet PhysicsLove-O-MeterPressure typeSpatialStrategicTemporalPacingReactiveDeliberateRelentlessThinkingAdaptivePlanningNone (flow)Physical demandModerateLowHighParty energyHighLowVery highArchery trainingSnap shootingPatienceTempo/form
+
 ---
 
 ### Multiplayer / Social
 
-**33. Hot Potato**
+**35. Hot Potato**
 - Target bounces between players
 - Must hit within time limit
 - Last player standing wins
 - Works with turn-taking for single input
 
-**34. Score Attack**
+**36. Score Attack**
 - Same targets for all players
 - Highest score in time limit wins
 - Can be async (take turns, compare scores)
 
-**35. Cooperative Survival**
+**37. Cooperative Survival**
 - Targets require multiple hits
 - Players work together
 - Shared health/lives
@@ -286,7 +566,7 @@ This document captures game ideas for the AMS platform. Games should leverage th
 
 ### Adversarial / Containment
 
-**36. Containment (Working Title)**
+**38. Containment (Working Title)**
 
 Adversarial containment game. A ball/entity tries to escape the play area through gaps at edges. Player places deflectors (arrows/touches/clicks) to build walls and seal escape routes. Direct hits on the ball are penalized - it accelerates. You're building geometry to contain, not targeting to destroy.
 
