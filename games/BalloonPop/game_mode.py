@@ -7,9 +7,9 @@ Game ends when too many balloons escape off the top.
 
 import time
 from typing import List, Optional
-from enum import Enum
 import pygame
 
+from games.common import GameState
 from games.BalloonPop.balloon import Balloon, BalloonState
 from games.BalloonPop.input.input_event import InputEvent
 from games.BalloonPop.config import (
@@ -20,14 +20,11 @@ from games.BalloonPop.config import (
     TARGET_POPS,
     BACKGROUND_COLOR,
     AUDIO_ENABLED,
+    PACING_PRESETS,
+    PacingPreset,
 )
-
-
-class GameState(Enum):
-    """Game state."""
-    PLAYING = "playing"
-    GAME_OVER = "game_over"
-    WON = "won"
+from games.common.palette import GamePalette
+from games.common.quiver import QuiverState, create_quiver
 
 
 class PopEffect:
@@ -70,8 +67,12 @@ class BalloonPopMode:
         self,
         max_escaped: int = MAX_ESCAPED,
         target_pops: int = TARGET_POPS,
-        spawn_rate: float = SPAWN_RATE,
+        spawn_rate: float = None,
         audio_enabled: bool = AUDIO_ENABLED,
+        pacing: str = 'throwing',
+        quiver_size: int = None,
+        retrieval_pause: float = None,
+        color_palette: str = None,
     ):
         """
         Initialize game mode.
@@ -79,17 +80,40 @@ class BalloonPopMode:
         Args:
             max_escaped: Number of escaped balloons before game over (0 = unlimited)
             target_pops: Number of pops to win (0 = endless)
-            spawn_rate: Seconds between balloon spawns
+            spawn_rate: Seconds between balloon spawns (overrides pacing preset)
             audio_enabled: Whether to play sounds
+            pacing: Pacing preset name (archery/throwing/blaster)
+            quiver_size: Shots per round (None = unlimited)
+            retrieval_pause: Seconds for retrieval (0 = manual ready)
+            color_palette: Test palette name (or None for default)
         """
+        # Apply pacing preset
+        preset = PACING_PRESETS.get(pacing, PACING_PRESETS['throwing'])
+        self._preset = preset
+
         self._balloons: List[Balloon] = []
         self._effects: List[PopEffect] = []
         self._state = GameState.PLAYING
         self._max_escaped = max_escaped
         self._target_pops = target_pops
-        self._spawn_rate = spawn_rate
+
+        # Use spawn_rate if provided, otherwise use preset
+        self._spawn_rate = spawn_rate if spawn_rate is not None else preset.spawn_interval
         self._spawn_timer = 0.0
         self._audio_enabled = audio_enabled
+
+        # Pacing-driven parameters
+        self._balloon_size_min = preset.balloon_size_min
+        self._balloon_size_max = preset.balloon_size_max
+        self._float_speed_min = preset.float_speed_min
+        self._float_speed_max = preset.float_speed_max
+        self._max_balloons = preset.max_balloons
+
+        # Color palette
+        self._palette = GamePalette(palette_name=color_palette)
+
+        # Quiver state
+        self._quiver: Optional[QuiverState] = create_quiver(quiver_size, retrieval_pause)
 
         # Stats
         self._pops = 0
@@ -140,6 +164,24 @@ class BalloonPopMode:
     def get_score(self) -> int:
         return self._pops
 
+    def set_palette(self, palette_name: str) -> bool:
+        """
+        Change the color palette.
+
+        Args:
+            palette_name: Name of test palette
+
+        Returns:
+            True if palette found and changed
+        """
+        return self._palette.set_palette(palette_name)
+
+    def ready_for_next_round(self) -> None:
+        """Signal ready for next round (manual retrieval mode)."""
+        if self._state == GameState.RETRIEVAL and self._quiver:
+            self._quiver.end_retrieval()
+            self._state = GameState.PLAYING
+
     def update(self, dt: float) -> None:
         """
         Update game logic.
@@ -147,12 +189,20 @@ class BalloonPopMode:
         Args:
             dt: Delta time in seconds
         """
+        # Handle retrieval state
+        if self._state == GameState.RETRIEVAL:
+            if self._quiver and not self._quiver.is_manual_retrieval:
+                if self._quiver.update_retrieval(dt):
+                    self._quiver.end_retrieval()
+                    self._state = GameState.PLAYING
+            return
+
         if self._state != GameState.PLAYING:
             return
 
-        # Update spawn timer
+        # Update spawn timer (only spawn if under max limit)
         self._spawn_timer -= dt
-        if self._spawn_timer <= 0:
+        if self._spawn_timer <= 0 and len(self._balloons) < self._max_balloons:
             self._spawn_balloon()
             self._spawn_timer = self._spawn_rate
 
@@ -188,6 +238,10 @@ class BalloonPopMode:
             return
 
         for event in events:
+            # Check quiver before allowing shot
+            if self._quiver and self._quiver.is_empty:
+                continue
+
             hit = False
 
             # Check all balloons for hit (check from front to back)
@@ -213,6 +267,13 @@ class BalloonPopMode:
                 # Missed - break combo
                 self._combo = 0
 
+            # Use shot from quiver
+            if self._quiver:
+                is_empty = self._quiver.use_shot()
+                if is_empty:
+                    self._quiver.start_retrieval()
+                    self._state = GameState.RETRIEVAL
+
     def render(self, screen: pygame.Surface) -> None:
         """
         Render the game.
@@ -234,8 +295,11 @@ class BalloonPopMode:
         # Draw UI
         self._render_ui(screen)
 
+        # Draw retrieval screen
+        if self._state == GameState.RETRIEVAL:
+            self._render_retrieval(screen)
         # Draw game over
-        if self._state == GameState.GAME_OVER:
+        elif self._state == GameState.GAME_OVER:
             self._render_game_over(screen)
         elif self._state == GameState.WON:
             self._render_win(screen)
@@ -252,6 +316,15 @@ class BalloonPopMode:
         if self._combo > 1:
             combo_text = font.render(f"Combo: {self._combo}x", True, (255, 255, 0))
             screen.blit(combo_text, (10, 50))
+
+        # Quiver count
+        if self._quiver:
+            quiver_text = font.render(
+                self._quiver.get_display_text(),
+                True,
+                (255, 100, 100) if self._quiver.remaining <= 2 else (255, 255, 255)
+            )
+            screen.blit(quiver_text, (10, 90))
 
         # Escaped counter
         if self._max_escaped > 0:
@@ -270,6 +343,50 @@ class BalloonPopMode:
                 (100, 255, 100)
             )
             screen.blit(progress_text, (SCREEN_WIDTH - 200, 50))
+
+        # Palette indicator (bottom left)
+        palette_text = font.render(
+            f"Palette: {self._palette.name}",
+            True,
+            (200, 200, 200)
+        )
+        screen.blit(palette_text, (10, SCREEN_HEIGHT - 40))
+
+    def _render_retrieval(self, screen: pygame.Surface) -> None:
+        """Render retrieval screen."""
+        if not self._quiver:
+            return
+
+        font_large = self._get_font_large()
+        font_small = self._get_font()
+
+        # Semi-transparent overlay
+        overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 128))
+        screen.blit(overlay, (0, 0))
+
+        # Retrieval text
+        title_text = font_large.render("RETRIEVAL", True, (255, 200, 0))
+        title_rect = title_text.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 - 80))
+        screen.blit(title_text, title_rect)
+
+        # Instructions
+        instruction_text = font_small.render(
+            self._quiver.get_retrieval_text(),
+            True,
+            (255, 255, 255)
+        )
+        instruction_rect = instruction_text.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2))
+        screen.blit(instruction_text, instruction_rect)
+
+        # Round info
+        round_text = font_small.render(
+            f"Round {self._quiver.current_round} | Total shots: {self._quiver.total_shots}",
+            True,
+            (200, 200, 200)
+        )
+        round_rect = round_text.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 + 40))
+        screen.blit(round_text, round_rect)
 
     def _render_game_over(self, screen: pygame.Surface) -> None:
         """Render game over screen."""
@@ -322,7 +439,13 @@ class BalloonPopMode:
 
     def _spawn_balloon(self) -> None:
         """Spawn a new balloon at the bottom of the screen."""
-        self._balloons.append(Balloon())
+        color = self._palette.random_target_color()
+        balloon = Balloon(
+            color=color,
+            size_range=(self._balloon_size_min, self._balloon_size_max),
+            speed_range=(self._float_speed_min, self._float_speed_max)
+        )
+        self._balloons.append(balloon)
 
     def _check_game_over(self) -> None:
         """Check win/lose conditions."""

@@ -32,7 +32,11 @@ def main():
     parser.add_argument('--width', type=int, default=SCREEN_WIDTH, help='Screen width')
     parser.add_argument('--height', type=int, default=SCREEN_HEIGHT, help='Screen height')
     parser.add_argument('--fullscreen', action='store_true', help='Run fullscreen')
-    parser.add_argument('--spawn-rate', type=float, default=None, help='Seconds between spawns')
+    parser.add_argument('--pacing', type=str, default='throwing', choices=['archery', 'throwing', 'blaster'], help='Device speed preset')
+    parser.add_argument('--quiver-size', type=int, default=None, help='Shots per round (0=unlimited)')
+    parser.add_argument('--retrieval-pause', type=float, default=None, help='Retrieval pause in seconds (0=manual ready)')
+    parser.add_argument('--palette', type=str, default=None, help='Test palette name')
+    parser.add_argument('--spawn-rate', type=float, default=None, help='Seconds between spawns (overrides pacing)')
     parser.add_argument('--max-escaped', type=int, default=None, help='Max escaped before game over')
     parser.add_argument('--target-pops', type=int, default=None, help='Pops needed to win (0=endless)')
     args = parser.parse_args()
@@ -59,7 +63,14 @@ def main():
     input_manager = InputManager(MouseInputSource())
 
     # Create game mode with optional overrides
-    game_kwargs = {}
+    game_kwargs = {
+        'pacing': args.pacing,
+        'color_palette': args.palette,
+    }
+    if args.quiver_size is not None:
+        game_kwargs['quiver_size'] = args.quiver_size
+    if args.retrieval_pause is not None:
+        game_kwargs['retrieval_pause'] = args.retrieval_pause
     if args.spawn_rate is not None:
         game_kwargs['spawn_rate'] = args.spawn_rate
     if args.max_escaped is not None:
@@ -79,6 +90,8 @@ def main():
     print("\nPop the balloons before they escape!")
     print("\nControls:")
     print("  - Click to pop balloons")
+    print("  - P to cycle palette")
+    print("  - SPACE for manual retrieval ready")
     print("  - ESC to quit")
     print("  - R to restart")
     print("="*50)
@@ -100,6 +113,15 @@ def main():
                     # Restart game
                     game = BalloonPopMode(**game_kwargs)
                     print("\n--- RESTARTING ---\n")
+                elif event.key == pygame.K_p:
+                    # Cycle palette
+                    new_palette = game._palette.cycle_palette()
+                    print(f"Switched to palette: {new_palette}")
+                elif event.key == pygame.K_SPACE:
+                    # Manual retrieval ready
+                    if game.state == GameState.RETRIEVAL:
+                        game.ready_for_next_round()
+                        print("Ready for next round!")
 
         # Get input events and pass to game
         events = input_manager.get_events()

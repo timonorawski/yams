@@ -5,21 +5,15 @@ Speed/accuracy tradeoff game - targets grow over time.
 Smaller = more points, but harder to hit.
 """
 import time
-from enum import Enum
 from typing import List, Optional
 
 import pygame
 
 from models import Vector2D
+from games.common import GameState
 from games.common.input import InputEvent
 from games.GrowingTargets import config
 from games.GrowingTargets.target import GrowingTarget, TargetSpawner
-
-
-class GameState(Enum):
-    """Game states for GrowingTargets."""
-    PLAYING = "playing"
-    GAME_OVER = "game_over"
 
 
 class GrowingTargetsMode:
@@ -37,6 +31,11 @@ class GrowingTargetsMode:
 
     def __init__(
         self,
+        pacing: str = 'throwing',
+        color_palette: Optional[List] = None,
+        palette: Optional[str] = None,
+        quiver_size: Optional[int] = None,
+        retrieval_pause: Optional[float] = None,
         spawn_rate: Optional[float] = None,
         max_targets: Optional[int] = None,
         growth_rate: Optional[float] = None,
@@ -49,21 +48,43 @@ class GrowingTargetsMode:
         """Initialize the GrowingTargets game.
 
         Args:
-            spawn_rate: Seconds between target spawns
-            max_targets: Maximum simultaneous targets
-            growth_rate: Target growth rate (pixels/second)
-            start_size: Initial target radius
-            max_size: Maximum target radius (expires at this size)
+            pacing: Pacing preset name (archery/throwing/blaster)
+            color_palette: AMS color palette (list of RGB tuples)
+            palette: Named test palette (for standalone mode)
+            quiver_size: Shots per round (None/0 = unlimited)
+            retrieval_pause: Seconds for retrieval (0 = manual)
+            spawn_rate: Seconds between target spawns (overrides pacing)
+            max_targets: Maximum simultaneous targets (overrides pacing)
+            growth_rate: Target growth rate (pixels/second) (overrides pacing)
+            start_size: Initial target radius (overrides pacing)
+            max_size: Maximum target radius (overrides pacing)
             miss_penalty: Points lost per miss
             lives: Number of lives (0 = unlimited)
         """
-        self._spawn_rate = spawn_rate or config.DEFAULT_SPAWN_RATE
-        self._max_targets = max_targets or config.MAX_TARGETS
-        self._growth_rate = growth_rate or config.GROWTH_RATE
-        self._start_size = start_size or config.START_SIZE
-        self._max_size = max_size or config.MAX_SIZE
+        # Import shared infrastructure
+        from games.common import GamePalette, create_quiver, get_pacing_preset
+        from games.GrowingTargets.config import PACING_PRESETS
+
+        # Apply pacing preset with overrides
+        preset = get_pacing_preset(PACING_PRESETS, pacing)
+        self._spawn_rate = spawn_rate if spawn_rate is not None else preset.spawn_interval
+        self._max_targets = max_targets if max_targets is not None else preset.max_targets
+        self._growth_rate = growth_rate if growth_rate is not None else preset.growth_rate
+        self._start_size = start_size if start_size is not None else preset.start_size
+        self._max_size = max_size if max_size is not None else preset.max_size
         self._miss_penalty = miss_penalty or config.MISS_PENALTY
         self._max_lives = lives if lives is not None else config.DEFAULT_LIVES
+
+        # Initialize palette (AMS colors or test palette)
+        if color_palette:
+            self._palette = GamePalette(colors=color_palette)
+        elif palette:
+            self._palette = GamePalette(palette_name=palette)
+        else:
+            self._palette = GamePalette()
+
+        # Initialize quiver
+        self._quiver = create_quiver(quiver_size, retrieval_pause if retrieval_pause is not None else 30.0)
 
         # Game state
         self._state = GameState.PLAYING
@@ -101,6 +122,18 @@ class GrowingTargetsMode:
     def get_score(self) -> int:
         """Get current score."""
         return self._score
+
+    def set_palette(self, palette_name: str) -> bool:
+        """
+        Switch to a named test palette.
+
+        Args:
+            palette_name: Name from TEST_PALETTES
+
+        Returns:
+            True if palette found and switched, False otherwise
+        """
+        return self._palette.set_palette(palette_name)
 
     def _ensure_spawner(self) -> None:
         """Ensure spawner is initialized."""
@@ -157,6 +190,10 @@ class GrowingTargetsMode:
             self._restart()
             return
 
+        if self._state == GameState.RETRIEVAL:
+            # Ignore clicks during retrieval
+            return
+
         # Check for target hits (newest first for visual feedback)
         hit_target = None
         for target in reversed(self._targets):
@@ -175,15 +212,20 @@ class GrowingTargetsMode:
             if multiplier > self._best_hit_multiplier:
                 self._best_hit_multiplier = multiplier
 
-            # Hit effect color based on value
+            # Use quiver shot
+            if self._quiver and self._quiver.use_shot():
+                self._enter_retrieval()
+
+            # Hit effect color - use palette colors
+            target_colors = self._palette.get_target_colors()
             if multiplier >= 8:
-                color = config.TARGET_FILL_SMALL  # Amazing
+                color = target_colors[0] if len(target_colors) > 0 else config.TARGET_FILL_SMALL  # Amazing
             elif multiplier >= 4:
-                color = (150, 255, 150)  # Good
+                color = target_colors[1] if len(target_colors) > 1 else (150, 255, 150)  # Good
             elif multiplier >= 2:
-                color = config.TARGET_FILL_MEDIUM  # OK
+                color = target_colors[2] if len(target_colors) > 2 else config.TARGET_FILL_MEDIUM  # OK
             else:
-                color = config.TARGET_FILL_LARGE  # Late
+                color = target_colors[-1] if target_colors else config.TARGET_FILL_LARGE  # Late
 
             self._hit_effects.append({
                 'position': hit_target.position,
@@ -197,6 +239,10 @@ class GrowingTargetsMode:
             # Miss - clicked empty space
             self._score -= self._miss_penalty
             self._misses += 1
+
+            # Use quiver shot
+            if self._quiver and self._quiver.use_shot():
+                self._enter_retrieval()
 
             self._miss_effects.append({
                 'position': position,
@@ -213,9 +259,34 @@ class GrowingTargetsMode:
             if self._lives <= 0:
                 self._state = GameState.GAME_OVER
 
+    def _enter_retrieval(self) -> None:
+        """Enter retrieval state when quiver is empty."""
+        self._state = GameState.RETRIEVAL
+        if self._quiver:
+            self._quiver.start_retrieval()
+
+    def handle_retrieval_ready(self) -> None:
+        """Handle manual retrieval ready signal (SPACE key)."""
+        if self._state == GameState.RETRIEVAL and self._quiver:
+            if self._quiver.is_manual_retrieval:
+                self._exit_retrieval()
+
+    def _exit_retrieval(self) -> None:
+        """Exit retrieval state and resume gameplay."""
+        if self._quiver:
+            self._quiver.end_retrieval()
+        self._state = GameState.PLAYING
+
     def update(self, dt: float) -> None:
         """Update game state."""
         if self._state == GameState.GAME_OVER:
+            return
+
+        # Handle retrieval state
+        if self._state == GameState.RETRIEVAL:
+            if self._quiver:
+                if self._quiver.update_retrieval(dt):
+                    self._exit_retrieval()
             return
 
         self._ensure_spawner()
@@ -272,12 +343,30 @@ class GrowingTargetsMode:
         # Draw HUD
         self._render_hud(screen)
 
+        # Draw retrieval screen
+        if self._state == GameState.RETRIEVAL:
+            self._render_retrieval(screen)
+
         # Draw game over screen
         if self._state == GameState.GAME_OVER:
             self._render_game_over(screen)
 
     def _render_targets(self, screen: pygame.Surface) -> None:
         """Render all active targets."""
+        # Get palette colors for targets
+        target_colors = self._palette.get_target_colors(3)
+        if len(target_colors) >= 3:
+            color_small = target_colors[0]
+            color_medium = target_colors[1]
+            color_large = target_colors[2]
+        else:
+            # Fallback to config colors
+            color_small = config.TARGET_FILL_SMALL
+            color_medium = config.TARGET_FILL_MEDIUM
+            color_large = config.TARGET_FILL_LARGE
+
+        outline_color = self._palette.get_ui_color()
+
         for target in self._targets:
             if not target.is_active:
                 continue
@@ -285,39 +374,39 @@ class GrowingTargetsMode:
             center = (int(target.position.x), int(target.position.y))
             radius = int(target.current_radius)
 
-            # Color based on size ratio (small=green, medium=yellow, large=red)
+            # Color based on size ratio (small -> medium -> large)
             ratio = target.size_ratio
             if ratio < 0.33:
-                fill_color = config.TARGET_FILL_SMALL
+                fill_color = color_small
             elif ratio < 0.66:
-                # Interpolate green -> yellow
+                # Interpolate small -> medium
                 t = (ratio - 0.33) / 0.33
                 fill_color = (
-                    int(config.TARGET_FILL_SMALL[0] + t * (config.TARGET_FILL_MEDIUM[0] - config.TARGET_FILL_SMALL[0])),
-                    int(config.TARGET_FILL_SMALL[1] + t * (config.TARGET_FILL_MEDIUM[1] - config.TARGET_FILL_SMALL[1])),
-                    int(config.TARGET_FILL_SMALL[2] + t * (config.TARGET_FILL_MEDIUM[2] - config.TARGET_FILL_SMALL[2])),
+                    int(color_small[0] + t * (color_medium[0] - color_small[0])),
+                    int(color_small[1] + t * (color_medium[1] - color_small[1])),
+                    int(color_small[2] + t * (color_medium[2] - color_small[2])),
                 )
             else:
-                # Interpolate yellow -> red
+                # Interpolate medium -> large
                 t = (ratio - 0.66) / 0.34
                 fill_color = (
-                    int(config.TARGET_FILL_MEDIUM[0] + t * (config.TARGET_FILL_LARGE[0] - config.TARGET_FILL_MEDIUM[0])),
-                    int(config.TARGET_FILL_MEDIUM[1] + t * (config.TARGET_FILL_LARGE[1] - config.TARGET_FILL_MEDIUM[1])),
-                    int(config.TARGET_FILL_MEDIUM[2] + t * (config.TARGET_FILL_LARGE[2] - config.TARGET_FILL_MEDIUM[2])),
+                    int(color_medium[0] + t * (color_large[0] - color_medium[0])),
+                    int(color_medium[1] + t * (color_large[1] - color_medium[1])),
+                    int(color_medium[2] + t * (color_large[2] - color_medium[2])),
                 )
 
             # Fill
             pygame.draw.circle(screen, fill_color, center, radius)
             # Outline
-            pygame.draw.circle(screen, config.TARGET_OUTLINE_COLOR, center, radius, 2)
+            pygame.draw.circle(screen, outline_color, center, radius, 2)
             # Center dot
-            pygame.draw.circle(screen, config.TARGET_OUTLINE_COLOR, center, 3)
+            pygame.draw.circle(screen, outline_color, center, 3)
 
             # Value indicator (small text showing multiplier)
             if radius > 20:
                 font = pygame.font.Font(None, 20)
                 mult_text = f"{target.value_multiplier:.1f}x"
-                text = font.render(mult_text, True, (255, 255, 255))
+                text = font.render(mult_text, True, outline_color)
                 text_rect = text.get_rect(center=(center[0], center[1] - radius - 12))
                 screen.blit(text, text_rect)
 
@@ -395,14 +484,24 @@ class GrowingTargetsMode:
         font_medium = pygame.font.Font(None, 32)
         font_small = pygame.font.Font(None, 24)
 
+        ui_color = self._palette.get_ui_color()
+
         y_offset = 20
         x_offset = 20
 
         # Score
         score_text = f"Score: {self._score}"
-        text = font_large.render(score_text, True, (255, 255, 255))
+        text = font_large.render(score_text, True, ui_color)
         screen.blit(text, (x_offset, y_offset))
         y_offset += 50
+
+        # Quiver display (if enabled)
+        if self._quiver and not self._quiver.is_unlimited:
+            quiver_text = self._quiver.get_display_text()
+            color = (255, 100, 100) if self._quiver.remaining <= 1 else ui_color
+            text = font_medium.render(quiver_text, True, color)
+            screen.blit(text, (x_offset, y_offset))
+            y_offset += 35
 
         # Lives (if limited)
         if self._max_lives > 0:
@@ -431,10 +530,44 @@ class GrowingTargetsMode:
             text = font_medium.render(best_text, True, (100, 200, 255))
             screen.blit(text, (self._screen_width - text.get_width() - 20, 20))
 
+        # Palette name (top right, below best)
+        palette_text = f"Palette: {self._palette.name}"
+        text = font_small.render(palette_text, True, (100, 100, 100))
+        screen.blit(text, (self._screen_width - text.get_width() - 20, 60))
+
         # Instructions (bottom)
-        hint_text = "Hit targets early for max points - Green=High, Red=Low"
+        hint_text = "Hit targets early for max points - Press P to change palette"
         text = font_small.render(hint_text, True, (100, 100, 100))
         screen.blit(text, (self._screen_width // 2 - text.get_width() // 2, self._screen_height - 30))
+
+    def _render_retrieval(self, screen: pygame.Surface) -> None:
+        """Render retrieval screen overlay."""
+        # Semi-transparent overlay
+        overlay = pygame.Surface((self._screen_width, self._screen_height), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 150))
+        screen.blit(overlay, (0, 0))
+
+        font_large = pygame.font.Font(None, 64)
+        font_medium = pygame.font.Font(None, 40)
+
+        center_x = self._screen_width // 2
+        center_y = self._screen_height // 2
+
+        # Title
+        title_text = "Retrieving Arrows"
+        text = font_large.render(title_text, True, (255, 200, 100))
+        screen.blit(text, (center_x - text.get_width() // 2, center_y - 80))
+
+        # Instructions or timer
+        if self._quiver:
+            instruction_text = self._quiver.get_retrieval_text()
+            text = font_medium.render(instruction_text, True, (200, 200, 200))
+            screen.blit(text, (center_x - text.get_width() // 2, center_y))
+
+            # Round info
+            round_text = f"Round {self._quiver.current_round}"
+            text = font_medium.render(round_text, True, (150, 150, 150))
+            screen.blit(text, (center_x - text.get_width() // 2, center_y + 50))
 
     def _render_game_over(self, screen: pygame.Surface) -> None:
         """Render game over overlay."""

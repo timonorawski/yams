@@ -9,7 +9,8 @@ including enums, game-specific data structures, and configuration models.
 from .enums import (
     EventType,
     TargetState,
-    GameState,
+    GameState,  # Re-exported from games.common.game_state for backward compatibility
+    DuckHuntInternalState,
     EffectType,
 )
 
@@ -30,13 +31,15 @@ from .game_mode_config import (
     SpawningConfig,
     TargetConfig,
     TrajectoryConfig,
+    PacingConfig,
 )
 
 __all__ = [
     # Enums
     "EventType",
     "TargetState",
-    "GameState",
+    "GameState",  # Common GameState from games.common
+    "DuckHuntInternalState",  # DuckHunt-specific internal states
     "EffectType",
     # Game models
     "TargetData",
@@ -51,4 +54,5 @@ __all__ = [
     "SpawningConfig",
     "TargetConfig",
     "TrajectoryConfig",
+    "PacingConfig",
 ]

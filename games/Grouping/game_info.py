@@ -31,6 +31,12 @@ ARGUMENTS = [
         'default': None,
         'help': 'Minimum target radius (smallest possible)'
     },
+    {
+        'name': '--palette',
+        'type': str,
+        'default': None,
+        'help': 'Test palette: full, bw, warm, cool, limited, orange_dart'
+    },
 ]
 
 
@@ -54,6 +60,7 @@ def get_game_mode(**kwargs):
         'method': 'method',
         'initial_radius': 'initial_radius',
         'min_radius': 'min_radius',
+        'palette': 'palette_name',
     }
 
     constructor_kwargs = {}

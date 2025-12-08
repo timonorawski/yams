@@ -21,7 +21,7 @@ from game.target import Target
 from game.scoring import ScoreTracker
 from game.feedback import FeedbackManager
 from input.input_event import InputEvent
-from models import Vector2D, TargetData, TargetState, GameState
+from models import Vector2D, TargetData, TargetState, GameState, DuckHuntInternalState
 from config import (
     SCREEN_WIDTH,
     SCREEN_HEIGHT,
@@ -65,7 +65,7 @@ class ClassicMode(GameMode):
         >>> mode = ClassicMode()
         >>> mode.update(0.016)
         >>> mode.state
-        <GameState.PLAYING: 'playing'>
+        <DuckHuntInternalState.PLAYING: 'playing'>
         >>> mode.get_score()
         0
     """
@@ -76,6 +76,11 @@ class ClassicMode(GameMode):
         target_score: int = None,
         initial_speed: float = CLASSIC_INITIAL_SPEED,
         audio_enabled: bool = True,
+        pacing: str = None,
+        quiver_size: int = None,
+        retrieval_pause: float = None,
+        palette_name: str = None,
+        color_palette: list = None,
     ):
         """Initialize Classic Mode.
 
@@ -84,12 +89,49 @@ class ClassicMode(GameMode):
             target_score: Score needed to win (None = endless mode)
             initial_speed: Starting speed for targets
             audio_enabled: Whether to enable audio feedback (default: True)
+            pacing: Pacing preset ('archery', 'throwing', 'blaster')
+            quiver_size: Shots per round (None/0 = unlimited)
+            retrieval_pause: Seconds for retrieval (0 = manual)
+            palette_name: Test palette name for standalone mode
+            color_palette: Explicit color list (from AMS)
         """
         super().__init__()
+
+        # Import common modules
+        import sys
+        import os
+        parent_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+        if parent_dir not in sys.path:
+            sys.path.insert(0, parent_dir)
+
+        from games.common.palette import GamePalette
+        from games.common.quiver import create_quiver
+        from games.common.pacing import scale_for_pacing
+
+        # Initialize palette
+        if color_palette:
+            self._palette = GamePalette(colors=color_palette, palette_name='custom')
+        elif palette_name:
+            self._palette = GamePalette(palette_name=palette_name)
+        else:
+            self._palette = GamePalette()  # Default palette
+
+        # Initialize quiver state
+        self._quiver = create_quiver(quiver_size, retrieval_pause)
+
+        # Apply pacing adjustments if provided
+        self._pacing = pacing
+        if pacing:
+            # Scale spawn rate based on pacing
+            spawn_rate = scale_for_pacing(TARGET_SPAWN_RATE, pacing)
+        else:
+            spawn_rate = TARGET_SPAWN_RATE
+
         self._score_tracker = ScoreTracker()
         self.feedback = FeedbackManager(audio_enabled=audio_enabled)
         self._current_speed = initial_speed
-        self._spawn_timer = TARGET_SPAWN_RATE  # Initialize to full timer
+        self._spawn_timer = spawn_rate  # Initialize to full timer
+        self._spawn_rate = spawn_rate  # Store base spawn rate
         self._max_misses = max_misses
         self._target_score = target_score
         self._hit_target_timers = {}  # Track how long hit targets have been on screen
@@ -104,7 +146,15 @@ class ClassicMode(GameMode):
         Args:
             dt: Time delta in seconds since last frame
         """
-        if self._state != GameState.PLAYING:
+        # Handle retrieval state
+        if self._state == DuckHuntInternalState.WAITING_FOR_RELOAD:
+            if self._quiver and self._quiver.update_retrieval(dt):
+                # Retrieval complete
+                self._quiver.end_retrieval()
+                self._state = DuckHuntInternalState.PLAYING
+            return
+
+        if self._state != DuckHuntInternalState.PLAYING:
             return
 
         # Update all targets
@@ -141,11 +191,12 @@ class ClassicMode(GameMode):
         self._targets = updated_targets
         self._hit_target_timers = hit_timers_to_keep
 
-        # Update spawn timer
-        self._spawn_timer -= dt
-        if self._spawn_timer <= 0:
-            self._spawn_target()
-            self._spawn_timer = TARGET_SPAWN_RATE
+        # Update spawn timer (only if not in retrieval)
+        if self._state == DuckHuntInternalState.PLAYING:
+            self._spawn_timer -= dt
+            if self._spawn_timer <= 0:
+                self._spawn_target()
+                self._spawn_timer = self._spawn_rate
 
         # Update feedback effects
         self.feedback.update(dt)
@@ -163,10 +214,17 @@ class ClassicMode(GameMode):
         Args:
             events: List of InputEvent instances to process
         """
-        if self._state != GameState.PLAYING:
+        if self._state != DuckHuntInternalState.PLAYING:
             return
 
         for event in events:
+            # Check quiver before allowing shot
+            if self._quiver:
+                if self._quiver.use_shot():
+                    # Quiver empty - enter retrieval state
+                    self._quiver.start_retrieval()
+                    self._state = DuckHuntInternalState.WAITING_FOR_RELOAD
+                    return
             hit_detected = False
 
             # Check all targets for hit
@@ -214,9 +272,13 @@ class ClassicMode(GameMode):
         Args:
             screen: Pygame surface to draw on
         """
-        # Render all targets
+        # Render all targets with palette colors
+        target_color = self._palette.random_target_color()
         for target in self._targets:
-            target.render(screen)
+            if target.data.state == TargetState.ALIVE:
+                target.render(screen, color=target_color)
+            else:
+                target.render(screen)  # Use default color for hit targets
 
         # Render feedback effects (after targets, before score)
         self.feedback.render(screen)
@@ -224,8 +286,16 @@ class ClassicMode(GameMode):
         # Render score
         self._score_tracker.render(screen)
 
+        # Render quiver status if active
+        if self._quiver and not self._quiver.is_unlimited:
+            self._render_quiver_status(screen)
+
+        # Render retrieval message if in retrieval state
+        if self._state == DuckHuntInternalState.WAITING_FOR_RELOAD:
+            self._render_retrieval_message(screen)
+
         # Render game over message if applicable
-        if self._state == GameState.GAME_OVER:
+        if self._state == DuckHuntInternalState.GAME_OVER:
             self._render_game_over(screen)
 
     def get_score(self) -> int:
@@ -293,12 +363,12 @@ class ClassicMode(GameMode):
 
         # Check win condition
         if self._target_score is not None and stats.hits >= self._target_score:
-            self._state = GameState.GAME_OVER
+            self._state = DuckHuntInternalState.GAME_OVER
             return
 
         # Check lose condition
         if self._max_misses is not None and stats.misses >= self._max_misses:
-            self._state = GameState.GAME_OVER
+            self._state = DuckHuntInternalState.GAME_OVER
             return
 
     def _render_game_over(self, screen: pygame.Surface) -> None:
@@ -347,3 +417,79 @@ class ClassicMode(GameMode):
             center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 + 70)
         )
         screen.blit(accuracy_surface, accuracy_rect)
+
+    def _render_quiver_status(self, screen: pygame.Surface) -> None:
+        """Render quiver/ammo status display.
+
+        Args:
+            screen: Pygame surface to draw on
+        """
+        if not self._quiver:
+            return
+
+        try:
+            font = pygame.font.Font(None, Fonts.MEDIUM)
+        except Exception:
+            font = pygame.font.SysFont("monospace", Fonts.MEDIUM)
+
+        text = self._quiver.get_display_text()
+        text_surface = font.render(text, True, Colors.WHITE)
+        text_rect = text_surface.get_rect(topright=(SCREEN_WIDTH - 20, 70))
+        screen.blit(text_surface, text_rect)
+
+    def _render_retrieval_message(self, screen: pygame.Surface) -> None:
+        """Render retrieval/reload message overlay.
+
+        Args:
+            screen: Pygame surface to draw on
+        """
+        if not self._quiver:
+            return
+
+        # Create semi-transparent overlay
+        overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
+        overlay.set_alpha(180)
+        overlay.fill(Colors.BLACK[:3])
+        screen.blit(overlay, (0, 0))
+
+        # Render retrieval message
+        try:
+            font = pygame.font.Font(None, Fonts.LARGE)
+        except Exception:
+            font = pygame.font.SysFont("monospace", Fonts.LARGE)
+
+        text = self._quiver.get_retrieval_text()
+        text_surface = font.render(text, True, Colors.YELLOW)
+        text_rect = text_surface.get_rect(
+            center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2)
+        )
+        screen.blit(text_surface, text_rect)
+
+    def set_palette(self, palette_name: str) -> bool:
+        """
+        Switch to a named test palette.
+
+        Args:
+            palette_name: Name from TEST_PALETTES
+
+        Returns:
+            True if palette found and switched
+        """
+        return self._palette.set_palette(palette_name)
+
+    def cycle_palette(self) -> str:
+        """
+        Cycle to next test palette (for standalone testing).
+
+        Returns:
+            Name of new palette
+        """
+        return self._palette.cycle_palette()
+
+    def manual_retrieval_ready(self) -> None:
+        """
+        Signal that manual retrieval is complete (SPACE key in standalone mode).
+        """
+        if self._quiver and self._state == DuckHuntInternalState.WAITING_FOR_RELOAD:
+            self._quiver.end_retrieval()
+            self._state = DuckHuntInternalState.PLAYING

@@ -95,27 +95,37 @@ def get_game_mode(**kwargs):
 
 ### 5. Create game_mode.py
 
-Your game mode must implement these methods:
+Your game mode must use the common `GameState` enum and implement the required interface:
 
 ```python
-from enum import Enum
 from typing import List
 import pygame
 
-class GameState(Enum):
-    PLAYING = "playing"
-    GAME_OVER = "game_over"
-    WON = "won"  # Optional
+from games.common import GameState  # REQUIRED: Use the common GameState
+from games.common.palette import GamePalette  # Optional: For CV-compatible colors
+
 
 class MyGameMode:
-    def __init__(self, **kwargs):
-        self._state = GameState.PLAYING
+    """Your game mode class.
+
+    Must implement: state property, get_score(), handle_input(), update(), render()
+    """
+
+    def __init__(
+        self,
+        color_palette=None,      # AMS-provided colors for CV compatibility
+        palette_name=None,       # Test palette name for standalone mode
+        **kwargs,
+    ):
+        self._game_state = GameState.PLAYING  # Use common GameState
         self._score = 0
+        self._palette = GamePalette(colors=color_palette, palette_name=palette_name)
         # Initialize your game state
 
     @property
     def state(self) -> GameState:
-        return self._state
+        """Return current state using common GameState enum."""
+        return self._game_state
 
     def get_score(self) -> int:
         return self._score
@@ -132,9 +142,16 @@ class MyGameMode:
 
     def render(self, screen: pygame.Surface) -> None:
         """Draw game to screen."""
-        screen.fill((0, 0, 0))  # Clear screen
-        # Draw your game elements
+        bg_color = self._palette.get_background_color()
+        screen.fill(bg_color)
+        # Draw your game elements using self._palette colors
+
+    # Optional: Palette cycling for standalone testing
+    def cycle_palette(self) -> str:
+        return self._palette.cycle_palette()
 ```
+
+**Important:** All games MUST use `from games.common import GameState`. Do NOT define your own GameState enum.
 
 ### 6. Create config.py
 
@@ -201,7 +218,8 @@ _root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 if _root not in sys.path:
     sys.path.insert(0, _root)
 
-from games.MyGame.game_mode import MyGameMode, GameState
+from games.common import GameState  # Use common GameState
+from games.MyGame.game_mode import MyGameMode
 from games.MyGame.input.input_manager import InputManager
 from games.MyGame.input.sources.mouse import MouseInputSource
 from games.MyGame.config import SCREEN_WIDTH, SCREEN_HEIGHT
@@ -292,16 +310,53 @@ class InputEvent:
     event_type: EventType  # HIT or MISS
 ```
 
-### GameState Enum
+### GameState Enum (Common)
 
-Your game needs at minimum:
+**All games MUST use the common GameState enum.** Do NOT define your own.
+
 ```python
+from games.common import GameState
+
+# Available states:
 class GameState(Enum):
-    PLAYING = "playing"
-    GAME_OVER = "game_over"
+    PLAYING = "playing"      # Active gameplay
+    PAUSED = "paused"        # Game paused
+    RETRIEVAL = "retrieval"  # Retrieving ammo (quiver system)
+    GAME_OVER = "game_over"  # Loss condition
+    WON = "won"              # Win condition
 ```
 
-Optionally add `WON = "won"` for win conditions.
+### Internal State Pattern (Complex Games)
+
+For games with complex state machines, use an internal state enum that maps to the standard GameState:
+
+```python
+from enum import Enum, auto
+from games.common import GameState
+
+class _InternalState(Enum):
+    """Internal states specific to your game."""
+    WAITING = auto()
+    ACTIVE = auto()
+    ROUND_OVER = auto()
+    COMPLETE = auto()
+
+class MyGameMode:
+    def __init__(self):
+        self._internal_state = _InternalState.WAITING
+
+    @property
+    def state(self) -> GameState:
+        """Map internal state to standard GameState."""
+        if self._internal_state == _InternalState.COMPLETE:
+            return GameState.WON
+        elif self._internal_state == _InternalState.ROUND_OVER:
+            return GameState.GAME_OVER
+        else:
+            return GameState.PLAYING
+```
+
+This pattern allows rich internal state management while presenting a consistent interface to the AMS platform.
 
 ## Adding CLI Arguments
 
@@ -472,8 +527,9 @@ Built-in sources:
 Study these existing games for reference:
 
 - **BalloonPop** (`games/BalloonPop/`) - Simple, clean example
-- **Grouping** (`games/Grouping/`) - Multiple game modes, precision training
-- **ManyTargets** (`games/ManyTargets/`) - Target field clearance, configurable modes
+- **Containment** (`games/Containment/`) - Internal state pattern, physics, deflector geometry
+- **Grouping** (`games/Grouping/`) - Multiple game modes, precision training, endless game
+- **ManyTargets** (`games/ManyTargets/`) - Complex internal state machine, target field clearance
 - **DuckHunt** (`games/DuckHunt/`) - More complex with modes and trajectories
 
 ## Troubleshooting

@@ -8,6 +8,7 @@ Create a .env.local file to override settings without modifying .env.
 import os
 from pathlib import Path
 from typing import Tuple
+from dataclasses import dataclass
 
 # Find the game directory (where this config.py lives)
 GAME_DIR = Path(__file__).parent
@@ -92,3 +93,45 @@ BALLOON_COLORS: list[Tuple[int, int, int]] = [
 
 BACKGROUND_COLOR: Tuple[int, int, int] = (135, 206, 235)  # Sky blue
 POP_EFFECT_COLOR: Tuple[int, int, int] = (255, 255, 255)  # White flash
+
+# Pacing presets for different device types
+@dataclass
+class PacingPreset:
+    """Pacing configuration for different input device speeds."""
+    name: str
+    spawn_interval: float      # Seconds between spawns
+    float_speed_min: float     # Min rise speed (pixels/sec)
+    float_speed_max: float     # Max rise speed (pixels/sec)
+    max_balloons: int          # Max simultaneous balloons
+    balloon_size_min: int      # Smaller = harder
+    balloon_size_max: int
+
+PACING_PRESETS = {
+    'archery': PacingPreset(
+        name='archery',
+        spawn_interval=4.0,      # Slow spawning
+        float_speed_min=30,      # Slow rise
+        float_speed_max=60,
+        max_balloons=3,
+        balloon_size_min=50,     # Larger targets
+        balloon_size_max=90,
+    ),
+    'throwing': PacingPreset(
+        name='throwing',
+        spawn_interval=1.5,
+        float_speed_min=50,
+        float_speed_max=150,
+        max_balloons=6,
+        balloon_size_min=40,
+        balloon_size_max=80,
+    ),
+    'blaster': PacingPreset(
+        name='blaster',
+        spawn_interval=0.6,
+        float_speed_min=80,
+        float_speed_max=200,
+        max_balloons=10,
+        balloon_size_min=30,
+        balloon_size_max=60,
+    ),
+}

@@ -99,6 +99,14 @@ ARGUMENTS = [
         'default': 30,
         'help': 'Seconds for retrieval between rounds (0 = manual ready)'
     },
+
+    # Palette (for testing CV compatibility)
+    {
+        'name': '--palette',
+        'type': str,
+        'default': None,
+        'help': 'Test palette: full, bw, warm, cool, limited, orange_dart'
+    },
 ]
 
 
@@ -110,5 +118,9 @@ def get_game_mode(**kwargs):
     mode = kwargs.get('mode', 'classic')
     if mode == 'zen':
         kwargs['no_bombs'] = True
+
+    # Map palette arg to palette_name
+    if 'palette' in kwargs and kwargs['palette']:
+        kwargs['palette_name'] = kwargs.pop('palette')
 
     return FruitSliceMode(**kwargs)

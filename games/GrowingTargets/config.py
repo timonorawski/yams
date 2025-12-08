@@ -5,6 +5,7 @@ Loads settings from .env file with sensible defaults.
 """
 import os
 from pathlib import Path
+from dataclasses import dataclass
 
 from dotenv import load_dotenv
 
@@ -65,3 +66,43 @@ TARGET_FILL_LARGE = (255, 100, 100)  # Red when large (low value)
 HIT_FLASH_COLOR = (255, 255, 255)
 MISS_COLOR = (255, 60, 60)
 EXPIRE_COLOR = (100, 100, 100)
+
+
+# Pacing Presets for Multi-Device Support
+@dataclass
+class PacingPreset:
+    """Pacing preset for device-aware timing."""
+    name: str
+    spawn_interval: float
+    growth_rate: float         # Slower = more time to aim
+    max_targets: int
+    start_size: int
+    max_size: int              # Larger max = longer growth window
+
+
+PACING_PRESETS = {
+    'archery': PacingPreset(
+        name='archery',
+        spawn_interval=5.0,
+        growth_rate=15.0,       # Very slow growth
+        max_targets=2,
+        start_size=15,
+        max_size=150,           # Long growth window
+    ),
+    'throwing': PacingPreset(
+        name='throwing',
+        spawn_interval=1.5,
+        growth_rate=40.0,
+        max_targets=5,
+        start_size=10,
+        max_size=120,
+    ),
+    'blaster': PacingPreset(
+        name='blaster',
+        spawn_interval=0.5,
+        growth_rate=80.0,       # Fast growth
+        max_targets=8,
+        start_size=8,
+        max_size=100,
+    ),
+}

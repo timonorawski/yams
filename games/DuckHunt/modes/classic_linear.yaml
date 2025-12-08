@@ -17,6 +17,14 @@ trajectory:
   depth_direction: "away"  # Required field (but no depth scaling used for linear)
   curvature_factor: 0.0  # Straight lines only
 
+# Pacing configuration (optional - for multi-device support)
+pacing:
+  spawn_interval: 2.0      # Base seconds between target spawns
+  target_lifetime: 5.0     # Seconds before target escapes
+  max_active: 3            # Max simultaneous targets
+  combo_window: 5.0        # Seconds before combo resets
+  combo_threshold: 5       # Hits needed to start combo
+
 # Spawn configuration
 spawning:
   spawn_sides: ["left", "right"]  # Horizontal spawn from edges

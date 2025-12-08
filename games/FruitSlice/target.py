@@ -140,6 +140,7 @@ def create_arcing_target(
     radius: float,
     arc_duration: float,
     from_left: Optional[bool] = None,
+    fruit_colors: Optional[List[Tuple[int, int, int]]] = None,
 ) -> ArcingTarget:
     """Create a target with calculated arc parameters.
 
@@ -153,6 +154,7 @@ def create_arcing_target(
         radius: Target radius
         arc_duration: Approximate time target should be on screen
         from_left: If True, spawn from left. If None, random.
+        fruit_colors: Optional list of colors for fruit targets (from palette)
 
     Returns:
         Configured ArcingTarget
@@ -200,7 +202,9 @@ def create_arcing_target(
         color = config.BOMB_COLOR
         points = 0
     else:  # FRUIT
-        color = random.choice(config.FRUIT_COLORS)
+        # Use provided palette colors if available, otherwise fall back to config
+        available_colors = fruit_colors if fruit_colors else config.FRUIT_COLORS
+        color = random.choice(available_colors)
         points = config.BASE_FRUIT_POINTS
 
     return ArcingTarget(

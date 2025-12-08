@@ -51,6 +51,7 @@ from .duckhunt import (
     EventType,
     TargetState,
     GameState,
+    DuckHuntInternalState,
     EffectType,
     TargetData,
     ScoreData,
@@ -63,6 +64,7 @@ from .duckhunt import (
     SpawningConfig,
     TargetConfig,
     TrajectoryConfig,
+    PacingConfig,
 )
 
 # Top-level exports - most commonly used models
@@ -87,6 +89,7 @@ __all__ = [
     "EventType",
     "TargetState",
     "GameState",
+    "DuckHuntInternalState",
     "EffectType",
     "TargetData",
     "ScoreData",
@@ -99,4 +102,5 @@ __all__ = [
     "SpawningConfig",
     "TargetConfig",
     "TrajectoryConfig",
+    "PacingConfig",
 ]

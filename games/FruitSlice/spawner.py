@@ -9,9 +9,14 @@ import time
 from dataclasses import dataclass
 from typing import List, Optional
 
+from typing import Tuple
+
 from games.FruitSlice import config
 from games.FruitSlice.config import PacingPreset, PACING_PRESETS
 from games.FruitSlice.target import ArcingTarget, TargetType, create_arcing_target
+
+# Type alias
+Color = Tuple[int, int, int]
 
 
 @dataclass
@@ -40,6 +45,7 @@ class TargetSpawner:
         target_size: Optional[int] = None,
         bomb_ratio: Optional[float] = None,
         no_bombs: bool = False,
+        fruit_colors: Optional[List[Color]] = None,
     ):
         """Initialize the spawner.
 
@@ -53,10 +59,12 @@ class TargetSpawner:
             target_size: Override target radius
             bomb_ratio: Override bomb spawn ratio
             no_bombs: If True, disable bombs entirely
+            fruit_colors: Optional list of colors for fruit targets (from palette)
         """
         self.screen_width = screen_width
         self.screen_height = screen_height
         self.no_bombs = no_bombs
+        self.fruit_colors = fruit_colors
 
         # Get base preset
         preset = PACING_PRESETS.get(pacing, PACING_PRESETS['throwing'])
@@ -158,6 +166,7 @@ class TargetSpawner:
             target_type=target_type,
             radius=self.state.target_size,
             arc_duration=arc_duration,
+            fruit_colors=self.fruit_colors,
         )
 
         return target
@@ -176,6 +185,10 @@ class TargetSpawner:
 
         # Regular fruit
         return TargetType.FRUIT
+
+    def set_fruit_colors(self, colors: List[Color]) -> None:
+        """Update fruit colors (for palette switching)."""
+        self.fruit_colors = colors
 
     def spawn_batch(self, count: int) -> List[ArcingTarget]:
         """Spawn multiple targets at once (for quiver mode).

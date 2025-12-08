@@ -12,17 +12,18 @@ from typing import List, Optional
 import pygame
 
 from models import Vector2D
+from games.common import GameState
 from games.Grouping.input.input_event import InputEvent
 from games.Grouping import config
 from games.Grouping.grouping_round import GroupingRound, GroupingMethod
+from games.common.palette import GamePalette
 
 
-class GameState(Enum):
-    """Game states for Grouping."""
-    WAITING = "waiting"      # Waiting for first shot to start round
-    PLAYING = "playing"      # Active round in progress
+class _InternalState(Enum):
+    """Internal states for Grouping game flow."""
+    WAITING = "waiting"        # Waiting for first shot to start round
+    PLAYING = "playing"        # Active round in progress
     ROUND_OVER = "round_over"  # Round ended, showing results
-    GAME_OVER = "game_over"  # Session complete (not used in endless mode)
 
 
 class GroupingMode:
@@ -44,6 +45,9 @@ class GroupingMode:
         min_radius: Optional[int] = None,
         group_margin: Optional[float] = None,
         method: Optional[str] = None,
+        color_palette: Optional[List[tuple]] = None,
+        palette_name: Optional[str] = None,
+        **kwargs,
     ):
         """Initialize the grouping game.
 
@@ -52,6 +56,8 @@ class GroupingMode:
             min_radius: Minimum target radius
             group_margin: Multiplier for group radius calculation
             method: Grouping method - 'centroid' or 'fixed_center'
+            color_palette: Optional list of RGB colors from AMS calibration
+            palette_name: Optional test palette name (for standalone mode)
         """
         self._initial_radius = initial_radius or config.INITIAL_TARGET_RADIUS
         self._min_radius = min_radius or config.MIN_TARGET_RADIUS
@@ -67,7 +73,10 @@ class GroupingMode:
         else:
             self._method = GroupingMethod.CENTROID
 
-        self._state = GameState.WAITING
+        # Palette settings
+        self._palette = GamePalette(colors=color_palette, palette_name=palette_name)
+
+        self._internal_state = _InternalState.WAITING
         self._current_round: Optional[GroupingRound] = None
         self._session_best: Optional[float] = None
         self._rounds_completed = 0
@@ -89,7 +98,9 @@ class GroupingMode:
     @property
     def state(self) -> GameState:
         """Current game state."""
-        return self._state
+        # Map internal state to standard GameState
+        # Grouping is endless, so it's always PLAYING unless explicitly ended
+        return GameState.PLAYING
 
     def get_score(self) -> int:
         """Get current score (best group diameter in pixels, lower is better).
@@ -123,7 +134,7 @@ class GroupingMode:
         self._display_center = center
         self._display_radius = float(self._initial_radius)
 
-        self._state = GameState.WAITING
+        self._internal_state = _InternalState.WAITING
 
     def handle_input(self, events: List[InputEvent]) -> None:
         """Process input events.
@@ -139,14 +150,14 @@ class GroupingMode:
         if self._current_round is None:
             return
 
-        if self._state == GameState.WAITING:
+        if self._internal_state == _InternalState.WAITING:
             # First hit starts the round
             if self._current_round.is_inside_target(position):
                 self._current_round.add_hit(position)
-                self._state = GameState.PLAYING
+                self._internal_state = _InternalState.PLAYING
                 self._update_target()
 
-        elif self._state == GameState.PLAYING:
+        elif self._internal_state == _InternalState.PLAYING:
             if self._current_round.is_inside_target(position):
                 # Successful hit - record and recalculate
                 self._current_round.add_hit(position)
@@ -156,7 +167,7 @@ class GroupingMode:
                 # Miss - end round
                 self._end_round(position)
 
-        elif self._state == GameState.ROUND_OVER:
+        elif self._internal_state == _InternalState.ROUND_OVER:
             # Any click starts new round
             self._start_new_round()
 
@@ -182,7 +193,7 @@ class GroupingMode:
             return
 
         self._current_round.end_round(miss_position)
-        self._state = GameState.ROUND_OVER
+        self._internal_state = _InternalState.ROUND_OVER
         self._rounds_completed += 1
 
         # Update session best (smaller is better)
@@ -218,8 +229,9 @@ class GroupingMode:
         # Update screen dimensions
         self._screen_width, self._screen_height = screen.get_size()
 
-        # Clear screen
-        screen.fill(config.BACKGROUND_COLOR)
+        # Clear screen - use palette background if available
+        bg_color = self._palette.get_background_color() if len(self._palette.colors) > 0 else config.BACKGROUND_COLOR
+        screen.fill(bg_color)
 
         if self._current_round is None or self._display_center is None:
             return
@@ -229,7 +241,7 @@ class GroupingMode:
         radius = int(self._display_radius)
 
         # Draw ghost ring (initial size)
-        if config.SHOW_GHOST_RING and self._state != GameState.WAITING:
+        if config.SHOW_GHOST_RING and self._internal_state != _InternalState.WAITING:
             pygame.draw.circle(
                 screen,
                 config.GHOST_RING_COLOR,
@@ -239,9 +251,9 @@ class GroupingMode:
                 2
             )
 
-        # Draw target ring
-        target_color = config.TARGET_COLOR
-        if self._state == GameState.ROUND_OVER:
+        # Draw target ring - use palette UI color
+        target_color = self._palette.get_ui_color() if len(self._palette.colors) > 0 else config.TARGET_COLOR
+        if self._internal_state == _InternalState.ROUND_OVER:
             target_color = config.MISS_MARKER_COLOR
         pygame.draw.circle(screen, target_color, (center_x, center_y), radius, 3)
 
@@ -305,13 +317,13 @@ class GroupingMode:
         screen.blit(mode_text, (self._screen_width - mode_text.get_width() - 20, 20))
 
         # Phase description
-        if self._current_round and self._state != GameState.ROUND_OVER:
+        if self._current_round and self._internal_state != _InternalState.ROUND_OVER:
             phase_text = self._current_round.phase_description
-            phase_color = (200, 200, 100) if self._state == GameState.WAITING else (100, 255, 100)
+            phase_color = (200, 200, 100) if self._internal_state == _InternalState.WAITING else (100, 255, 100)
             text = font_medium.render(phase_text, True, phase_color)
             screen.blit(text, (x_offset, y_offset))
             y_offset += 40
-        elif self._state == GameState.ROUND_OVER:
+        elif self._internal_state == _InternalState.ROUND_OVER:
             text = font_medium.render("ROUND OVER - Click to continue", True, (255, 150, 150))
             screen.blit(text, (x_offset, y_offset))
             y_offset += 40
@@ -350,8 +362,34 @@ class GroupingMode:
         screen.blit(text, (x_offset, y_offset))
 
         # Instructions at bottom
-        if self._state == GameState.ROUND_OVER:
+        if self._internal_state == _InternalState.ROUND_OVER:
             inst_text = "Click anywhere or press R to start new round"
             text = font_small.render(inst_text, True, (150, 150, 150))
             text_rect = text.get_rect(center=(self._screen_width // 2, self._screen_height - 30))
             screen.blit(text, text_rect)
+
+    def set_palette(self, palette_name: str) -> str:
+        """Switch to a named test palette.
+
+        Args:
+            palette_name: Name from TEST_PALETTES
+
+        Returns:
+            New palette name
+        """
+        if self._palette.set_palette(palette_name):
+            return palette_name
+        return self._palette.name
+
+    def cycle_palette(self) -> str:
+        """Cycle to next test palette.
+
+        Returns:
+            Name of new palette
+        """
+        return self._palette.cycle_palette()
+
+    @property
+    def palette_name(self) -> str:
+        """Current palette name."""
+        return self._palette.name

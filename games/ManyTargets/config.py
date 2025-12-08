@@ -58,6 +58,10 @@ DEFAULT_TIME_LIMIT = _get_int('DEFAULT_TIME_LIMIT', 60)
 ANIMATION_DURATION = _get_float('ANIMATION_DURATION', 0.15)
 SHOW_HIT_MARKERS = _get_bool('SHOW_HIT_MARKERS', True)
 
+# Quiver/ammo defaults
+DEFAULT_QUIVER_SIZE = 0  # 0 = unlimited
+DEFAULT_RETRIEVAL_PAUSE = 30  # seconds (0 = manual ready with SPACE)
+
 # Colors
 BACKGROUND_COLOR = (30, 30, 35)
 TARGET_COLOR = (255, 255, 255)

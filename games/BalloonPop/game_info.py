@@ -14,10 +14,35 @@ AUTHOR = "AMS Team"
 # CLI argument definitions (optional, for ams_game.py)
 ARGUMENTS = [
     {
+        'name': '--pacing',
+        'type': str,
+        'default': 'throwing',
+        'choices': ['archery', 'throwing', 'blaster'],
+        'help': 'Device speed preset (archery=slow, throwing=medium, blaster=fast)'
+    },
+    {
+        'name': '--quiver-size',
+        'type': int,
+        'default': None,
+        'help': 'Shots per round (0=unlimited)'
+    },
+    {
+        'name': '--retrieval-pause',
+        'type': float,
+        'default': None,
+        'help': 'Retrieval pause in seconds (0=manual ready with SPACE)'
+    },
+    {
+        'name': '--palette',
+        'type': str,
+        'default': None,
+        'help': 'Test palette name (full, bw, warm, cool, mono_red, etc.)'
+    },
+    {
         'name': '--spawn-rate',
         'type': float,
         'default': None,
-        'help': 'Balloon spawn rate in seconds'
+        'help': 'Balloon spawn rate in seconds (overrides pacing preset)'
     },
     {
         'name': '--max-escaped',
@@ -40,7 +65,11 @@ def get_game_mode(**kwargs):
 
     Args:
         **kwargs: Game configuration options
-            - spawn_rate: Seconds between spawns
+            - pacing: Device speed preset (archery/throwing/blaster)
+            - quiver_size: Shots per round
+            - retrieval_pause: Retrieval pause in seconds
+            - palette: Test palette name
+            - spawn_rate: Seconds between spawns (overrides pacing)
             - max_escaped: Max escaped before game over
             - target_pops: Pops to win (0=endless)
 
@@ -54,6 +83,10 @@ def get_game_mode(**kwargs):
 
     # Map CLI arg names to constructor params
     param_map = {
+        'pacing': 'pacing',
+        'quiver_size': 'quiver_size',
+        'retrieval_pause': 'retrieval_pause',
+        'palette': 'color_palette',
         'spawn_rate': 'spawn_rate',
         'max_escaped': 'max_escaped',
         'target_pops': 'target_pops',

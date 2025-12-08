@@ -31,6 +31,37 @@ class TrajectoryConfig(BaseModel):
     )
 
 
+class PacingConfig(BaseModel):
+    """
+    Pacing configuration for multi-device support.
+
+    Defines timing parameters that can be adjusted based on
+    the projectile device speed (archery/throwing/blaster).
+    """
+    model_config = {"frozen": True}
+
+    spawn_interval: float = Field(
+        description="Base seconds between target spawns",
+        gt=0.0
+    )
+    target_lifetime: float = Field(
+        description="Seconds before target escapes",
+        gt=0.0
+    )
+    max_active: int = Field(
+        description="Maximum simultaneous targets",
+        ge=1
+    )
+    combo_window: float = Field(
+        description="Seconds before combo resets",
+        gt=0.0
+    )
+    combo_threshold: int = Field(
+        description="Hits needed to start combo",
+        ge=1
+    )
+
+
 class SpawningConfig(BaseModel):
     """
     Configuration for target spawning behavior.
@@ -215,6 +246,10 @@ class GameModeConfig(BaseModel):
     )
     theme: str = Field(
         description="Visual theme identifier (e.g., 'classic', 'modern')"
+    )
+    pacing: Optional[PacingConfig] = Field(
+        default=None,
+        description="Optional pacing configuration for multi-device support"
     )
     trajectory: TrajectoryConfig = Field(
         description="Default trajectory configuration"

@@ -5,25 +5,28 @@ Field clearance game - hit all targets while avoiding misses.
 Inspired by the "egg carton" training method.
 """
 import time
-from enum import Enum
+from enum import Enum, auto
 from typing import List, Optional
 
 import pygame
 
 from models import Vector2D
+from games.common import GameState
 from games.common.input import InputEvent
+from games.common.palette import GamePalette
+from games.common.quiver import create_quiver, QuiverState
 from games.ManyTargets import config
 from games.ManyTargets.target_field import TargetField, MissMode, HitResult
 
 
-class GameState(Enum):
-    """Game states for ManyTargets."""
-    READY = "ready"          # Showing targets, waiting for first shot
-    PLAYING = "playing"      # Active round in progress
-    COMPLETE = "complete"    # All targets hit
-    FAILED = "failed"        # Strict mode miss
-    TIMEOUT = "timeout"      # Time ran out
-    GAME_OVER = "game_over"  # Session complete (for compatibility)
+class _InternalState(Enum):
+    """Internal states for ManyTargets game flow."""
+    READY = auto()           # Showing targets, waiting for first shot
+    PLAYING = auto()         # Active round in progress
+    RETRIEVAL = auto()       # Paused for arrow/dart retrieval
+    COMPLETE = auto()        # All targets hit (win)
+    FAILED = auto()          # Strict mode miss (loss)
+    TIMEOUT = auto()         # Time ran out (loss)
 
 
 class ManyTargetsMode:
@@ -48,6 +51,10 @@ class ManyTargetsMode:
         shrink_rate: Optional[float] = None,
         min_size: Optional[int] = None,
         spacing: Optional[float] = None,
+        quiver_size: Optional[int] = None,
+        retrieval_pause: Optional[int] = None,
+        palette: Optional[str] = None,
+        **kwargs,  # Accept any additional args
     ):
         """Initialize the ManyTargets game.
 
@@ -61,6 +68,9 @@ class ManyTargetsMode:
             shrink_rate: Size multiplier per hit in progressive mode
             min_size: Minimum target radius in progressive mode
             spacing: Minimum spacing between targets
+            quiver_size: Arrows per round before retrieval (None/0 = unlimited)
+            retrieval_pause: Seconds for retrieval pause (0 = manual with SPACE)
+            palette: Color palette name for testing
         """
         self._target_count = count or config.DEFAULT_TARGET_COUNT
         self._target_radius = self._parse_size(size)
@@ -72,10 +82,20 @@ class ManyTargetsMode:
         self._min_size = min_size or config.MIN_TARGET_SIZE
         self._spacing = spacing or config.MIN_TARGET_SPACING
 
-        self._state = GameState.READY
+        # Quiver/ammo management
+        self._quiver: Optional[QuiverState] = create_quiver(
+            quiver_size=quiver_size or config.DEFAULT_QUIVER_SIZE,
+            retrieval_pause=float(retrieval_pause) if retrieval_pause is not None else config.DEFAULT_RETRIEVAL_PAUSE
+        )
+
+        # Color palette
+        self._palette = GamePalette(palette_name=palette)
+
+        self._internal_state = _InternalState.READY
         self._field: Optional[TargetField] = None
         self._session_best: Optional[int] = None
         self._rounds_completed = 0
+        self._time_paused = 0.0  # Time spent in retrieval (don't count against timer)
 
         # Screen dimensions (set on first render)
         self._screen_width = config.SCREEN_WIDTH
@@ -104,14 +124,42 @@ class ManyTargetsMode:
 
     @property
     def state(self) -> GameState:
-        """Current game state."""
-        return self._state
+        """Current game state (mapped to standard GameState)."""
+        if self._internal_state == _InternalState.RETRIEVAL:
+            return GameState.RETRIEVAL
+        elif self._internal_state == _InternalState.COMPLETE:
+            return GameState.WON
+        elif self._internal_state in (_InternalState.FAILED, _InternalState.TIMEOUT):
+            return GameState.GAME_OVER
+        else:
+            return GameState.PLAYING
 
     def get_score(self) -> int:
         """Get current score."""
         if self._field is None:
             return 0
         return self._field.calculate_score()
+
+    def set_palette(self, palette_name: str) -> bool:
+        """
+        Switch to a named test palette (for P key cycling).
+
+        Args:
+            palette_name: Name from TEST_PALETTES
+
+        Returns:
+            True if palette found and switched
+        """
+        return self._palette.set_palette(palette_name)
+
+    def cycle_palette(self) -> str:
+        """
+        Cycle to next test palette (for P key).
+
+        Returns:
+            Name of new palette
+        """
+        return self._palette.cycle_palette()
 
     def _start_new_round(self) -> None:
         """Initialize a new round."""
@@ -127,7 +175,7 @@ class ManyTargetsMode:
             shrink_rate=self._shrink_rate,
             min_size=self._min_size,
         )
-        self._state = GameState.READY
+        self._internal_state = _InternalState.READY
         self._hit_animations = []
         self._miss_animations = []
 
@@ -136,20 +184,35 @@ class ManyTargetsMode:
         for event in events:
             self._handle_shot(event.position)
 
+    def handle_key(self, key: int) -> None:
+        """Handle keyboard input (called by launcher for P and SPACE).
+
+        Args:
+            key: pygame key constant
+        """
+        if key == pygame.K_SPACE and self._internal_state == _InternalState.RETRIEVAL:
+            # Manual retrieval ready
+            if self._quiver and self._quiver.is_manual_retrieval:
+                self._end_retrieval()
+
     def _handle_shot(self, position: Vector2D) -> None:
         """Handle a shot at the given position."""
         if self._field is None:
             return
 
-        if self._state == GameState.READY:
+        if self._internal_state == _InternalState.RETRIEVAL:
+            # Ignore shots during retrieval
+            return
+
+        if self._internal_state == _InternalState.READY:
             # First shot starts the round
-            self._state = GameState.PLAYING
+            self._internal_state = _InternalState.PLAYING
             self._process_shot(position)
 
-        elif self._state == GameState.PLAYING:
+        elif self._internal_state == _InternalState.PLAYING:
             self._process_shot(position)
 
-        elif self._state in (GameState.COMPLETE, GameState.FAILED, GameState.TIMEOUT):
+        elif self._internal_state in (_InternalState.COMPLETE, _InternalState.FAILED, _InternalState.TIMEOUT):
             # Any click starts new round
             self._start_new_round()
 
@@ -170,11 +233,16 @@ class ManyTargetsMode:
 
             # Check if complete
             if self._field.is_complete:
-                self._end_round(GameState.COMPLETE)
+                self._end_round(_InternalState.COMPLETE)
+            # Check quiver after successful hit
+            elif self._quiver and self._quiver.use_shot():
+                self._start_retrieval()
 
         elif result == HitResult.DUPLICATE:
             # Could add duplicate animation
-            pass
+            # Still consumes a shot
+            if self._quiver and self._quiver.use_shot():
+                self._start_retrieval()
 
         elif result == HitResult.MISS:
             # Add miss animation
@@ -185,16 +253,35 @@ class ManyTargetsMode:
 
             # Check if failed (strict mode)
             if self._field.is_failed:
-                self._end_round(GameState.FAILED)
+                self._end_round(_InternalState.FAILED)
+            # Check quiver after miss
+            elif self._quiver and self._quiver.use_shot():
+                self._start_retrieval()
 
-    def _end_round(self, end_state: GameState) -> None:
+    def _start_retrieval(self) -> None:
+        """Enter retrieval pause state."""
+        self._internal_state = _InternalState.RETRIEVAL
+        if self._quiver:
+            self._quiver.start_retrieval()
+
+    def _end_retrieval(self) -> None:
+        """End retrieval pause, resume play."""
+        if self._quiver:
+            self._quiver.end_retrieval()
+        self._internal_state = _InternalState.PLAYING
+
+    def _end_round(self, end_state: _InternalState) -> None:
         """End the current round."""
         if self._field is None:
             return
 
         self._field.end_round()
-        self._state = end_state
+        self._internal_state = end_state
         self._rounds_completed += 1
+
+        # Reset quiver for new round
+        if self._quiver:
+            self._quiver.end_retrieval()
 
         # Update session best
         final_score = self._field.calculate_final_score()
@@ -206,10 +293,16 @@ class ManyTargetsMode:
         if self._field is None:
             return
 
-        # Check timeout
-        if self._state == GameState.PLAYING and self._time_limit is not None:
+        # Handle retrieval state
+        if self._internal_state == _InternalState.RETRIEVAL:
+            if self._quiver and self._quiver.update_retrieval(dt):
+                self._end_retrieval()
+            return  # Don't update timer during retrieval
+
+        # Check timeout (only during active play)
+        if self._internal_state == _InternalState.PLAYING and self._time_limit is not None:
             if self._field.duration >= self._time_limit:
-                self._end_round(GameState.TIMEOUT)
+                self._end_round(_InternalState.TIMEOUT)
 
         # Clean up old animations
         now = time.monotonic()
@@ -250,13 +343,21 @@ class ManyTargetsMode:
         if self._field is None:
             return
 
-        for target in self._field.targets:
+        # Get colors from palette
+        target_colors = self._palette.get_target_colors()
+        ui_color = self._palette.get_ui_color()
+
+        for idx, target in enumerate(self._field.targets):
             if target.hit and not self._allow_duplicates:
                 # Draw faded hit marker
                 if config.SHOW_HIT_MARKERS:
+                    # Use muted version of target color
+                    color_idx = idx % len(target_colors)
+                    base_color = target_colors[color_idx]
+                    hit_color = tuple(c // 3 for c in base_color)
                     pygame.draw.circle(
                         screen,
-                        config.HIT_MARKER_COLOR,
+                        hit_color,
                         (int(target.position.x), int(target.position.y)),
                         int(target.radius),
                         2
@@ -266,13 +367,18 @@ class ManyTargetsMode:
                 center = (int(target.position.x), int(target.position.y))
                 radius = int(target.radius)
 
-                # Fill
-                pygame.draw.circle(screen, config.TARGET_FILL_COLOR, center, radius)
+                # Use palette color for each target
+                color_idx = idx % len(target_colors)
+                target_color = target_colors[color_idx]
+
+                # Fill (darker version)
+                fill_color = tuple(c // 2 for c in target_color)
+                pygame.draw.circle(screen, fill_color, center, radius)
                 # Outline
-                pygame.draw.circle(screen, config.TARGET_COLOR, center, radius, 3)
+                pygame.draw.circle(screen, target_color, center, radius, 3)
 
                 # Center dot
-                pygame.draw.circle(screen, config.TARGET_COLOR, center, 3)
+                pygame.draw.circle(screen, ui_color, center, 3)
 
     def _render_hit_animations(self, screen: pygame.Surface) -> None:
         """Render hit feedback animations."""
@@ -350,30 +456,41 @@ class ManyTargetsMode:
             mode_parts.append("DUPLICATES")
         if self._time_limit:
             mode_parts.append(f"{self._time_limit}s")
+        if self._quiver:
+            mode_parts.append(f"Q:{self._quiver.size}")
 
         if mode_parts:
             mode_text = " | ".join(mode_parts)
             text = font_small.render(mode_text, True, (150, 150, 200))
             screen.blit(text, (self._screen_width - text.get_width() - 20, 20))
 
+        # Palette indicator (top right, second line)
+        palette_text = f"Palette: {self._palette.name} (P to cycle)"
+        text = font_small.render(palette_text, True, (100, 100, 150))
+        screen.blit(text, (self._screen_width - text.get_width() - 20, 45))
+
         # State message
-        if self._state == GameState.READY:
+        if self._internal_state == _InternalState.READY:
             text = font_medium.render("Click to start", True, (200, 200, 100))
             screen.blit(text, (x_offset, y_offset))
             y_offset += 40
-        elif self._state == GameState.PLAYING:
+        elif self._internal_state == _InternalState.PLAYING:
             text = font_medium.render("Clear the field!", True, (100, 255, 100))
             screen.blit(text, (x_offset, y_offset))
             y_offset += 40
-        elif self._state == GameState.COMPLETE:
+        elif self._internal_state == _InternalState.RETRIEVAL:
+            # Show retrieval screen
+            self._render_retrieval_screen(screen)
+            return  # Skip rest of HUD
+        elif self._internal_state == _InternalState.COMPLETE:
             text = font_medium.render("COMPLETE! Click to continue", True, (100, 255, 100))
             screen.blit(text, (x_offset, y_offset))
             y_offset += 40
-        elif self._state == GameState.FAILED:
+        elif self._internal_state == _InternalState.FAILED:
             text = font_medium.render("MISS! Round over - Click to retry", True, (255, 100, 100))
             screen.blit(text, (x_offset, y_offset))
             y_offset += 40
-        elif self._state == GameState.TIMEOUT:
+        elif self._internal_state == _InternalState.TIMEOUT:
             text = font_medium.render("TIME'S UP! Click to continue", True, (255, 200, 100))
             screen.blit(text, (x_offset, y_offset))
             y_offset += 40
@@ -385,6 +502,15 @@ class ManyTargetsMode:
         text = font_medium.render(count_text, True, (200, 200, 200))
         screen.blit(text, (x_offset, y_offset))
         y_offset += 30
+
+        # Quiver remaining (if enabled)
+        if self._quiver:
+            quiver_text = self._quiver.get_display_text()
+            if quiver_text:
+                color = (255, 200, 100) if self._quiver.remaining <= 2 else (200, 200, 200)
+                text = font_medium.render(quiver_text, True, color)
+                screen.blit(text, (x_offset, y_offset))
+                y_offset += 30
 
         # Hits and misses
         stats_text = f"Hits: {self._field.hits}  Misses: {self._field.misses}"
@@ -414,11 +540,11 @@ class ManyTargetsMode:
         screen.blit(text, (x_offset, y_offset))
 
         # Timer (if timed mode)
-        if self._time_limit and self._state == GameState.PLAYING:
+        if self._time_limit and self._internal_state == _InternalState.PLAYING:
             self._render_timer(screen)
 
         # Final score breakdown (on round end)
-        if self._state in (GameState.COMPLETE, GameState.FAILED, GameState.TIMEOUT):
+        if self._internal_state in (_InternalState.COMPLETE, _InternalState.FAILED, _InternalState.TIMEOUT):
             self._render_score_breakdown(screen)
 
     def _render_timer(self, screen: pygame.Surface) -> None:
@@ -490,3 +616,53 @@ class ManyTargetsMode:
             color = (200, 200, 200) if i < len(lines) - 1 else (255, 255, 100)
             text = font.render(line, True, color)
             screen.blit(text, (x, y + i * 25))
+
+    def _render_retrieval_screen(self, screen: pygame.Surface) -> None:
+        """Render retrieval pause screen."""
+        if not self._quiver:
+            return
+
+        # Semi-transparent overlay
+        overlay = pygame.Surface((self._screen_width, self._screen_height), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 150))
+        screen.blit(overlay, (0, 0))
+
+        font_large = pygame.font.Font(None, 72)
+        font_medium = pygame.font.Font(None, 48)
+        font_small = pygame.font.Font(None, 32)
+
+        center_x = self._screen_width // 2
+        y = self._screen_height // 2 - 100
+
+        # Title
+        text = font_large.render("RETRIEVAL PAUSE", True, (255, 200, 100))
+        screen.blit(text, (center_x - text.get_width() // 2, y))
+        y += 80
+
+        # Round info
+        text = font_medium.render(f"Round {self._quiver.current_round} Complete", True, (200, 200, 200))
+        screen.blit(text, (center_x - text.get_width() // 2, y))
+        y += 60
+
+        # Retrieval timer or ready prompt
+        retrieval_text = self._quiver.get_retrieval_text()
+        text = font_small.render(retrieval_text, True, (255, 255, 255))
+        screen.blit(text, (center_x - text.get_width() // 2, y))
+        y += 50
+
+        # Progress bar for timed retrieval
+        if not self._quiver.is_manual_retrieval:
+            bar_width = 300
+            bar_height = 20
+            bar_x = center_x - bar_width // 2
+            bar_y = y
+
+            progress = self._quiver.retrieval_timer / self._quiver.retrieval_pause
+            fill_width = int(bar_width * progress)
+
+            # Background
+            pygame.draw.rect(screen, (60, 60, 60), (bar_x, bar_y, bar_width, bar_height))
+            # Fill
+            pygame.draw.rect(screen, (100, 200, 255), (bar_x, bar_y, fill_width, bar_height))
+            # Border
+            pygame.draw.rect(screen, (150, 150, 150), (bar_x, bar_y, bar_width, bar_height), 2)

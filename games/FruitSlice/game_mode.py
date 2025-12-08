@@ -5,23 +5,17 @@ Fruit Ninja-style game with arcing targets, combo system,
 bombs to avoid, and quiver/ammo support for physical devices.
 """
 import time
-from enum import Enum
 from typing import List, Optional
 
 import pygame
 
 from models import Vector2D
+from games.common import GameState
 from games.common.input import InputEvent
+from games.common.palette import GamePalette
 from games.FruitSlice import config
 from games.FruitSlice.target import ArcingTarget, TargetType
 from games.FruitSlice.spawner import TargetSpawner
-
-
-class GameState(Enum):
-    """Game states."""
-    PLAYING = "playing"
-    RETRIEVAL = "retrieval"  # Paused for arrow/dart retrieval
-    GAME_OVER = "game_over"
 
 
 class ComboTracker:
@@ -98,6 +92,8 @@ class FruitSliceMode:
         quiver_size: Optional[int] = None,
         retrieval_pause: int = 30,
         combo_window: Optional[float] = None,
+        color_palette: Optional[List[tuple]] = None,
+        palette_name: Optional[str] = None,
         **kwargs,
     ):
         """Initialize FruitSlice game.
@@ -116,6 +112,8 @@ class FruitSliceMode:
             quiver_size: Shots per round before retrieval (None = unlimited)
             retrieval_pause: Seconds for retrieval between rounds
             combo_window: Override combo window duration
+            color_palette: Optional list of RGB colors from AMS calibration
+            palette_name: Optional test palette name (for standalone mode)
         """
         # Mode settings
         self._mode = mode
@@ -128,6 +126,9 @@ class FruitSliceMode:
         self._retrieval_pause = retrieval_pause
         self._shots_this_round = 0
         self._current_round = 1
+
+        # Palette settings
+        self._palette = GamePalette(colors=color_palette, palette_name=palette_name)
 
         # Get combo window from preset if not specified
         if combo_window is None:
@@ -198,6 +199,7 @@ class FruitSliceMode:
                 target_size=self._target_size,
                 bomb_ratio=self._bomb_ratio,
                 no_bombs=self._no_bombs,
+                fruit_colors=self._palette.get_target_colors(),
             )
 
     def _restart(self) -> None:
@@ -695,3 +697,36 @@ class FruitSliceMode:
         # Restart prompt
         text = font_small.render("Click to play again", True, (150, 150, 150))
         screen.blit(text, (center_x - text.get_width() // 2, y + 30))
+
+    def set_palette(self, palette_name: str) -> str:
+        """Switch to a named test palette.
+
+        Args:
+            palette_name: Name from TEST_PALETTES
+
+        Returns:
+            New palette name
+        """
+        if self._palette.set_palette(palette_name):
+            # Update spawner if it exists
+            if self._spawner:
+                self._spawner.set_fruit_colors(self._palette.get_target_colors())
+            return palette_name
+        return self._palette.name
+
+    def cycle_palette(self) -> str:
+        """Cycle to next test palette.
+
+        Returns:
+            Name of new palette
+        """
+        new_name = self._palette.cycle_palette()
+        # Update spawner if it exists
+        if self._spawner:
+            self._spawner.set_fruit_colors(self._palette.get_target_colors())
+        return new_name
+
+    @property
+    def palette_name(self) -> str:
+        """Current palette name."""
+        return self._palette.name

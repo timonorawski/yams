@@ -639,6 +639,15 @@ def launch_balloonpop(args, screen, detection_backend, ams):
                 elif event.key == pygame.K_d and args.backend in ['laser', 'object']:
                     if hasattr(detection_backend, 'set_debug_mode') and hasattr(detection_backend, 'debug_mode'):
                         detection_backend.set_debug_mode(not detection_backend.debug_mode)
+                elif event.key == pygame.K_p:
+                    # Cycle palette (for testing multi-device compatibility)
+                    if hasattr(game, 'cycle_palette'):
+                        new_palette = game.cycle_palette()
+                        print(f"Switched to palette: {new_palette}")
+                elif event.key == pygame.K_SPACE:
+                    # Manual retrieval ready (quiver mode)
+                    if hasattr(game, 'handle_key'):
+                        game.handle_key(pygame.K_SPACE)
 
         # Get input events and pass to game
         input_events = input_manager.get_events()
@@ -745,6 +754,8 @@ def launch_game_generic(args, screen, detection_backend, ams, registry: GameRegi
         print("  - Press 'C' to recalibrate")
     print("  - Press 'F' to toggle fullscreen")
     print("  - Press 'R' to restart")
+    print("  - Press 'P' to cycle palettes (testing)")
+    print("  - Press 'SPACE' for manual retrieval ready (quiver mode)")
     print("  - Press 'ESC' to quit")
     print("\n" + "="*60)
 
@@ -780,6 +791,15 @@ def launch_game_generic(args, screen, detection_backend, ams, registry: GameRegi
                 elif event.key == pygame.K_d and args.backend in ['laser', 'object']:
                     if hasattr(detection_backend, 'set_debug_mode') and hasattr(detection_backend, 'debug_mode'):
                         detection_backend.set_debug_mode(not detection_backend.debug_mode)
+                elif event.key == pygame.K_p:
+                    # Cycle palette (for testing multi-device compatibility)
+                    if hasattr(game, 'cycle_palette'):
+                        new_palette = game.cycle_palette()
+                        print(f"Switched to palette: {new_palette}")
+                elif event.key == pygame.K_SPACE:
+                    # Manual retrieval ready (quiver mode)
+                    if hasattr(game, 'handle_key'):
+                        game.handle_key(pygame.K_SPACE)
 
         # Get input events and pass to game
         input_events = input_manager.get_events()

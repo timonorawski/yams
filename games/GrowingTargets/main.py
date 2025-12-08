@@ -42,6 +42,13 @@ def main():
                 elif event.key == pygame.K_r:
                     # Quick restart
                     game = GrowingTargetsMode()
+                elif event.key == pygame.K_p:
+                    # Cycle palette (test mode)
+                    new_palette = game._palette.cycle_palette()
+                    print(f"Switched to palette: {new_palette}")
+                elif event.key == pygame.K_SPACE:
+                    # Manual retrieval ready
+                    game.handle_retrieval_ready()
 
         events = input_manager.get_events()
         game.handle_input(events)

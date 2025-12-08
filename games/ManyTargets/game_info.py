@@ -67,6 +67,24 @@ ARGUMENTS = [
         'default': None,
         'help': 'Minimum spacing between targets as radius multiplier (default: 1.5)'
     },
+    {
+        'name': '--quiver-size',
+        'type': int,
+        'default': None,
+        'help': 'Arrows per round before retrieval (0 or omit = unlimited)'
+    },
+    {
+        'name': '--retrieval-pause',
+        'type': int,
+        'default': None,
+        'help': 'Seconds for retrieval pause between rounds (0 = manual with SPACE, default: 30)'
+    },
+    {
+        'name': '--palette',
+        'type': str,
+        'default': None,
+        'help': 'Color palette for testing (full, bw, warm, cool, mono_red, mono_green, limited, orange_dart)'
+    },
 ]
 
 
@@ -99,6 +117,9 @@ def get_game_mode(**kwargs):
         'shrink_rate': 'shrink_rate',
         'min_size': 'min_size',
         'spacing': 'spacing',
+        'quiver_size': 'quiver_size',
+        'retrieval_pause': 'retrieval_pause',
+        'palette': 'palette',
     }
 
     constructor_kwargs = {}

@@ -18,6 +18,14 @@ trajectory:
   depth_direction: "away"  # Targets fly away from camera
   curvature_factor: 1.0
 
+# Pacing configuration (optional - for multi-device support)
+pacing:
+  spawn_interval: 4.0      # Base seconds between target spawns
+  target_lifetime: 8.0     # Seconds before target escapes
+  max_active: 2            # Max simultaneous targets
+  combo_window: 8.0        # Seconds before combo resets
+  combo_threshold: 2       # Hits needed to start combo
+
 # Spawn configuration
 spawning:
   spawn_sides: ["left", "right"]

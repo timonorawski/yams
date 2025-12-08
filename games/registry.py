@@ -264,24 +264,8 @@ class GameRegistry:
         if info is None:
             raise ValueError(f"Unknown game: {slug}")
 
-        # Try multiple approaches to find GameState:
-        # 1. game_info module may export it
-        try:
-            game_info_module = importlib.import_module(f"{info.module_path}.game_info")
-            if hasattr(game_info_module, 'GameState'):
-                return game_info_module.GameState
-        except ImportError:
-            pass
-
-        # 2. Standard game_mode.py location
-        try:
-            game_mode_module = importlib.import_module(f"{info.module_path}.game_mode")
-            return game_mode_module.GameState
-        except (ImportError, AttributeError):
-            pass
-
-        # 3. Fall back to root models module (shared GameState)
-        from models import GameState
+        # All games should use the common GameState
+        from games.common import GameState
         return GameState
 
 

@@ -17,6 +17,14 @@ trajectory:
   depth_direction: "away"  # Ducks fly away from player (receding)
   curvature_factor: 1.0  # Full parabolic curves (0.0 = straight line, 1.0 = full curve)
 
+# Pacing configuration (optional - for multi-device support)
+pacing:
+  spawn_interval: 2.5      # Base seconds between target spawns
+  target_lifetime: 6.0     # Seconds before target escapes
+  max_active: 3            # Max simultaneous targets
+  combo_window: 5.0        # Seconds before combo resets
+  combo_threshold: 3       # Hits needed to start combo
+
 # Spawn configuration
 spawning:
   spawn_sides: ["left", "right"]  # Where targets can spawn

@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""FruitSlice - Standalone entry point.
+"""Containment - Standalone entry point.
 
-Fruit Ninja-style game with arcing targets and combo system.
+Adversarial geometry-building game where you place deflectors to contain
+a ball trying to escape through gaps.
 """
 
 import pygame
@@ -13,19 +14,20 @@ _root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 if _root not in sys.path:
     sys.path.insert(0, _root)
 
-from games.FruitSlice.game_mode import FruitSliceMode, GameState
-from games.FruitSlice.input.input_manager import InputManager
-from games.FruitSlice.input.sources.mouse import MouseInputSource
-from games.FruitSlice.config import SCREEN_WIDTH, SCREEN_HEIGHT
+from games.common import GameState
+from games.Containment.game_mode import ContainmentMode
+from games.Containment.input.input_manager import InputManager
+from games.Containment.input.sources.mouse import MouseInputSource
+from games.Containment.config import SCREEN_WIDTH, SCREEN_HEIGHT
 
 
 def main():
     pygame.init()
     screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
-    pygame.display.set_caption("Fruit Slice")
+    pygame.display.set_caption("Containment")
 
     input_manager = InputManager(MouseInputSource())
-    game = FruitSliceMode()
+    game = ContainmentMode()
     clock = pygame.time.Clock()
 
     running = True
@@ -40,13 +42,14 @@ def main():
                 if event.key == pygame.K_ESCAPE:
                     running = False
                 elif event.key == pygame.K_r:
-                    game = FruitSliceMode()
+                    # Reset game
+                    game.reset()
                 elif event.key == pygame.K_SPACE:
-                    # Manual retrieval ready signal
+                    # Manual retrieval ready
                     if game.state == GameState.RETRIEVAL:
                         game._end_retrieval()
                 elif event.key == pygame.K_p:
-                    # Cycle through test palettes
+                    # Cycle palette
                     new_palette = game.cycle_palette()
                     print(f"Switched to palette: {new_palette}")
 

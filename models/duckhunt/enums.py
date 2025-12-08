@@ -6,6 +6,9 @@ These enums define the various states and types specific to Duck Hunt gameplay.
 
 from enum import Enum
 
+# Import common GameState for backward compatibility
+from games.common.game_state import GameState
+
 
 class EventType(str, Enum):
     """Types of input events.
@@ -33,8 +36,15 @@ class TargetState(str, Enum):
     ESCAPED = "escaped"
 
 
-class GameState(str, Enum):
-    """States of the overall game.
+class DuckHuntInternalState(str, Enum):
+    """Internal states specific to DuckHunt gameplay.
+
+    These map to the common GameState for platform compatibility:
+    - MENU -> GameState.PLAYING (shown as menu within game)
+    - PLAYING -> GameState.PLAYING
+    - PAUSED -> GameState.PAUSED
+    - WAITING_FOR_RELOAD -> GameState.RETRIEVAL
+    - GAME_OVER -> GameState.GAME_OVER
 
     Attributes:
         MENU: Main menu/start screen
@@ -48,6 +58,17 @@ class GameState(str, Enum):
     PAUSED = "paused"
     WAITING_FOR_RELOAD = "waiting_for_reload"
     GAME_OVER = "game_over"
+
+    def to_game_state(self) -> GameState:
+        """Convert internal state to common GameState."""
+        mapping = {
+            DuckHuntInternalState.MENU: GameState.PLAYING,
+            DuckHuntInternalState.PLAYING: GameState.PLAYING,
+            DuckHuntInternalState.PAUSED: GameState.PAUSED,
+            DuckHuntInternalState.WAITING_FOR_RELOAD: GameState.RETRIEVAL,
+            DuckHuntInternalState.GAME_OVER: GameState.GAME_OVER,
+        }
+        return mapping[self]
 
 
 class EffectType(str, Enum):

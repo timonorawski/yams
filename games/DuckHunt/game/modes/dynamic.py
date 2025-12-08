@@ -24,7 +24,7 @@ from game.scoring import ScoreTracker
 from game.feedback import FeedbackManager
 from game.trajectory import TrajectoryRegistry
 from input.input_event import InputEvent
-from models import Vector2D, GameState, TargetState
+from models import Vector2D, GameState, TargetState, DuckHuntInternalState
 from models.game_mode_config import GameModeConfig, LevelConfig
 from config import (
     SCREEN_WIDTH,
@@ -59,7 +59,7 @@ class DynamicGameMode(GameMode):
         >>> config = loader.load_mode("classic_ducks")
         >>> mode = DynamicGameMode(config)
         >>> mode.state
-        <GameState.PLAYING: 'playing'>
+        <DuckHuntInternalState.PLAYING: 'playing'>
     """
 
     def __init__(self, config: GameModeConfig, audio_enabled: bool = True):
@@ -116,7 +116,7 @@ class DynamicGameMode(GameMode):
         """
         if self.config.rules.projectiles_per_round is not None:
             self._projectiles_remaining = self.config.rules.projectiles_per_round
-            self._state = GameState.PLAYING
+            self._state = DuckHuntInternalState.PLAYING
 
     def _get_current_level_config(self) -> LevelConfig:
         """Get configuration for current level.
@@ -258,7 +258,7 @@ class DynamicGameMode(GameMode):
         Args:
             dt: Time delta in seconds since last frame
         """
-        if self._state != GameState.PLAYING:
+        if self._state != DuckHuntInternalState.PLAYING:
             return
 
         # Update all targets
@@ -331,7 +331,7 @@ class DynamicGameMode(GameMode):
         Args:
             events: List of InputEvent instances to process
         """
-        if self._state != GameState.PLAYING:
+        if self._state != DuckHuntInternalState.PLAYING:
             return
 
         for event in events:
@@ -339,7 +339,7 @@ class DynamicGameMode(GameMode):
             if self._projectiles_remaining is not None:
                 if self._projectiles_remaining <= 0:
                     # Already depleted, transition to reload state
-                    self._state = GameState.WAITING_FOR_RELOAD
+                    self._state = DuckHuntInternalState.WAITING_FOR_RELOAD
                     return
                 self._projectiles_remaining -= 1
             hit_detected = False
@@ -396,7 +396,7 @@ class DynamicGameMode(GameMode):
 
             # Check if we just used the last projectile
             if self._projectiles_remaining is not None and self._projectiles_remaining <= 0:
-                self._state = GameState.WAITING_FOR_RELOAD
+                self._state = DuckHuntInternalState.WAITING_FOR_RELOAD
                 return
 
     def render(self, screen: pygame.Surface) -> None:
@@ -423,7 +423,7 @@ class DynamicGameMode(GameMode):
         self._render_level_info(screen)
 
         # Render game over message if applicable
-        if self._state == GameState.GAME_OVER:
+        if self._state == DuckHuntInternalState.GAME_OVER:
             self._render_game_over(screen)
 
     def get_score(self) -> int:
@@ -464,14 +464,14 @@ class DynamicGameMode(GameMode):
         if self.config.rules.game_type == "score_target":
             if (self.config.rules.score_target is not None and
                     stats.hits >= self.config.rules.score_target):
-                self._state = GameState.GAME_OVER
+                self._state = DuckHuntInternalState.GAME_OVER
                 return
 
         # Check lose condition (survival mode)
         if self.config.rules.game_type == "survival":
             if (self.config.rules.max_misses is not None and
                     stats.misses >= self.config.rules.max_misses):
-                self._state = GameState.GAME_OVER
+                self._state = DuckHuntInternalState.GAME_OVER
                 return
 
         # TODO: Implement timed mode with timer tracking

@@ -8,7 +8,7 @@ implements specific gameplay rules, target spawning logic, and win/lose conditio
 from abc import ABC, abstractmethod
 from typing import List
 import pygame
-from models import GameState
+from models import GameState, DuckHuntInternalState
 from game.target import Target
 from input.input_event import InputEvent
 
@@ -51,7 +51,7 @@ class GameMode(ABC):
         their specific state.
         """
         self._targets: List[Target] = []
-        self._state: GameState = GameState.PLAYING
+        self._state: DuckHuntInternalState = DuckHuntInternalState.PLAYING
 
     @property
     def targets(self) -> List[Target]:
@@ -64,12 +64,12 @@ class GameMode(ABC):
 
     @property
     def state(self) -> GameState:
-        """Get the current game state.
+        """Get the current game state (common GameState for platform compatibility).
 
         Returns:
             GameState enum value (PLAYING, GAME_OVER, etc.)
         """
-        return self._state
+        return self._state.to_game_state()
 
     @abstractmethod
     def update(self, dt: float) -> None:

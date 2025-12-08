@@ -53,15 +53,24 @@ class Balloon:
     off the top of the screen.
     """
 
-    def __init__(self, data: Optional[BalloonData] = None):
+    def __init__(
+        self,
+        data: Optional[BalloonData] = None,
+        color: Optional[Tuple[int, int, int]] = None,
+        size_range: Optional[Tuple[float, float]] = None,
+        speed_range: Optional[Tuple[float, float]] = None
+    ):
         """
         Create a balloon.
 
         Args:
             data: Initial balloon data, or None to create at random position
+            color: Balloon color (overrides random if provided)
+            size_range: (min, max) size range (overrides config if provided)
+            speed_range: (min, max) float speed range (overrides config if provided)
         """
         if data is None:
-            data = self._create_random()
+            data = self._create_random(color, size_range, speed_range)
         self._data = data
 
     @property
@@ -98,9 +107,25 @@ class Balloon:
         """Check if balloon is still in play."""
         return self._data.state == BalloonState.FLOATING
 
-    def _create_random(self) -> BalloonData:
-        """Create random balloon data for spawning."""
-        size = random.uniform(BALLOON_MIN_SIZE, BALLOON_MAX_SIZE)
+    def _create_random(
+        self,
+        color: Optional[Tuple[int, int, int]] = None,
+        size_range: Optional[Tuple[float, float]] = None,
+        speed_range: Optional[Tuple[float, float]] = None
+    ) -> BalloonData:
+        """
+        Create random balloon data for spawning.
+
+        Args:
+            color: Balloon color (or None for random from config)
+            size_range: (min, max) size range (or None for config values)
+            speed_range: (min, max) float speed range (or None for config values)
+        """
+        # Use provided ranges or default to config
+        size_min, size_max = size_range if size_range else (BALLOON_MIN_SIZE, BALLOON_MAX_SIZE)
+        speed_min, speed_max = speed_range if speed_range else (FLOAT_SPEED_MIN, FLOAT_SPEED_MAX)
+
+        size = random.uniform(size_min, size_max)
         x = random.uniform(size, SCREEN_WIDTH - size)
         y = SCREEN_HEIGHT + size  # Start below screen
 
@@ -108,8 +133,8 @@ class Balloon:
             x=x,
             y=y,
             size=size,
-            color=random.choice(BALLOON_COLORS),
-            float_speed=random.uniform(FLOAT_SPEED_MIN, FLOAT_SPEED_MAX),
+            color=color if color else random.choice(BALLOON_COLORS),
+            float_speed=random.uniform(speed_min, speed_max),
             drift_speed=random.uniform(-DRIFT_SPEED_MAX, DRIFT_SPEED_MAX),
             drift_phase=random.uniform(0, 2 * math.pi),
             state=BalloonState.FLOATING,

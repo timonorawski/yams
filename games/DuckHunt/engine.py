@@ -7,7 +7,7 @@ and frame timing for the Duck Hunt game.
 
 import pygame
 from typing import Optional
-from models import GameState
+from models import GameState, DuckHuntInternalState
 import config
 from input.input_manager import InputManager
 from input.sources.mouse import MouseInputSource
@@ -59,7 +59,7 @@ class GameEngine:
 
         # Game state
         self.running = True
-        self.state = GameState.MENU  # Start in menu
+        self.state = DuckHuntInternalState.MENU  # Start in menu
 
         # Initialize input manager with mouse input
         self.input_manager = InputManager(MouseInputSource())
@@ -78,7 +78,7 @@ class GameEngine:
             max_misses=10,  # Game over after 10 misses
             target_score=None,  # Endless mode
         )
-        self.state = GameState.PLAYING
+        self.state = DuckHuntInternalState.PLAYING
 
     def handle_events(self) -> None:
         """Process pygame events based on current game state.
@@ -95,16 +95,19 @@ class GameEngine:
                 return
 
         # State-specific event handling
-        if self.state == GameState.MENU:
+        if self.state == DuckHuntInternalState.MENU:
             self._handle_menu_events(events)
 
-        elif self.state == GameState.PLAYING:
+        elif self.state == DuckHuntInternalState.PLAYING:
             self._handle_playing_events(events)
 
-        elif self.state == GameState.PAUSED:
+        elif self.state == DuckHuntInternalState.WAITING_FOR_RELOAD:
+            self._handle_retrieval_events(events)
+
+        elif self.state == DuckHuntInternalState.PAUSED:
             self._handle_pause_events(events)
 
-        elif self.state == GameState.GAME_OVER:
+        elif self.state == DuckHuntInternalState.GAME_OVER:
             self._handle_game_over_events(events)
 
     def _handle_menu_events(self, events: list) -> None:
@@ -126,12 +129,25 @@ class GameEngine:
         Args:
             events: List of pygame events
         """
-        # Check for pause key (ESC)
+        # Check for special keys
         for event in events:
-            if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
-                self.state = GameState.PAUSED
-                self.pause_menu = PauseMenu()
-                return
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_ESCAPE:
+                    # Pause game
+                    self.state = DuckHuntInternalState.PAUSED
+                    self.pause_menu = PauseMenu()
+                    return
+                elif event.key == pygame.K_p:
+                    # Cycle palette (for standalone testing)
+                    if self.current_mode is not None and hasattr(self.current_mode, 'cycle_palette'):
+                        palette_name = self.current_mode.cycle_palette()
+                        print(f"Switched to palette: {palette_name}")
+                    return
+                elif event.key == pygame.K_SPACE:
+                    # Manual retrieval ready (for manual retrieval mode)
+                    if self.current_mode is not None and hasattr(self.current_mode, 'manual_retrieval_ready'):
+                        self.current_mode.manual_retrieval_ready()
+                    return
 
         # Post events back for InputManager
         for event in events:
@@ -145,6 +161,19 @@ class GameEngine:
             input_events = self.input_manager.get_events()
             self.current_mode.handle_input(input_events)
 
+    def _handle_retrieval_events(self, events: list) -> None:
+        """Handle events in retrieval/reload state.
+
+        Args:
+            events: List of pygame events
+        """
+        # Check for manual retrieval ready (SPACE)
+        for event in events:
+            if event.type == pygame.KEYDOWN and event.key == pygame.K_SPACE:
+                if self.current_mode is not None and hasattr(self.current_mode, 'manual_retrieval_ready'):
+                    self.current_mode.manual_retrieval_ready()
+                return
+
     def _handle_pause_events(self, events: list) -> None:
         """Handle events in paused state.
 
@@ -154,7 +183,7 @@ class GameEngine:
         # Check for resume key (ESC)
         for event in events:
             if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
-                self.state = GameState.PLAYING
+                self.state = DuckHuntInternalState.PLAYING
                 self.pause_menu = None
                 return
 
@@ -164,7 +193,7 @@ class GameEngine:
 
             if action == MenuAction.QUIT_GAME:
                 # Return to main menu
-                self.state = GameState.MENU
+                self.state = DuckHuntInternalState.MENU
                 self.current_mode = None
                 self.pause_menu = None
 
@@ -182,7 +211,7 @@ class GameEngine:
                 self.game_over_menu = None
             elif action == MenuAction.QUIT_GAME:
                 # Return to main menu
-                self.state = GameState.MENU
+                self.state = DuckHuntInternalState.MENU
                 self.current_mode = None
                 self.game_over_menu = None
 
@@ -190,19 +219,22 @@ class GameEngine:
         """Update game state based on current state.
 
         Updates the active game mode when playing, and checks for
-        state transitions (e.g., PLAYING -> GAME_OVER).
+        state transitions (e.g., PLAYING -> GAME_OVER, PLAYING -> WAITING_FOR_RELOAD).
 
         Args:
             dt: Delta time since last frame in seconds
         """
-        # Only update game mode when actively playing
-        if self.state == GameState.PLAYING:
+        # Update game mode when actively playing or in retrieval
+        if self.state == DuckHuntInternalState.PLAYING or self.state == DuckHuntInternalState.WAITING_FOR_RELOAD:
             if self.current_mode is not None:
                 self.current_mode.update(dt)
 
-                # Check if game mode state changed (e.g., to GAME_OVER)
-                if self.current_mode.state == GameState.GAME_OVER:
-                    self._transition_to_game_over()
+                # Sync engine state with mode state
+                if self.current_mode.state != self.state:
+                    if self.current_mode.state == DuckHuntInternalState.GAME_OVER:
+                        self._transition_to_game_over()
+                    else:
+                        self.state = self.current_mode.state
 
         # Menu and pause states don't need updates (static screens)
 
@@ -221,7 +253,7 @@ class GameEngine:
                 max_combo=stats.max_combo,
                 won=won
             )
-            self.state = GameState.GAME_OVER
+            self.state = DuckHuntInternalState.GAME_OVER
 
     def render(self) -> None:
         """Render the current frame based on game state.
@@ -233,15 +265,20 @@ class GameEngine:
         self.screen.fill(config.BACKGROUND_COLOR)
 
         # Render based on state
-        if self.state == GameState.MENU:
+        if self.state == DuckHuntInternalState.MENU:
             self.start_menu.render(self.screen)
 
-        elif self.state == GameState.PLAYING:
+        elif self.state == DuckHuntInternalState.PLAYING:
             # Render active game mode
             if self.current_mode is not None:
                 self.current_mode.render(self.screen)
 
-        elif self.state == GameState.PAUSED:
+        elif self.state == DuckHuntInternalState.WAITING_FOR_RELOAD:
+            # Render game mode with retrieval overlay
+            if self.current_mode is not None:
+                self.current_mode.render(self.screen)
+
+        elif self.state == DuckHuntInternalState.PAUSED:
             # Render game mode behind pause overlay
             if self.current_mode is not None:
                 self.current_mode.render(self.screen)
@@ -249,7 +286,7 @@ class GameEngine:
             if self.pause_menu is not None:
                 self.pause_menu.render(self.screen)
 
-        elif self.state == GameState.GAME_OVER:
+        elif self.state == DuckHuntInternalState.GAME_OVER:
             # Render game over menu
             if self.game_over_menu is not None:
                 self.game_over_menu.render(self.screen)

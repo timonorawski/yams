@@ -236,24 +236,143 @@ This document captures game ideas for the AMS platform. Games should leverage th
 - Dodge obstacles by hitting them first
 - Star Fox / Panzer Dragoon inspired
 
+### Side-Scroller / Runner Defense
+
+**32. Trail Blazer (Runner Escort)**
+- Side-scrolling runner you're protecting by clearing obstacles
+- Runner advances when path is clear, hesitates when blocked - speed reflects your recent hit rate
+- Creates natural flow state: clearing consistently = runner speeds up = intensity increases = genuine difficulty curve
+- Obstacles spawn at sustainable shooting rhythm (2-3 sec intervals baseline, adjustable)
+- Physical archery constraint: limited arrows + retrieval time creates natural burst-clear-retrieve rhythm
+- Clear zones (bridges, tunnels) provide retrieval windows and pacing breaks
+- Miss consequence options: runner stumbles (time/momentum loss) vs takes damage (health) vs dies (high stakes)
+- Obstacle variety: static barriers, approaching threats, priority targets (some more lethal than others)
+- Runner has minimal autonomy - can navigate small gaps if cleared, but dependent on you for real obstacles
+- Procedural terrain generation with density ramping based on current run performance
+- Protective motivation > accumulative motivation: stakes feel visceral, not abstract
+- Training value: Decision-making under pressure, triage/prioritization, sustainable rhythm, consequence weight
+- Dopamine profile: Flow state when clicking, protective stakes, visible momentum feedback, natural intensity ramping
+- **Theme variants** (core mechanic is genre-agnostic):
+  - *Military/Action*: Chopper escort protecting convoy, sniper covering squad advance, naval escort through minefield
+  - *Classic Arcade*: Donkey Kong barrels (break before they hit Mario), Frogger defense (clear traffic for the frog), Pitfall jungle hazards
+  - *Fantasy/Adventure*: Knight escorting princess through monster forest, dragon rider clearing sky, shepherd protecting flock from wolves
+  - *Casual/Cute*: Mama duck leading ducklings (clear lily pads of frogs), ice cream truck (clear road so it doesn't melt), school bus route
+  - *Abstract*: Pure geometric shapes - no theme, just satisfying flow
+- Key insight: Protective stakes create fundamentally different motivation than score accumulation - something bad happens to something you care about if you fail
+- Retrieval windows (safe zones/tunnels) become narrative rhythm, not game pauses
+
+---
+
 ### Multiplayer / Social
 
-**32. Hot Potato**
+**33. Hot Potato**
 - Target bounces between players
 - Must hit within time limit
 - Last player standing wins
 - Works with turn-taking for single input
 
-**33. Score Attack**
+**34. Score Attack**
 - Same targets for all players
 - Highest score in time limit wins
 - Can be async (take turns, compare scores)
 
-**34. Cooperative Survival**
+**35. Cooperative Survival**
 - Targets require multiple hits
 - Players work together
 - Shared health/lives
 - Communication required
+
+---
+
+### Adversarial / Containment
+
+**36. Containment (Working Title)**
+
+Adversarial containment game. A ball/entity tries to escape the play area through gaps at edges. Player places deflectors (arrows/touches/clicks) to build walls and seal escape routes. Direct hits on the ball are penalized - it accelerates. You're building geometry to contain, not targeting to destroy.
+
+**Novel Mechanic:**
+- Precision placement while avoiding a moving exclusion zone
+- Tracking to *not* hit while placing accurate shots nearby
+- Real-time level editing under adversarial pressure
+
+**Input Agnostic:**
+- Same game across touch, mouse, laser, archery
+- Input method determines precision variance and physical cost, but core loop is identical
+- Imprecision from any source becomes part of the challenge - adapting to your own errors
+
+**Difficulty Axes (Independent):**
+
+*Tempo:*
+- Zen: Slow ball, few gaps, meditative geometry-building
+- Mid: Pressure demands attention, mistakes recoverable
+- Wild: Fast ball, multiple balls, dynamic gap spawning, panic management
+
+*AI Sophistication:*
+- Dumb: Pure physics, predictable bounces
+- Reactive: Seeks gaps, avoids dense geometry, opportunistic
+- Strategic: Learns placement patterns, baits wasted shots, exploits retrieval windows, reads player
+
+**Core Loop:**
+1. Ball spawns, begins bouncing
+2. Gaps exist or open at edges
+3. Player places deflectors to seal gaps and shape bounce paths
+4. Ball probes geometry, seeks escape
+5. Direct ball hits = speed increase (punishment for sloppy/rushed shots)
+6. Win: Containment achieved (ball trapped or survived X time)
+7. Lose: Ball escapes through gap
+
+**Emergent Properties:**
+- Early playfield is sparse, simple paths
+- Accumulated deflectors create complex bounce mazes
+- Unintended combos from geometry you placed earlier
+- "Didn't plan that but it worked" moments
+- Panic spiral: rushing → accidental hits → faster ball → more panic → earned loss
+
+**Deflector Mechanics:**
+- Placed permanently where shot lands
+- Limited count (physical arrows) or unlimited (touch/mouse) - tunable
+- Retrieval/removal creates temporary vulnerability
+- Placement accuracy matters for future bounce behavior
+- Imperfect placement = adapting to your own geometry errors
+
+**Skill Stack:**
+1. Immediate accuracy (hit where you aimed)
+2. Exclusion zone tracking (avoid the ball while shooting near it)
+3. Placement strategy (where creates future value)
+4. Emergent physics reading (predict ball through your geometry)
+5. AI theory of mind (what does it think I'll do) - higher difficulty only
+
+**Theming Options:**
+- Abstract: Ball and lines, pure geometry
+- Containment: Alien spacecraft, escaped entity, quarantine breach
+- Playful: Catch the critter, keep the pet contained
+- Physics toy: Zen mode as screensaver/fidget experience
+
+**Win/Scoring:**
+- Time survived
+- Bounce count while contained
+- Deflector efficiency (fewer = better)
+- Escape margin (how close ball got to gaps)
+- Style points for interesting bounce chains (optional)
+
+**Cognitive Profile:**
+Strong flavor - appeals to architectures comfortable with emergent chaos, improvisation, adapting to evolving systems. May frustrate those needing predictable cause-effect and time to plan. Zen mode offers accessible on-ramp.
+
+**Training Value:**
+- Precision under pressure
+- Predictive tracking
+- Strategic vs reactive thinking
+- Handling panic / arousal management
+- Adapting to own errors
+
+**Implementation Notes:**
+- Standard game protocol (handle_input, update, render, state, get_score)
+- Ball physics: basic reflection with optional spin/curve at higher difficulties
+- Gap system: static positions initially, dynamic spawning for higher difficulty
+- AI behavior: state machine or simple utility-based decision making
+- Deflector rendering: line segments or arrow shapes at impact points
+- Collision detection: ball-deflector, ball-edge, ball-gap
+- Developer mode: mouse/touch input for rapid iteration before archery integration
 
 ---
 
