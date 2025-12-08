@@ -2,19 +2,23 @@
 """
 AMS Game Launcher - Unified entry point for all AMS games
 
-Supports multiple games and detection backends:
-- Games: simple_targets, duckhunt
-- Backends: mouse, laser, object
+Games are auto-discovered from the games/ directory. Any game with a
+game_info.py file will be automatically available.
+
+Supports multiple detection backends:
+- mouse: Development/testing (no hardware needed)
+- laser: Laser pointer detection
+- object: Object/projectile detection
 
 Usage:
-    # Simple targets with mouse
-    python ams_game.py --game simple_targets --backend mouse
+    # List available games
+    python ams_game.py --list-games
 
-    # Duck Hunt with laser
+    # Play a game with mouse
+    python ams_game.py --game balloonpop --backend mouse
+
+    # Play with laser pointer
     python ams_game.py --game duckhunt --backend laser --fullscreen --display 1
-
-    # Duck Hunt with object detection and specific mode
-    python ams_game.py --game duckhunt --backend object --mode classic_archery
 """
 
 import pygame
@@ -23,11 +27,12 @@ import os
 import time
 import argparse
 
-# Add DuckHunt to path for imports
+# Add DuckHunt to path for imports (needed for some shared modules)
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'games', 'DuckHunt'))
 
 from ams.session import AMSSession
 from ams.detection_backend import InputSourceAdapter
+from games.registry import get_registry, GameRegistry
 from input.sources.mouse import MouseInputSource
 
 
@@ -238,6 +243,7 @@ def launch_simple_targets(args, screen, detection_backend, ams):
         print("  - Shoot object at targets")
         print("  - Press 'D' to toggle debug visualization")
     print("  - Press 'C' to recalibrate")
+    print("  - Press 'F' to toggle fullscreen")
     print("  - Press 'R' to start new round")
     print("  - Press 'Q' or 'ESC' to quit")
     print("\n" + "="*60)
@@ -270,6 +276,9 @@ def launch_simple_targets(args, screen, detection_backend, ams):
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_q or event.key == pygame.K_ESCAPE:
                     running = False
+                elif event.key == pygame.K_f:
+                    # Toggle fullscreen
+                    pygame.display.toggle_fullscreen()
                 elif event.key == pygame.K_c:
                     print("\nRecalibrating...")
                     ams.calibrate_between_rounds(
@@ -375,6 +384,10 @@ def launch_simple_targets(args, screen, detection_backend, ams):
 def launch_duckhunt(args, screen, detection_backend, ams):
     """Launch Duck Hunt game.
 
+    Uses the unified AMSInputAdapter to bridge AMS detection events to
+    the game's InputManager, allowing identical game code for standalone
+    and AMS modes.
+
     Args:
         args: Command-line arguments
         screen: Pygame display surface
@@ -386,6 +399,8 @@ def launch_duckhunt(args, screen, detection_backend, ams):
     """
     from game.modes.classic import ClassicMode
     from game.mode_loader import load_game_mode_config
+    from input.input_manager import InputManager
+    from ams.game_adapter import AMSInputAdapter
     from models import GameState
 
     DISPLAY_WIDTH, DISPLAY_HEIGHT = screen.get_size()
@@ -410,7 +425,7 @@ def launch_duckhunt(args, screen, detection_backend, ams):
     # Use first level's speed as initial speed
     initial_speed = None
     if mode_config.levels and len(mode_config.levels) > 0:
-        initial_speed = mode_config.levels[0].target.speed * 100.0  # Scale to pixels/sec
+        initial_speed = mode_config.levels[0].target.speed  # Speed in pixels/sec
 
     # Create game mode with config parameters
     if initial_speed:
@@ -427,7 +442,11 @@ def launch_duckhunt(args, screen, detection_backend, ams):
             audio_enabled=True
         )
 
-    print(f"   Game initialized")
+    # Create input manager with AMS adapter
+    # This bridges AMS PlaneHitEvents -> game InputEvents
+    ams_adapter = AMSInputAdapter(ams, DISPLAY_WIDTH, DISPLAY_HEIGHT)
+    input_manager = InputManager(ams_adapter)
+    print(f"   Game initialized with AMS input adapter")
 
     # Game loop
     print("\n5. Starting game loop...")
@@ -444,6 +463,7 @@ def launch_duckhunt(args, screen, detection_backend, ams):
         print("  - Shoot object at targets")
         print("  - Press 'D' to toggle debug visualization")
         print("  - Press 'C' to recalibrate")
+    print("  - Press 'F' to toggle fullscreen")
     print("  - Press 'ESC' to quit")
     print("\n" + "="*60)
 
@@ -453,16 +473,19 @@ def launch_duckhunt(args, screen, detection_backend, ams):
     while running:
         dt = clock.tick(60) / 1000.0  # 60 FPS
 
-        # Update AMS
-        ams.update(dt)
+        # Update input manager (this updates AMS internally)
+        input_manager.update(dt)
 
-        # Handle pygame events
+        # Handle pygame events (keyboard controls, quit, etc.)
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:
                     running = False
+                elif event.key == pygame.K_f:
+                    # Toggle fullscreen
+                    pygame.display.toggle_fullscreen()
                 elif event.key == pygame.K_c and args.backend in ['laser', 'object']:
                     print("\nRecalibrating...")
                     ams.calibrate(
@@ -487,22 +510,12 @@ def launch_duckhunt(args, screen, detection_backend, ams):
                             detection_backend.brightness_threshold - 10
                         )
 
-        # Get detection events from AMS
-        events = ams.poll_events()
+        # Get input events through unified interface
+        # These are InputEvents with pixel coordinates - same format as standalone mode
+        input_events = input_manager.get_events()
 
-        # Convert AMS events to game input events
-        from models import EventType
-        for ams_event in events:
-            # Create game input event from AMS event
-            # Note: Game expects pixel coordinates, not normalized
-            pixel_x = int(ams_event.x * DISPLAY_WIDTH)
-            pixel_y = int(ams_event.y * DISPLAY_HEIGHT)
-
-            # Duck Hunt's input system will handle hit detection
-            pygame.event.post(pygame.event.Event(
-                pygame.MOUSEBUTTONDOWN,
-                {'pos': (pixel_x, pixel_y), 'button': 1}
-            ))
+        # Pass events to game mode - same code works for standalone and AMS
+        game_mode.handle_input(input_events)
 
         # Update game
         game_mode.update(dt)
@@ -525,6 +538,279 @@ def launch_duckhunt(args, screen, detection_backend, ams):
         if game_mode.state == GameState.GAME_OVER:
             print("\n" + "="*60)
             print("GAME OVER!")
+            print(f"Final Score: {game_mode.get_score()}")
+            print("="*60)
+            running = False
+
+    return 0
+
+
+def launch_balloonpop(args, screen, detection_backend, ams):
+    """Launch Balloon Pop game.
+
+    Uses the unified AMSInputAdapter to bridge AMS detection events to
+    the game's InputManager.
+
+    Args:
+        args: Command-line arguments
+        screen: Pygame display surface
+        detection_backend: Configured detection backend
+        ams: AMS session instance
+
+    Returns:
+        Exit code (0 for success)
+    """
+    from games.BalloonPop.game_mode import BalloonPopMode, GameState
+    from games.BalloonPop.input.input_manager import InputManager
+    from ams.game_adapter import AMSInputAdapter
+
+    DISPLAY_WIDTH, DISPLAY_HEIGHT = screen.get_size()
+
+    print("\n4. Initializing Balloon Pop...")
+
+    # Update BalloonPop config with actual screen size
+    import games.BalloonPop.config as bp_config
+    bp_config.SCREEN_WIDTH = DISPLAY_WIDTH
+    bp_config.SCREEN_HEIGHT = DISPLAY_HEIGHT
+
+    # Create game mode with optional overrides from args
+    game_kwargs = {}
+    if hasattr(args, 'spawn_rate') and args.spawn_rate is not None:
+        game_kwargs['spawn_rate'] = args.spawn_rate
+    if hasattr(args, 'max_escaped') and args.max_escaped is not None:
+        game_kwargs['max_escaped'] = args.max_escaped
+    if hasattr(args, 'target_pops') and args.target_pops is not None:
+        game_kwargs['target_pops'] = args.target_pops
+
+    game = BalloonPopMode(**game_kwargs)
+
+    # Create input manager with AMS adapter
+    ams_adapter = AMSInputAdapter(ams, DISPLAY_WIDTH, DISPLAY_HEIGHT)
+    input_manager = InputManager(ams_adapter)
+    print(f"   Game initialized with AMS input adapter")
+
+    # Game loop
+    print("\n5. Starting game loop...")
+    print("\nControls:")
+    if args.backend == 'mouse':
+        print("  - Click to pop balloons")
+    elif args.backend == 'laser':
+        print("  - Point laser at balloons to pop them")
+        print("  - Press 'D' to toggle debug visualization")
+        print("  - Press 'C' to recalibrate")
+    else:  # object
+        print("  - Shoot object at balloons to pop them")
+        print("  - Press 'D' to toggle debug visualization")
+        print("  - Press 'C' to recalibrate")
+    print("  - Press 'F' to toggle fullscreen")
+    print("  - Press 'R' to restart")
+    print("  - Press 'ESC' to quit")
+    print("\n" + "="*60)
+
+    clock = pygame.time.Clock()
+    running = True
+
+    while running:
+        dt = clock.tick(60) / 1000.0
+
+        # Update input manager (this updates AMS internally)
+        input_manager.update(dt)
+
+        # Handle pygame events
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                running = False
+            elif event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_ESCAPE:
+                    running = False
+                elif event.key == pygame.K_f:
+                    pygame.display.toggle_fullscreen()
+                elif event.key == pygame.K_r:
+                    # Restart game
+                    game = BalloonPopMode(**game_kwargs)
+                    print("\n--- RESTARTING ---\n")
+                elif event.key == pygame.K_c and args.backend in ['laser', 'object']:
+                    print("\nRecalibrating...")
+                    ams.calibrate(
+                        display_surface=screen,
+                        display_resolution=(DISPLAY_WIDTH, DISPLAY_HEIGHT)
+                    )
+                    print("Calibration complete!")
+                elif event.key == pygame.K_d and args.backend in ['laser', 'object']:
+                    if hasattr(detection_backend, 'set_debug_mode') and hasattr(detection_backend, 'debug_mode'):
+                        detection_backend.set_debug_mode(not detection_backend.debug_mode)
+
+        # Get input events and pass to game
+        input_events = input_manager.get_events()
+        game.handle_input(input_events)
+
+        # Update game
+        game.update(dt)
+
+        # Render
+        game.render(screen)
+        pygame.display.flip()
+
+        # Show debug visualization if enabled
+        if args.backend in ['laser', 'object'] and hasattr(detection_backend, 'debug_mode') and detection_backend.debug_mode:
+            debug_frame = detection_backend.get_debug_frame()
+            if debug_frame is not None:
+                import cv2
+                cv2.imshow(f"{args.backend.capitalize()} Detection Debug", debug_frame)
+                cv2.waitKey(1)
+
+        # Check game over
+        if game.state == GameState.GAME_OVER:
+            print("\n" + "="*60)
+            print("GAME OVER!")
+            print(f"Final Score: {game.get_score()}")
+            print("="*60)
+            running = False
+        elif game.state == GameState.WON:
+            print("\n" + "="*60)
+            print("YOU WIN!")
+            print(f"Final Score: {game.get_score()}")
+            print("="*60)
+            running = False
+
+    return 0
+
+
+def launch_game_generic(args, screen, detection_backend, ams, registry: GameRegistry):
+    """
+    Generic game launcher using the game registry.
+
+    This function works with any game that follows the game_info.py protocol.
+
+    Args:
+        args: Command-line arguments
+        screen: Pygame display surface
+        detection_backend: Configured detection backend
+        ams: AMS session instance
+        registry: GameRegistry instance
+
+    Returns:
+        Exit code (0 for success)
+    """
+    from ams.game_adapter import AMSInputAdapter
+
+    DISPLAY_WIDTH, DISPLAY_HEIGHT = screen.get_size()
+    game_slug = args.game.lower()
+
+    print(f"\n4. Initializing {args.game}...")
+
+    # Get game info
+    game_info = registry.get_game_info(game_slug)
+    if game_info is None:
+        print(f"   ERROR: Unknown game: {game_slug}")
+        return 1
+
+    print(f"   Game: {game_info.name}")
+    print(f"   Description: {game_info.description}")
+
+    # Collect game-specific kwargs from args
+    game_kwargs = {}
+    for key in ['mode', 'spawn_rate', 'max_escaped', 'target_pops']:
+        if hasattr(args, key):
+            value = getattr(args, key)
+            if value is not None:
+                game_kwargs[key] = value
+
+    # Create game mode
+    try:
+        game = registry.create_game(game_slug, DISPLAY_WIDTH, DISPLAY_HEIGHT, **game_kwargs)
+    except Exception as e:
+        print(f"   ERROR: Failed to create game: {e}")
+        return 1
+
+    # Create input manager with AMS adapter
+    input_manager = registry.create_input_manager(game_slug, ams, DISPLAY_WIDTH, DISPLAY_HEIGHT)
+    print(f"   Game initialized with AMS input adapter")
+
+    # Get GameState enum for this game
+    GameState = registry.get_game_state_enum(game_slug)
+
+    # Game loop
+    print("\n5. Starting game loop...")
+    print("\nControls:")
+    if args.backend == 'mouse':
+        print("  - Click to shoot/interact")
+    elif args.backend == 'laser':
+        print("  - Point laser at targets")
+        print("  - Press 'D' to toggle debug visualization")
+        print("  - Press 'C' to recalibrate")
+    else:  # object
+        print("  - Shoot object at targets")
+        print("  - Press 'D' to toggle debug visualization")
+        print("  - Press 'C' to recalibrate")
+    print("  - Press 'F' to toggle fullscreen")
+    print("  - Press 'R' to restart")
+    print("  - Press 'ESC' to quit")
+    print("\n" + "="*60)
+
+    clock = pygame.time.Clock()
+    running = True
+
+    while running:
+        dt = clock.tick(60) / 1000.0
+
+        # Update input manager (this updates AMS internally)
+        input_manager.update(dt)
+
+        # Handle pygame events
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                running = False
+            elif event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_ESCAPE:
+                    running = False
+                elif event.key == pygame.K_f:
+                    pygame.display.toggle_fullscreen()
+                elif event.key == pygame.K_r:
+                    # Restart game
+                    game = registry.create_game(game_slug, DISPLAY_WIDTH, DISPLAY_HEIGHT, **game_kwargs)
+                    print("\n--- RESTARTING ---\n")
+                elif event.key == pygame.K_c and args.backend in ['laser', 'object']:
+                    print("\nRecalibrating...")
+                    ams.calibrate(
+                        display_surface=screen,
+                        display_resolution=(DISPLAY_WIDTH, DISPLAY_HEIGHT)
+                    )
+                    print("Calibration complete!")
+                elif event.key == pygame.K_d and args.backend in ['laser', 'object']:
+                    if hasattr(detection_backend, 'set_debug_mode') and hasattr(detection_backend, 'debug_mode'):
+                        detection_backend.set_debug_mode(not detection_backend.debug_mode)
+
+        # Get input events and pass to game
+        input_events = input_manager.get_events()
+        game.handle_input(input_events)
+
+        # Update game
+        game.update(dt)
+
+        # Render
+        game.render(screen)
+        pygame.display.flip()
+
+        # Show debug visualization if enabled
+        if args.backend in ['laser', 'object'] and hasattr(detection_backend, 'debug_mode') and detection_backend.debug_mode:
+            debug_frame = detection_backend.get_debug_frame()
+            if debug_frame is not None:
+                import cv2
+                cv2.imshow(f"{args.backend.capitalize()} Detection Debug", debug_frame)
+                cv2.waitKey(1)
+
+        # Check game over
+        if game.state == GameState.GAME_OVER:
+            print("\n" + "="*60)
+            print("GAME OVER!")
+            print(f"Final Score: {game.get_score()}")
+            print("="*60)
+            running = False
+        elif hasattr(GameState, 'WON') and game.state == GameState.WON:
+            print("\n" + "="*60)
+            print("YOU WIN!")
+            print(f"Final Score: {game.get_score()}")
             print("="*60)
             running = False
 
@@ -534,29 +820,44 @@ def launch_duckhunt(args, screen, detection_backend, ams):
 def main():
     """Main entry point for AMS game launcher."""
 
+    # Get game registry for auto-discovery
+    registry = get_registry()
+    available_games = registry.list_games()
+
     # Parse command-line arguments
     parser = argparse.ArgumentParser(
         description='AMS Game Launcher - Play games with multiple detection backends',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Simple targets with mouse
-  python ams_game.py --game simple_targets --backend mouse
+  # List available games
+  python ams_game.py --list-games
 
-  # Duck Hunt with laser in fullscreen
+  # Play with mouse (development)
+  python ams_game.py --game balloonpop --backend mouse
+
+  # Play with laser pointer
   python ams_game.py --game duckhunt --backend laser --fullscreen --display 1
 
-  # Duck Hunt archery mode with object detection
-  python ams_game.py --game duckhunt --backend object --mode classic_archery
+  # Custom game settings
+  python ams_game.py --game balloonpop --spawn-rate 0.5 --max-escaped 5
         """
     )
 
-    # Game selection
+    # List games option
+    parser.add_argument(
+        '--list-games',
+        action='store_true',
+        help='List all available games and exit'
+    )
+
+    # Game selection - use auto-discovered games + simple_targets
+    game_choices = ['simple_targets'] + available_games
     parser.add_argument(
         '--game',
-        choices=['simple_targets', 'duckhunt'],
-        default='simple_targets',
-        help='Game to play (default: simple_targets)'
+        choices=game_choices,
+        default='balloonpop' if 'balloonpop' in available_games else 'simple_targets',
+        help=f'Game to play (available: {", ".join(game_choices)})'
     )
 
     # Backend selection
@@ -615,7 +916,44 @@ Examples:
         help='Use black and white palette (simple_targets only)'
     )
 
+    # Balloon Pop specific
+    parser.add_argument(
+        '--spawn-rate',
+        type=float,
+        default=None,
+        help='Balloon spawn rate in seconds (balloonpop only)'
+    )
+    parser.add_argument(
+        '--max-escaped',
+        type=int,
+        default=None,
+        help='Max escaped balloons before game over (balloonpop only)'
+    )
+    parser.add_argument(
+        '--target-pops',
+        type=int,
+        default=None,
+        help='Pops needed to win, 0=endless (balloonpop only)'
+    )
+
     args = parser.parse_args()
+
+    # Handle --list-games
+    if args.list_games:
+        print("\nAvailable Games:")
+        print("="*50)
+        for slug in registry.list_games():
+            info = registry.get_game_info(slug)
+            print(f"\n  {slug}")
+            print(f"    Name: {info.name}")
+            print(f"    Description: {info.description}")
+            if info.has_config:
+                print(f"    Config: {info.config_file or 'config.py'}")
+        print("\n  simple_targets")
+        print("    Name: Simple Targets")
+        print("    Description: Basic target shooting game (built-in)")
+        print()
+        return 0
 
     # Initialize pygame
     pygame.init()
@@ -700,9 +1038,11 @@ Examples:
 
     # Launch selected game
     if args.game == 'simple_targets':
+        # Simple targets uses the old launcher (not yet migrated to registry)
         exit_code = launch_simple_targets(args, screen, detection_backend, ams)
-    elif args.game == 'duckhunt':
-        exit_code = launch_duckhunt(args, screen, detection_backend, ams)
+    elif args.game in registry.list_games():
+        # Use generic launcher for registry games
+        exit_code = launch_game_generic(args, screen, detection_backend, ams, registry)
     else:
         print(f"Unknown game: {args.game}")
         exit_code = 1

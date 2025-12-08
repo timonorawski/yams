@@ -104,6 +104,25 @@ class ObjectDetectionBackend(DetectionBackend):
         self.debug_frame: Optional[np.ndarray] = None
         self.game_targets: List[Tuple[float, float, float, Tuple[int, int, int]]] = []
 
+    def poll_events(self) -> List[PlaneHitEvent]:
+        """Get new detection events since last poll.
+
+        Returns:
+            List of hit events from detected impacts
+        """
+        return self.poll()
+
+    def update(self, dt: float):
+        """Update backend state (called each frame).
+
+        For object detection, all processing happens in poll_events(),
+        so this is a no-op.
+
+        Args:
+            dt: Delta time since last update
+        """
+        pass
+
     def poll(self) -> List[PlaneHitEvent]:
         """Poll for object impacts and return hit events.
 
@@ -339,19 +358,19 @@ class ObjectDetectionBackend(DetectionBackend):
             return None
 
     def _is_valid_coordinate(self, pos: Point2D) -> bool:
-        """Check if coordinate is valid (no NaN, infinity, reasonable bounds).
+        """Check if coordinate is valid (no NaN, infinity, within game bounds).
 
         Args:
             pos: Position to validate
 
         Returns:
-            True if valid, False otherwise
+            True if valid (within [0, 1] range), False otherwise
         """
         if not (math.isfinite(pos.x) and math.isfinite(pos.y)):
             return False
 
-        # Allow slight out-of-bounds for edge cases
-        if pos.x < -0.1 or pos.x > 1.1 or pos.y < -0.1 or pos.y > 1.1:
+        # Strictly enforce [0, 1] bounds for game coordinates
+        if not (0.0 <= pos.x <= 1.0 and 0.0 <= pos.y <= 1.0):
             return False
 
         return True
@@ -420,28 +439,250 @@ class ObjectDetectionBackend(DetectionBackend):
 
         self.debug_frame = debug
 
-    def calibrate(self, **kwargs) -> CalibrationResult:
-        """Run ArUco calibration (delegates to calibration manager).
+    def calibrate(self, display_surface=None, display_resolution=None, **kwargs) -> CalibrationResult:
+        """Run ArUco calibration for geometric mapping.
 
         Args:
-            **kwargs: Calibration parameters
+            display_surface: Pygame surface to display calibration pattern
+            display_resolution: (width, height) of display
+            **kwargs: Additional calibration parameters
 
         Returns:
             Calibration result
         """
-        if self.calibration_manager is None:
-            return CalibrationResult(
-                success=False,
-                method="no_calibration_manager",
-                available_colors=None
+        # Import calibration dependencies
+        try:
+            import pygame
+            from datetime import datetime
+            from models import (
+                CalibrationConfig,
+                Resolution,
+                CalibrationData,
+                HomographyMatrix,
+            )
+            from calibration.pattern_generator import ArucoPatternGenerator
+            from calibration.pattern_detector import ArucoPatternDetector
+            from calibration.homography import compute_homography
+        except ImportError as e:
+            print(f"Calibration dependencies not available: {e}")
+            import traceback
+            traceback.print_exc()
+            return self._return_no_calibration()
+
+        if display_surface is None or display_resolution is None:
+            print("No display surface provided, skipping geometric calibration")
+            return self._return_no_calibration()
+
+        print("\n" + "="*60)
+        print("ArUco Geometric Calibration")
+        print("="*60)
+        print("\nInstructions:")
+        print("1. ArUco marker pattern will be displayed")
+        print("2. Position camera to see entire pattern")
+        print("3. Press SPACE to capture and calibrate")
+        print("4. Press ESC to skip calibration")
+        print("\nStarting in 3 seconds...")
+
+        import time
+        time.sleep(3)
+
+        # Initialize
+        config = CalibrationConfig()
+        pattern_generator = ArucoPatternGenerator(config.aruco_dict)
+
+        # Generate pattern
+        proj_resolution = Resolution(width=display_resolution[0], height=display_resolution[1])
+        calibration_pattern, marker_positions = pattern_generator.generate_grid(
+            proj_resolution,
+            grid_size=config.grid_size,
+            margin_percent=config.margin_percent
+        )
+
+        # Convert to pygame surface
+        pattern_rgb = cv2.cvtColor(calibration_pattern, cv2.COLOR_BGR2RGB)
+        pattern_surface = pygame.surfarray.make_surface(pattern_rgb.swapaxes(0, 1))
+
+        # Display pattern and wait for capture
+        captured = False
+        camera_frame = None
+
+        print("\nLIVE CAMERA PREVIEW:")
+        print("  - Position camera to see entire pattern")
+        print("  - Wait for marker count to reach 12+ (shown in preview window)")
+        print("  - Press SPACE when markers are detected")
+        print("  - Press ESC to skip calibration")
+
+        # Import detector for live preview
+        detector = ArucoPatternDetector(config.aruco_dict)
+
+        clock = pygame.time.Clock()
+        while not captured:
+            # Display pattern on projector/display
+            display_surface.blit(pattern_surface, (0, 0))
+
+            # Add instruction text on projector
+            font = pygame.font.Font(None, 36)
+            text = font.render("SPACE=Capture  ESC=Skip", True, (0, 255, 0))
+            display_surface.blit(text, (20, 20))
+
+            pygame.display.flip()
+
+            # Show live camera preview with marker detection
+            frame = self.camera.capture_frame()
+            detected_markers, _ = detector.detect_markers(frame)
+
+            # Draw detected markers on preview
+            preview = frame.copy()
+            for marker in detected_markers:
+                # Draw marker corners
+                corners = [(int(c.x), int(c.y)) for c in marker.corners]
+                cv2.polylines(preview, [np.array(corners)], True, (0, 255, 0), 2)
+                # Draw marker ID
+                center = (int(marker.center.x), int(marker.center.y))
+                cv2.putText(preview, str(marker.marker_id), center,
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+
+            # Add marker count with color coding
+            count = len(detected_markers)
+            total = len(marker_positions)
+            color = (0, 255, 0) if count >= config.min_markers_required else (0, 0, 255)
+            cv2.putText(preview, f"Detected: {count}/{total} markers", (10, 30),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.8, color, 2)
+
+            # Add instructions
+            status = "READY" if count >= config.min_markers_required else "ADJUST CAMERA"
+            cv2.putText(preview, f"Status: {status}", (10, 60),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1)
+            cv2.putText(preview, "SPACE=Capture  ESC=Skip", (10, 90),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1)
+
+            cv2.imshow("ArUco Calibration - Camera Preview", preview)
+
+            # Handle pygame events
+            for event in pygame.event.get():
+                if event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_SPACE:
+                        # Capture current frame (already in 'frame' variable)
+                        camera_frame = frame
+                        captured = True
+                        print(f"Frame captured! Detected {count} markers")
+                    elif event.key == pygame.K_ESCAPE:
+                        print("Calibration skipped")
+                        cv2.destroyAllWindows()
+                        return self._return_no_calibration()
+
+            # Also handle CV window events
+            key = cv2.waitKey(1) & 0xFF
+            if key == 32:  # SPACE
+                camera_frame = frame
+                captured = True
+                print(f"Frame captured! Detected {count} markers")
+            elif key == 27:  # ESC
+                print("Calibration skipped")
+                cv2.destroyAllWindows()
+                return self._return_no_calibration()
+
+            clock.tick(30)
+
+        cv2.destroyAllWindows()
+
+        # Safety check
+        if camera_frame is None:
+            print("ERROR: No frame captured")
+            return self._return_no_calibration()
+
+        # Detect markers in captured frame (detector already created above)
+        detected_markers, _ = detector.detect_markers(camera_frame)
+
+        if len(detected_markers) < 4:
+            print(f"ERROR: Only {len(detected_markers)} markers detected, need at least 4")
+            return self._return_no_calibration()
+
+        print(f"Detected {len(detected_markers)} markers")
+
+        # Create point correspondences (match detected markers with known positions)
+        camera_points, projector_points = detector.create_point_correspondences(
+            detected_markers,
+            marker_positions
+        )
+
+        print(f"Matched {len(camera_points)} point pairs for homography computation")
+
+        if len(camera_points) < 4:
+            print(f"ERROR: Need at least 4 matched pairs, got {len(camera_points)}")
+            return self._return_no_calibration()
+
+        # Compute homography
+        try:
+            homography, inlier_mask, quality = compute_homography(camera_points, projector_points)
+
+            print(f"Homography computed successfully!")
+            print(f"  RMS error: {quality.reprojection_error_rms:.2f}px")
+            print(f"  Max error: {quality.reprojection_error_max:.2f}px")
+            print(f"  Inliers: {quality.num_inliers}/{quality.num_total_points}")
+            print(f"  Quality: {'GOOD' if quality.is_acceptable else 'POOR'}")
+
+            # Create calibration data
+            cam_width, cam_height = self.camera.get_resolution()
+            calibration_data = CalibrationData(
+                camera_resolution=Resolution(width=cam_width, height=cam_height),
+                projector_resolution=proj_resolution,
+                homography_camera_to_projector=homography,
+                quality=quality,
+                calibration_time=datetime.now(),
+                marker_count=len(detected_markers)
             )
 
-        # Use existing ArUco calibration
+            # Save calibration
+            calib_path = "calibration.json"
+            calibration_data.save(calib_path)
+            print(f"Calibration saved to {calib_path}")
+
+            # Update calibration manager if available
+            if self.calibration_manager:
+                self.calibration_manager.load_calibration(calib_path)
+                print("Calibration manager updated")
+
+            return CalibrationResult(
+                success=True,
+                method="aruco_geometric_calibration",
+                available_colors=self._get_default_colors(),
+                display_latency_ms=0.0,
+                detection_quality=quality.quality_score if quality.quality_score is not None else 1.0,
+                notes=f"ArUco calibration: {len(detected_markers)} markers, {quality.reprojection_error_rms:.2f}px RMS error"
+            )
+
+        except Exception as e:
+            print(f"ERROR during calibration: {e}")
+            import traceback
+            traceback.print_exc()
+            return self._return_no_calibration()
+
+    def _return_no_calibration(self):
+        """Return calibration result without geometric calibration."""
         return CalibrationResult(
             success=True,
-            method="aruco_geometric",
-            available_colors=None
+            method="object_detection_no_geometric_calibration",
+            available_colors=self._get_default_colors(),
+            display_latency_ms=0.0,
+            detection_quality=0.5,  # Reduced quality without calibration
+            notes="No geometric calibration performed - using simple coordinate normalization"
         )
+
+    def _get_default_colors(self):
+        """Get default color palette."""
+        return [
+            (255, 0, 0),    # Red
+            (0, 255, 0),    # Green
+            (0, 0, 255),    # Blue
+            (255, 255, 0),  # Yellow
+            (255, 0, 255),  # Magenta
+            (0, 255, 255),  # Cyan
+            (255, 128, 0),  # Orange
+            (128, 0, 255),  # Purple
+            (0, 255, 128),  # Spring Green
+            (255, 255, 255) # White
+        ]
 
     def get_backend_info(self) -> dict:
         """Get backend information.

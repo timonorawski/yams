@@ -1,0 +1,1 @@
+"""FruitSlice game package."""

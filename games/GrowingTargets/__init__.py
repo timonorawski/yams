@@ -1,0 +1,1 @@
+"""GrowingTargets game package."""

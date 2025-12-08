@@ -267,6 +267,11 @@ class LaserDetectionBackend(DetectionBackend):
                 y=camera_pos.y / cam_height
             )
 
+        # Validate coordinates are within game bounds [0, 1]
+        if not (0.0 <= game_pos.x <= 1.0 and 0.0 <= game_pos.y <= 1.0):
+            # Detection is outside valid game area - discard
+            return
+
         # Sample brightness at detection point
         brightness = int(gray[int(cy), int(cx)])
 

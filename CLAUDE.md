@@ -1,144 +1,315 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to Claude Code when working with this repository.
 
 ## Project Overview
 
-This is an **interactive projection targeting system** that uses computer vision to create engaging games for any projectile-based activity. A projector displays targets on a surface, a camera detects impacts, and the system provides real-time feedback.
+**AMS (Arcade Management System)** is an interactive projection targeting platform that uses computer vision to create engaging games for any projectile-based activity. A projector displays targets on a surface, a camera detects impacts, and the system provides real-time feedback.
 
-**Use Cases**: Archery, darts, ball throwing, axe throwing, knife throwing, snowballs, beanbag toss, and any other activity where a projectile hits a visible surface.
+### Use Cases
 
-**Key Design Philosophy**: Variable practice over repetition—each attempt should be a fresh problem (different position, timing, decision) to build adaptable skill rather than context-dependent muscle memory.
+**Projectile-Based (Point Detection)**
+- Archery (foam-tip and real arrows)
+- Nerf darts and blasters
+- Ball/foam ball throwing
+- Darts
+- Axe/knife throwing (into soft targets)
+- Laser pointer games
+- Any activity where something hits a visible surface
 
-**Architecture Principle**: The core calibration and detection system is completely agnostic to the specific projectile type. Detection methods may vary (color blob detection, motion tracking, impact flash, etc.), but the coordinate mapping and game engine remain the same.
+**Full-Body Interaction (Occlusion Detection)**
+- Laser maze games (jump over/duck under projected "beams")
+- Physically interactive sidescrollers (body controls character)
+- Dance/movement games
+- Shadow-based interaction
+- Any activity where body occludes projected patterns
+
+The core tech - projector/camera coordinate mapping with occlusion detection - enables both point-based targeting AND full-body interaction through the same calibration system.
+
+### Design Philosophy
+
+**Variable practice over repetition**: Each attempt should be a fresh problem (different position, timing, decision) to build adaptable skill rather than context-dependent muscle memory.
+
+**Use-case agnostic architecture**: The core system is completely agnostic to projectile type. Detection methods vary, but coordinate mapping and game engine remain the same.
+
+**Code is not the asset, the developer is**: Build clean abstractions that enable rapid iteration.
+
+**Games work standalone**: Games should be playable with mouse/keyboard without requiring AMS or hardware. AMS integration is additive.
 
 ## Architecture
 
-The system has three main components with a specific data flow:
-
-### 1. Calibration System (`/calibration`)
-- Projects calibration grid onto target surface
-- Detects grid intersections in camera view
-- Computes homography transformation between projector space and camera space
-- This transformation is critical—all impact detection depends on accurate coordinate mapping
-- **Use-case agnostic**: works for any flat surface regardless of projectile type
-
-### 2. Impact Detection (`/impact_detection`)
-- Monitors camera feed for projectile impacts on the target surface
-- Detection methods are configurable based on projectile characteristics:
-
-  - **Persistence tracking** (easiest): Projectiles that stick to surface (real arrows with points, darts, axes, throwing knives stuck in soft target)
-    - Longer dwell time allows for robust blob detection
-    - Can use color segmentation for high-vis projectiles
-
-  - **Transient impact** (harder): Projectiles that hit and fall/bounce away (balls, beanbags, snowballs, foam-tip arrows)
-    - Object appears, approaches target, impacts (min velocity), then moves away
-    - **Two potential approaches**:
-      1. **Dual camera setup**: Stereoscopic tracking to measure 3D position/velocity, detect minimum velocity point
-      2. **Projected pattern differencing** (recommended, more feasible):
-         - **Phase 1** (continuous): Lightweight motion tracking to detect object and calculate velocity
-         - **Phase 2** (at impact moment only): Use pattern differencing for precise location
-           - Know what's projected (we control it)
-           - Use inverse calibration homography to predict what camera should see
-           - Detect distortion/occlusion in camera view vs. expected view
-           - Extract precise impact coordinates from occlusion
-         - **Key optimization**: Expensive pattern warping only runs once per impact, not every frame
-         - Similar to structured light scanning techniques
-    - Requires higher frame rate camera (60fps+)
-    - Computationally feasible with two-phase approach
-
-  - **Motion tracking**: Track projectile flight path and detect intersection with target plane (complex, requires good depth perception)
-
-- Maps detected position to game coordinates using calibration homography
-- **Pluggable architecture**: Different detection strategies can be swapped without affecting calibration or game engine
-- **Initial implementation**: Start with persistence tracking OR projected pattern differencing (both use calibration differently)
-
-### 3. Game Engine (`/game_engine`)
-- Projects targets at random positions
-- Receives impact coordinates from detection system
-- Provides visual/audio feedback
-- Tracks scoring and performance
-- **Game-mode agnostic**: doesn't care what created the impact
-
-### Data Flow
 ```
-Calibration → Homography Matrix (one-time setup)
-Camera Feed → Impact Detection → Impact Coordinates
-Impact Coordinates + Homography → Game Coordinates → Game Engine → Visual Feedback → Projector
+┌─────────────────────────────────────────────────────────────┐
+│                    DETECTION LAYER                           │
+│  Mouse | Laser Pointer | Object Detection | Future: AR      │
+│                                                              │
+│  Produces: PlaneHitEvent(x, y, timestamp, metadata)         │
+│            (normalized [0,1] coordinates)                    │
+└──────────────────────────┬───────────────────────────────────┘
+                           │
+                           ↓
+┌─────────────────────────────────────────────────────────────┐
+│                   AMS CORE (/ams/)                           │
+│                                                              │
+│  ┌────────────────┐  ┌──────────────────┐  ┌─────────────┐ │
+│  │  Calibration   │  │  Temporal State  │  │  Session    │ │
+│  │  Management    │  │  Management      │  │  & Events   │ │
+│  └────────────────┘  └──────────────────┘  └─────────────┘ │
+│                                                              │
+│  ┌──────────────────────────────────────────────────────┐  │
+│  │  AMSInputAdapter (ams/game_adapter.py)               │  │
+│  │  Converts PlaneHitEvent → InputEvent (pixel coords)  │  │
+│  └──────────────────────────────────────────────────────┘  │
+└──────────────────────────┬───────────────────────────────────┘
+                           │
+                           ↓
+┌─────────────────────────────────────────────────────────────┐
+│                     GAME LAYER                               │
+│  Simple Targets | Duck Hunt | Future games                  │
+│                                                              │
+│  Uses: InputManager + InputSource (unified interface)       │
+│  Receives: InputEvent (pixel coordinates)                   │
+│  Same code works standalone OR with AMS                     │
+└─────────────────────────────────────────────────────────────┘
 ```
 
-**Key Insight**: The calibration homography is the foundation. Once established, any detection method can plug in as long as it outputs camera coordinates. The game engine only sees normalized game coordinates and doesn't need to know whether it was an arrow, ball, or snowball.
+### Input Abstraction
 
-## Technology Stack
+Games use a unified input system that works identically in standalone and AMS modes:
 
-- **Computer Vision**: OpenCV for image processing, blob detection, homography computation
-- **Rendering**: pygame or similar for projection display
-- **Camera**: 30-60fps webcam or Raspberry Pi camera
-- **Python**: Primary language for the entire pipeline
+```python
+# Standalone mode (development)
+from input.input_manager import InputManager
+from input.sources.mouse import MouseInputSource
+input_manager = InputManager(MouseInputSource())
 
-## Development Environment
+# AMS mode (production)
+from ams.game_adapter import AMSInputAdapter
+input_manager = InputManager(AMSInputAdapter(ams_session, width, height))
 
-### Hardware Setup (Current Phase - Backyard Prototype)
-- Flat projection surface (~4x4 feet): plywood, foam board, fabric screen, etc.
-- Projector positioned to cover target area
-- Camera positioned with clear view of target surface
-- **Initial testing**: High-visibility foam-tip arrows (easiest detection case)
-- **Future testing**: Other projectiles as detection methods expand
+# Game code is identical either way:
+events = input_manager.get_events()  # Returns List[InputEvent]
+game_mode.handle_input(events)       # Same interface
+```
 
-### Testing Priorities
-1. Calibration accuracy with known reference points
-2. Impact visibility and dwell time in camera view (varies by projectile type)
-3. Detection reliability at different frame rates and lighting
-4. Quick calibration (<30 seconds for practical use)
+Key files:
+- `games/DuckHunt/input/sources/base.py` - `InputSource` interface
+- `games/DuckHunt/input/input_event.py` - `InputEvent` (pixel coordinates)
+- `ams/game_adapter.py` - `AMSInputAdapter` (bridges AMS → game input)
 
-## Critical Implementation Notes
+### Key Components
 
-### Calibration (Use-Case Agnostic)
-- The homography transformation is the foundation—everything depends on accurate coordinate mapping
-- Test with physical markers (tape on surface) at known positions before impact detection
-- Must work in various lighting conditions (indoor, outdoor/daylight)
-- Calibration is completely independent of projectile type
-- **Dual purpose**:
-  1. Map camera detections → game coordinates (all detection methods)
-  2. Predict camera view of projected content (for pattern differencing method)
+| Directory | Purpose |
+|-----------|---------|
+| `/ams/` | Core AMS system - detection backends, calibration, events, temporal state |
+| `/calibration/` | ArUco-based geometric calibration system |
+| `/models/` | Unified Pydantic data models |
+| `/games/` | Game implementations (Simple Targets, Duck Hunt) |
+| `/docs/` | Documentation (guides, history) |
 
-### Impact Detection (Projectile-Specific)
-- Detection strategy should be configurable/pluggable based on use case
-- **For persistence tracking** (stuck projectiles):
-  - Color blob detection for high-vis projectiles
-  - 30fps camera sufficient
-  - Simple frame differencing
-- **For transient impacts** (bouncing projectiles):
-  - **Recommended**: Projected pattern differencing
-    - Project known pattern, use calibration to predict camera view
-    - Detect occlusion/distortion where object blocks pattern
-    - Track object position over frames to find minimum velocity (impact moment)
-    - Computationally intensive but doesn't require special projectile colors
-  - **Alternative**: Dual camera stereoscopic tracking (hardware complexity)
-  - Requires 60fps+ camera
-  - Higher computational cost
-- Lighting conditions affect all detection methods—may need adaptive thresholding
+## Running the System
 
-### Coordinate Systems
-Three coordinate systems must be precisely mapped:
-1. **Projector space**: Where we want to display targets
-2. **Camera space**: What the camera observes
-3. **Game space**: Logical coordinate system for gameplay
+### Standalone Games (No AMS)
 
-The calibration homography maps between these spaces.
+Games can run independently with mouse/keyboard input for development and testing:
 
-## Current Status
+```bash
+# Duck Hunt standalone (mouse input, no AMS required)
+cd games/DuckHunt && python main.py
+```
 
-This is an initial prototype phase. The repository will be built from scratch with the calibration system as the first priority. No code exists yet—start with calibration grid projection and detection before implementing impact detection or game logic.
+This is useful for:
+- Game development without hardware setup
+- Testing game mechanics in isolation
+- UI/UX iteration
 
-**Initial Use Case**: Archery practice (easiest detection case) - but architecture must remain generic.
+### With AMS (Detection Backends)
 
-## Future Extensions (Not Current Priority)
+For projection setups with camera-based detection:
 
-- Additional detection methods for transient impacts (balls, beanbags)
-- Detection for stuck projectiles in soft surfaces (arrows in foam, axes in wood)
-- Multiple game modes (timed targets, sequences, cooperative play, multiplayer)
-- Performance tracking and progression metrics
+```bash
+# Simple targets with mouse (testing AMS integration)
+python ams_game.py --game simple_targets --backend mouse
+
+# Duck Hunt with laser pointer
+python ams_game.py --game duckhunt --backend laser --fullscreen --display 1
+
+# Duck Hunt with object detection (nerf darts)
+python ams_game.py --game duckhunt --backend object --mode classic_archery
+```
+
+### Calibration
+```bash
+python calibrate.py --projector-width 1920 --projector-height 1080 --camera-id 0
+```
+
+## Detection Backends
+
+### 1. Mouse (`--backend mouse`)
+- Development and testing
+- No calibration needed
+- Perfect for rapid iteration
+
+### 2. Laser Pointer (`--backend laser`)
+- `/ams/laser_detection_backend.py`
+- Brightness threshold detection
+- ~50ms latency
+- Great for demos and testing geometric calibration
+
+### 3. Object Detection (`--backend object`)
+- `/ams/object_detection_backend.py`
+- Color blob detection (HSV filtering)
+- Velocity tracking with two impact modes:
+  - **TRAJECTORY_CHANGE**: Detects bouncing objects (nerf darts)
+  - **STATIONARY**: Detects objects that stop (real darts, arrows in foam)
+- ~100-150ms latency
+
+## Data Models
+
+All data structures use Pydantic for type safety and serialization. Models are in `/models/`:
+
+- `primitives.py` - Point2D, Vector2D, Resolution, Color, Rectangle
+- `calibration.py` - CalibrationData, HomographyMatrix, CalibrationQuality
+- `game.py` - ImpactDetection, TargetDefinition, HitResult
+- `duckhunt/` - Duck Hunt specific models and game mode configs
+
+## Calibration System
+
+Uses ArUco markers for geometric calibration:
+1. Projects 4x4 marker grid onto target surface
+2. Camera detects markers
+3. Computes homography: Camera Space → Projector Space → Game Space
+4. Achieves sub-pixel accuracy (0.25px RMS in testing)
+
+Calibration data saved to `calibration.json` and auto-loaded on startup.
+
+## Temporal State Management
+
+Games inherit from `TemporalGameState` to handle detection latency:
+
+```python
+class MyGame(TemporalGameState):
+    def was_target_hit(self, x, y, timestamp):
+        # Query historical state at detection timestamp
+        snapshot = self.get_state_at(timestamp)
+        return check_hit(snapshot, x, y)
+```
+
+This allows accurate hit detection even with 100-200ms detection latency.
+
+## Development Guidelines
+
+### Adding a New Detection Backend
+
+1. Create class implementing `DetectionBackend` interface (`/ams/detection_backend.py`)
+2. Implement `update(dt)` and `poll_events()` methods
+3. Return `PlaneHitEvent` with normalized [0,1] coordinates
+4. Add to `ams_game.py` backend selection
+
+### Adding a New Game
+
+1. Create game in `/games/your_game/`
+2. **Make it work standalone first** with mouse/keyboard input:
+   - Copy DuckHunt's `input/` directory for the input abstraction
+   - Use `InputManager` + `MouseInputSource` for mouse input
+   - Game receives `InputEvent` with pixel coordinates
+   - Create a `main.py` entry point for standalone testing
+3. Add AMS integration (automatic if using InputManager):
+   - In `ams_game.py`, create `AMSInputAdapter` wrapping the AMS session
+   - Pass adapter to `InputManager` instead of `MouseInputSource`
+   - Game code remains unchanged - same `InputEvent` interface
+4. Optionally add temporal state management for latency compensation:
+   - Inherit from `TemporalGameState`
+   - Implement `was_target_hit(x, y, timestamp)` for historical queries
+
+### Code Style
+
+- Python 3.10+, type hints throughout
+- Pydantic models for all data structures
+- Well-commented code explaining *why*, not just *what*
+- Prefer editing existing files over creating new ones
+
+## Directory Structure
+
+```
+ArcheryGame/
+├── ams/                      # Core AMS system
+│   ├── session.py           # Main AMS interface
+│   ├── detection_backend.py # Backend interface
+│   ├── game_adapter.py      # AMSInputAdapter (AMS → game input bridge)
+│   ├── laser_detection_backend.py
+│   ├── object_detection_backend.py
+│   ├── temporal_state.py    # TemporalGameState base class
+│   ├── events.py            # PlaneHitEvent, HitResult
+│   ├── calibration.py       # CalibrationSession
+│   ├── camera.py            # Camera interface
+│   └── object_detection/    # Pluggable detectors
+├── calibration/             # Geometric calibration
+│   ├── calibration_manager.py
+│   ├── pattern_generator.py # ArUco grid generation
+│   ├── pattern_detector.py  # Marker detection
+│   └── homography.py        # Transform computation
+├── models/                  # Pydantic data models
+│   ├── primitives.py
+│   ├── calibration.py
+│   ├── game.py
+│   └── duckhunt/
+├── games/
+│   ├── base/
+│   │   └── simple_targets.py
+│   └── DuckHunt/            # Full game with modes, trajectories
+├── docs/
+│   ├── guides/              # User and developer guides
+│   └── history/             # Historical planning docs
+├── pasture/                 # Archived WIP/experimental code
+├── ams_game.py              # Main entry point
+├── calibrate.py             # Calibration CLI
+└── CLAUDE.md                # This file
+```
+
+## Future Vision
+
+### Detection Methods (Not Yet Implemented)
+- **Pattern Differencing**: Use inverse homography to predict camera view, detect occlusions where projectile blocks projected pattern. Enables precise impact detection for any projectile without color requirements.
+- **AR Detection**: Mobile AR tracking for phone-based games
+- **Depth Sensors**: True 3D tracking for complex scenarios
+
+### Games and Features
+- Multiple game modes beyond Duck Hunt
+- Multiplayer support
+- Performance tracking and progression
+- On-projection menu system (select games without command line)
 - Raspberry Pi portable packaging
-- Support for multiple simultaneous projectiles
-- Different surface materials and lighting conditions
+
+### Calibration Enhancements
+- Color characterization (determine which colors enable reliable detection)
+- Interstitial calibration between rounds (invisible to user)
+- Auto-recalibration when equipment drifts
+
+## Key Files
+
+| File | Purpose |
+|------|---------|
+| `ams_game.py` | **Start here** - unified launcher |
+| `ams/session.py` | Main AMS class, ties everything together |
+| `ams/game_adapter.py` | **AMSInputAdapter** - bridges AMS to game input |
+| `ams/temporal_state.py` | Temporal queries for latency handling |
+| `calibration/calibration_manager.py` | Calibration API |
+| `games/DuckHunt/input/` | Input abstraction (InputManager, InputSource, InputEvent) |
+| `models/__init__.py` | All model exports |
+
+## Testing
+
+```bash
+# Run DuckHunt tests
+cd games/DuckHunt && pytest tests/
+
+# Test laser detection
+python test_laser_detection.py --test all
+```
+
+## Documentation
+
+- `/docs/guides/` - User guides for setup and operation
+- `/docs/history/` - Historical planning docs with YAML frontmatter
+- DuckHunt has its own README at `/games/DuckHunt/README.md`
