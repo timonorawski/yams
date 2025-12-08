@@ -5,7 +5,8 @@ Development Mode Game Launcher
 Simple launcher for testing games with mouse input only.
 No AMS session, no calibration, no detection backends - just pure game testing.
 
-Uses the game registry for auto-discovery.
+Uses the game registry for auto-discovery. Game-specific arguments are
+dynamically loaded from each game's game_info.py ARGUMENTS list.
 
 Usage:
     # List available games
@@ -16,6 +17,9 @@ Usage:
     python dev_game.py duckhunt
     python dev_game.py duckhunt --mode classic_ducks
 
+    # See game-specific options
+    python dev_game.py containment --help
+
     # With custom resolution
     python dev_game.py balloonpop --resolution 1920x1080
 """
@@ -24,6 +28,7 @@ import pygame
 import sys
 import os
 import argparse
+import importlib
 
 # Ensure project root is on path
 _project_root = os.path.dirname(os.path.abspath(__file__))
@@ -33,6 +38,22 @@ if _project_root not in sys.path:
 from games.registry import get_registry
 
 
+def get_game_arguments(registry, game_slug: str) -> list:
+    """Get game-specific arguments from game_info.py ARGUMENTS list."""
+    if not game_slug:
+        return []
+
+    info = registry.get_game_info(game_slug)
+    if not info:
+        return []
+
+    try:
+        game_info_module = importlib.import_module(f"{info.module_path}.game_info")
+        return getattr(game_info_module, 'ARGUMENTS', [])
+    except (ImportError, AttributeError):
+        return []
+
+
 def main():
     """Main entry point for development game launcher."""
 
@@ -40,16 +61,28 @@ def main():
     registry = get_registry()
     available_games = registry.list_games()
 
-    # Parse arguments
+    # Phase 1: Parse just enough to identify the game
+    # Use parse_known_args to allow unknown game-specific args through
+    pre_parser = argparse.ArgumentParser(add_help=False)
+    pre_parser.add_argument('game', nargs='?', choices=available_games)
+    pre_parser.add_argument('--list', '-l', action='store_true')
+    pre_parser.add_argument('--help', '-h', action='store_true')
+
+    pre_args, remaining = pre_parser.parse_known_args()
+
+    # Phase 2: Build full parser with game-specific arguments
     parser = argparse.ArgumentParser(
         description='Development Mode Game Launcher - Test games with mouse input',
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
+        epilog=f"""
+Available games: {', '.join(available_games)}
+
 Examples:
   python dev_game.py --list              # List available games
   python dev_game.py balloonpop          # Play Balloon Pop
-  python dev_game.py duckhunt            # Play Duck Hunt
+  python dev_game.py containment --tempo wild
   python dev_game.py duckhunt --mode classic_ducks
+  python dev_game.py <game> --help       # See game-specific options
         """
     )
 
@@ -57,7 +90,7 @@ Examples:
         'game',
         nargs='?',
         choices=available_games,
-        help=f'Game to play (available: {", ".join(available_games)})'
+        help=f'Game to play'
     )
 
     parser.add_argument(
@@ -79,99 +112,39 @@ Examples:
         help='Run in fullscreen mode'
     )
 
-    # Game-specific arguments
-    parser.add_argument(
-        '--mode',
-        type=str,
-        default='classic_archery',
-        help='Game mode for Duck Hunt (default: classic_archery)'
-    )
+    # Add game-specific arguments if a game was specified
+    game_args_added = set()
+    if pre_args.game:
+        game_arguments = get_game_arguments(registry, pre_args.game)
+        for arg_def in game_arguments:
+            arg_name = arg_def['name']
+            # Avoid duplicates
+            if arg_name in game_args_added:
+                continue
+            game_args_added.add(arg_name)
 
-    parser.add_argument(
-        '--spawn-rate',
-        type=float,
-        default=None,
-        help='Balloon spawn rate in seconds (Balloon Pop)'
-    )
+            # Build kwargs for add_argument
+            kwargs = {}
+            if 'type' in arg_def:
+                type_val = arg_def['type']
+                # Handle type as string or actual type
+                if isinstance(type_val, str):
+                    kwargs['type'] = {'str': str, 'int': int, 'float': float}.get(type_val, str)
+                else:
+                    kwargs['type'] = type_val
+            if 'default' in arg_def:
+                kwargs['default'] = arg_def['default']
+            if 'help' in arg_def:
+                kwargs['help'] = arg_def['help']
+            if 'action' in arg_def:
+                kwargs['action'] = arg_def['action']
+                kwargs.pop('type', None)  # action and type are mutually exclusive
+            if 'choices' in arg_def:
+                kwargs['choices'] = arg_def['choices']
 
-    parser.add_argument(
-        '--max-escaped',
-        type=int,
-        default=None,
-        help='Max escaped balloons before game over (Balloon Pop)'
-    )
+            parser.add_argument(arg_name, **kwargs)
 
-    parser.add_argument(
-        '--target-pops',
-        type=int,
-        default=None,
-        help='Pops needed to win (Balloon Pop, 0=endless)'
-    )
-
-    # Grouping specific
-    parser.add_argument(
-        '--method',
-        type=str,
-        default=None,
-        help='Grouping method: centroid or fixed (Grouping)'
-    )
-
-    # ManyTargets specific
-    parser.add_argument(
-        '--count',
-        type=int,
-        default=None,
-        help='Number of targets (ManyTargets)'
-    )
-    parser.add_argument(
-        '--size',
-        type=str,
-        default=None,
-        help='Target size: small, medium, large (ManyTargets)'
-    )
-    parser.add_argument(
-        '--timed',
-        type=int,
-        default=None,
-        help='Time limit in seconds (ManyTargets)'
-    )
-    parser.add_argument(
-        '--miss-mode',
-        type=str,
-        default=None,
-        help='Miss behavior: penalty or strict (ManyTargets)'
-    )
-    parser.add_argument(
-        '--allow-duplicates',
-        action='store_true',
-        default=False,
-        help='Allow hitting same target multiple times (ManyTargets)'
-    )
-    parser.add_argument(
-        '--progressive',
-        action='store_true',
-        default=False,
-        help='Targets shrink as you clear (ManyTargets)'
-    )
-    parser.add_argument(
-        '--shrink-rate',
-        type=float,
-        default=None,
-        help='Size multiplier per hit in progressive mode (ManyTargets)'
-    )
-    parser.add_argument(
-        '--min-size',
-        type=int,
-        default=None,
-        help='Minimum target radius in progressive mode (ManyTargets)'
-    )
-    parser.add_argument(
-        '--spacing',
-        type=float,
-        default=None,
-        help='Minimum spacing between targets (ManyTargets)'
-    )
-
+    # Now parse everything
     args = parser.parse_args()
 
     # Handle --list
@@ -180,17 +153,23 @@ Examples:
         print("=" * 50)
         for slug in available_games:
             info = registry.get_game_info(slug)
-            print(f"\n  {slug}")
-            print(f"    Name: {info.name}")
-            print(f"    Description: {info.description}")
-            print(f"    Version: {info.version}")
+            if info:
+                print(f"\n  {slug}")
+                print(f"    Name: {info.name}")
+                print(f"    Description: {info.description}")
+                print(f"    Version: {info.version}")
+
+                # Show available arguments
+                game_args = get_game_arguments(registry, slug)
+                if game_args:
+                    arg_names = [a['name'] for a in game_args]
+                    print(f"    Options: {', '.join(arg_names)}")
         print()
         return 0
 
     # Require a game
     if args.game is None:
         parser.print_help()
-        print(f"\nAvailable games: {', '.join(available_games)}")
         return 1
 
     # Parse resolution
@@ -215,27 +194,34 @@ Examples:
     else:
         screen = pygame.display.set_mode((DISPLAY_WIDTH, DISPLAY_HEIGHT))
 
-    pygame.display.set_caption(f"{game_info.name} - Development Mode")
+    if game_info:
+        pygame.display.set_caption(f"{game_info.name} - Development Mode")
+        print("=" * 60)
+        print(f"Development Mode: {game_info.name}")
+        print("=" * 60)
+    else:
+        pygame.display.set_caption(f"{args.game} - Development Mode")
+        print("=" * 60)
+        print(f"Development Mode: {args.game}")
+        print("=" * 60)
 
-    print("=" * 60)
-    print(f"Development Mode: {game_info.name}")
-    print("=" * 60)
     print(f"Resolution: {DISPLAY_WIDTH}x{DISPLAY_HEIGHT}")
     print(f"Input: Mouse")
     print()
 
-    # Collect game kwargs
-    game_kwargs = {}
-    if args.mode and args.game == 'duckhunt':
-        game_kwargs['mode'] = args.mode
-    if args.spawn_rate is not None:
-        game_kwargs['spawn_rate'] = args.spawn_rate
-    if args.max_escaped is not None:
-        game_kwargs['max_escaped'] = args.max_escaped
-    if args.target_pops is not None:
-        game_kwargs['target_pops'] = args.target_pops
-    if args.method is not None and args.game == 'grouping':
-        game_kwargs['method'] = args.method
+    # Collect game kwargs from all parsed arguments
+    # Skip the common launcher arguments
+    skip_args = {'game', 'list', 'resolution', 'fullscreen'}
+    game_kwargs = {
+        k: v for k, v in vars(args).items()
+        if k not in skip_args and v is not None
+    }
+
+    if game_kwargs:
+        print("Game options:")
+        for k, v in game_kwargs.items():
+            print(f"  --{k.replace('_', '-')}: {v}")
+        print()
 
     # Create game
     try:
@@ -255,6 +241,7 @@ Examples:
     print("Controls:")
     print("  - Click to interact")
     print("  - R to restart")
+    print("  - P to cycle palette (if supported)")
     print("  - F to toggle fullscreen")
     print("  - ESC to quit")
     print()
@@ -279,6 +266,11 @@ Examples:
                     running = False
                 elif event.key == pygame.K_f:
                     pygame.display.toggle_fullscreen()
+                elif event.key == pygame.K_p:
+                    # Cycle palette if supported
+                    if hasattr(game, 'cycle_palette'):
+                        new_palette = game.cycle_palette()
+                        print(f"Palette: {new_palette}")
                 elif event.key == pygame.K_r:
                     # Restart
                     game = registry.create_game(args.game, DISPLAY_WIDTH, DISPLAY_HEIGHT, **game_kwargs)
@@ -320,7 +312,7 @@ Examples:
                             waiting = False
                 clock.tick(30)
 
-        elif hasattr(GameState, 'WON') and game.state == GameState.WON:
+        elif game.state == GameState.WON:
             print("\n" + "=" * 60)
             print("YOU WIN!")
             print(f"Final Score: {game.get_score()}")
