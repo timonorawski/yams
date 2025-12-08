@@ -19,7 +19,7 @@ from models import (
     ScorePopup,
     EffectType,
 )
-import config
+from games.DuckHunt import config
 
 
 class FeedbackManager:

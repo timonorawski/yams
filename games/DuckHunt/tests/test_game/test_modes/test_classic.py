@@ -15,10 +15,10 @@ import pytest
 import pygame
 import time
 from unittest.mock import Mock, patch
-from game.modes.classic import ClassicMode
-from input.input_event import InputEvent
+from games.DuckHunt.game.modes.classic import ClassicMode
+from games.DuckHunt.input.input_event import InputEvent
 from models import Vector2D, EventType, TargetState, GameState
-from config import (
+from games.DuckHunt.config import (
     SCREEN_WIDTH,
     SCREEN_HEIGHT,
     TARGET_SPAWN_RATE,
@@ -158,7 +158,7 @@ def test_targets_move_on_update(mode):
 def test_target_movement_direction(mode):
     """Test that targets move in correct direction based on spawn side."""
     # Manually create left-spawning target
-    from game.target import Target
+    from games.DuckHunt.game.target import Target
     from models import TargetData
 
     left_target_data = TargetData(
@@ -232,7 +232,7 @@ def test_hit_detection_miss(mode):
 def test_hit_only_affects_one_target(mode):
     """Test that one click only hits one target."""
     # Spawn multiple overlapping targets
-    from game.target import Target
+    from games.DuckHunt.game.target import Target
     from models import TargetData
 
     position = Vector2D(x=100.0, y=100.0)
@@ -286,7 +286,7 @@ def test_inactive_targets_cannot_be_hit(mode):
 
 def test_target_escape_left_edge(mode):
     """Test that targets escaping left edge are removed and count as miss."""
-    from game.target import Target
+    from games.DuckHunt.game.target import Target
     from models import TargetData
 
     # Create target moving left, near left edge
@@ -311,7 +311,7 @@ def test_target_escape_left_edge(mode):
 
 def test_target_escape_right_edge(mode):
     """Test that targets escaping right edge are removed and count as miss."""
-    from game.target import Target
+    from games.DuckHunt.game.target import Target
     from models import TargetData
 
     # Create target moving right, near right edge
@@ -336,7 +336,7 @@ def test_target_escape_right_edge(mode):
 
 def test_hit_targets_removed_when_off_screen(mode):
     """Test that hit targets are also removed when they go off screen."""
-    from game.target import Target
+    from games.DuckHunt.game.target import Target
     from models import TargetData
 
     # Create hit target near edge

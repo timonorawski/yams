@@ -9,8 +9,8 @@ from abc import ABC, abstractmethod
 from typing import List
 import pygame
 from models import GameState, DuckHuntInternalState
-from game.target import Target
-from input.input_event import InputEvent
+from games.DuckHunt.game.target import Target
+from games.DuckHunt.input.input_event import InputEvent
 
 
 class GameMode(ABC):

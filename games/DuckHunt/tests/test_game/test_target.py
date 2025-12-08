@@ -11,7 +11,7 @@ Tests cover:
 import pytest
 from pydantic import ValidationError
 from models import TargetData, Vector2D, TargetState, Rectangle
-from game.target import Target
+from games.DuckHunt.game.target import Target
 
 
 # ============================================================================

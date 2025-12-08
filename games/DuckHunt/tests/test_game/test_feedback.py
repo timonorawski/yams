@@ -20,7 +20,7 @@ from models import (
     ScorePopup,
     EffectType,
 )
-from game.feedback import FeedbackManager
+from games.DuckHunt.game.feedback import FeedbackManager
 
 
 # ============================================================================

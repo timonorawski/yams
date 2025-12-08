@@ -23,7 +23,7 @@ Examples:
 """
 
 from typing import Dict, Type, List
-from game.trajectory.base import TrajectoryAlgorithm
+from games.DuckHunt.game.trajectory.base import TrajectoryAlgorithm
 
 
 class TrajectoryRegistry:

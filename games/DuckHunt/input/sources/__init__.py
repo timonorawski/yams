@@ -1,9 +1,4 @@
-"""Input source implementations."""
+"""DuckHunt Input Sources - Re-export from common module."""
+from games.common.input.sources import InputSource, MouseInputSource
 
-from input.sources.base import InputSource
-from input.sources.mouse import MouseInputSource
-
-__all__ = [
-    'InputSource',
-    'MouseInputSource',
-]
+__all__ = ['InputSource', 'MouseInputSource']

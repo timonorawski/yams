@@ -16,13 +16,13 @@ import random
 import time
 from typing import List
 import pygame
-from game.game_mode import GameMode
-from game.target import Target
-from game.scoring import ScoreTracker
-from game.feedback import FeedbackManager
-from input.input_event import InputEvent
+from games.DuckHunt.game.game_mode import GameMode
+from games.DuckHunt.game.target import Target
+from games.DuckHunt.game.scoring import ScoreTracker
+from games.DuckHunt.game.feedback import FeedbackManager
+from games.DuckHunt.input.input_event import InputEvent
 from models import Vector2D, TargetData, TargetState, GameState, DuckHuntInternalState
-from config import (
+from games.DuckHunt.config import (
     SCREEN_WIDTH,
     SCREEN_HEIGHT,
     TARGET_DEFAULT_SIZE,

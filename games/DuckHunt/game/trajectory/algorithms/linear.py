@@ -21,7 +21,7 @@ Examples:
 
 from typing import Dict
 from models import Vector2D
-from game.trajectory.base import Trajectory, TrajectoryData, TrajectoryAlgorithm
+from games.DuckHunt.game.trajectory.base import Trajectory, TrajectoryData, TrajectoryAlgorithm
 
 
 class LinearTrajectoryImpl(Trajectory):
@@ -154,5 +154,5 @@ class LinearTrajectory:
 
 
 # Auto-register this algorithm when module is imported
-from game.trajectory.registry import TrajectoryRegistry
+from games.DuckHunt.game.trajectory.registry import TrajectoryRegistry
 TrajectoryRegistry.register("linear", LinearTrajectory)

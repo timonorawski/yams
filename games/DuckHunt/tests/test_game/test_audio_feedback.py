@@ -9,7 +9,7 @@ that methods don't crash and audio can be disabled gracefully.
 import pytest
 import pygame
 from unittest.mock import Mock, patch, MagicMock
-from game.feedback import FeedbackManager
+from games.DuckHunt.game.feedback import FeedbackManager
 from models import Vector2D
 
 
@@ -103,7 +103,7 @@ class TestFeedbackManagerAudio:
         # Should have called play_miss_sound
         manager.play_miss_sound.assert_called_once()
 
-    @patch('game.feedback.pygame.mixer')
+    @patch('games.DuckHunt.game.feedback.pygame.mixer')
     def test_audio_init_failure_graceful(self, mock_mixer, pygame_init):
         """Test that audio initialization failure is handled gracefully."""
         # Make mixer.init raise an exception
@@ -116,7 +116,7 @@ class TestFeedbackManagerAudio:
         assert manager.audio_enabled is False
         assert manager.sounds == {}
 
-    @patch('game.feedback.np')
+    @patch('games.DuckHunt.game.feedback.np')
     def test_sound_generation_failure_graceful(self, mock_np, pygame_init):
         """Test that sound generation failure is handled gracefully."""
         # Make numpy operations fail

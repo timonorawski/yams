@@ -20,8 +20,8 @@ Examples:
 """
 
 # Import algorithms to make them available
-from game.trajectory.algorithms.linear import LinearTrajectory
-from game.trajectory.algorithms.bezier_3d import Bezier3DTrajectory
+from games.DuckHunt.game.trajectory.algorithms.linear import LinearTrajectory
+from games.DuckHunt.game.trajectory.algorithms.bezier_3d import Bezier3DTrajectory
 
 # Public API
 __all__ = [

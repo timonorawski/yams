@@ -9,7 +9,7 @@ import pytest
 from unittest.mock import Mock, MagicMock, patch
 from pydantic import ValidationError
 from models import ScoreData
-from game.scoring import ScoreTracker
+from games.DuckHunt.game.scoring import ScoreTracker
 
 
 # ============================================================================

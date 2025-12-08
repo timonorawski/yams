@@ -17,7 +17,7 @@ from typing import Optional
 import pygame
 from models import Vector2D, TargetState
 
-from game.trajectory.base import Trajectory
+from games.DuckHunt.game.trajectory.base import Trajectory
 
 
 class TrajectoryTarget:

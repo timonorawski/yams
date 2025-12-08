@@ -14,9 +14,9 @@ import pytest
 from typing import List
 
 from models import Vector2D, EventType
-from input.input_event import InputEvent
-from input.input_manager import InputManager
-from input.sources.base import InputSource
+from games.DuckHunt.input.input_event import InputEvent
+from games.DuckHunt.input.input_manager import InputManager
+from games.DuckHunt.input.sources.base import InputSource
 
 
 class MockInputSource(InputSource):

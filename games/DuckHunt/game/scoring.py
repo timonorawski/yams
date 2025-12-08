@@ -18,7 +18,7 @@ Examples:
 from typing import Optional
 import pygame
 from models import ScoreData
-from config import Colors, Fonts
+from games.DuckHunt.config import Colors, Fonts
 
 
 class ScoreTracker:

@@ -6,7 +6,7 @@ Tests menu screens, navigation, and action handling.
 
 import pytest
 import pygame
-from game.menu import (
+from games.DuckHunt.game.menu import (
     MenuScreen,
     StartMenu,
     GameOverMenu,

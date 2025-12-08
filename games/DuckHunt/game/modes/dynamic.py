@@ -18,15 +18,15 @@ import time
 from typing import List, Optional
 import pygame
 
-from game.game_mode import GameMode
-from game.trajectory_target import TrajectoryTarget
-from game.scoring import ScoreTracker
-from game.feedback import FeedbackManager
-from game.trajectory import TrajectoryRegistry
-from input.input_event import InputEvent
+from games.DuckHunt.game.game_mode import GameMode
+from games.DuckHunt.game.trajectory_target import TrajectoryTarget
+from games.DuckHunt.game.scoring import ScoreTracker
+from games.DuckHunt.game.feedback import FeedbackManager
+from games.DuckHunt.game.trajectory import TrajectoryRegistry
+from games.DuckHunt.input.input_event import InputEvent
 from models import Vector2D, GameState, TargetState, DuckHuntInternalState
 from models.game_mode_config import GameModeConfig, LevelConfig
-from config import (
+from games.DuckHunt.config import (
     SCREEN_WIDTH,
     SCREEN_HEIGHT,
     Colors,

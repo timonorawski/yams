@@ -14,7 +14,7 @@ import pytest
 from pydantic import ValidationError
 
 from models import Vector2D, EventType
-from input.input_event import InputEvent
+from games.DuckHunt.input.input_event import InputEvent
 
 
 class TestInputEventConstruction:

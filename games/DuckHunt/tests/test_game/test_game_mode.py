@@ -10,11 +10,11 @@ import pygame
 from typing import List
 from abc import ABC
 
-from game.game_mode import GameMode
-from game.target import Target
-from input.input_event import InputEvent
+from games.DuckHunt.game.game_mode import GameMode
+from games.DuckHunt.game.target import Target
+from games.DuckHunt.input.input_event import InputEvent
 from models import (
-    GameState, TargetState, TargetData, Vector2D, EventType
+    GameState, DuckHuntInternalState, TargetState, TargetData, Vector2D, EventType
 )
 
 
@@ -127,8 +127,8 @@ class TestGameModeBase:
         # Initial state
         assert mode.state == GameState.PLAYING
 
-        # Change state
-        mode._state = GameState.GAME_OVER
+        # Change state using internal state enum
+        mode._state = DuckHuntInternalState.GAME_OVER
         assert mode.state == GameState.GAME_OVER
 
     def test_update_method_called(self):
@@ -387,15 +387,15 @@ class TestGameModeStateManagement:
         """Game mode can transition between states."""
         mode = MockGameMode()
 
-        # Test all state transitions
-        mode._state = GameState.PAUSED
-        assert mode.state == GameState.PAUSED
+        # Test state transitions using internal state enum
+        mode._state = DuckHuntInternalState.WAITING_FOR_RELOAD
+        assert mode.state == GameState.RETRIEVAL
 
-        mode._state = GameState.GAME_OVER
+        mode._state = DuckHuntInternalState.GAME_OVER
         assert mode.state == GameState.GAME_OVER
 
-        mode._state = GameState.MENU
-        assert mode.state == GameState.MENU
+        mode._state = DuckHuntInternalState.PLAYING
+        assert mode.state == GameState.PLAYING
 
 
 class TestGameModeIncomplete:

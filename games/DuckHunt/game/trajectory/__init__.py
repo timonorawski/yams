@@ -61,17 +61,17 @@ Creating Custom Algorithms:
 """
 
 # Import base classes and registry
-from game.trajectory.base import (
+from games.DuckHunt.game.trajectory.base import (
     Trajectory,
     TrajectoryData,
     TrajectoryAlgorithm,
 )
-from game.trajectory.registry import TrajectoryRegistry
+from games.DuckHunt.game.trajectory.registry import TrajectoryRegistry
 
 # Import algorithms to auto-register them
 # This ensures they're available when the package is imported
-import game.trajectory.algorithms.linear
-import game.trajectory.algorithms.bezier_3d
+import games.DuckHunt.game.trajectory.algorithms.linear
+import games.DuckHunt.game.trajectory.algorithms.bezier_3d
 
 # Public API
 __all__ = [

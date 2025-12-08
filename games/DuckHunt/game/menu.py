@@ -14,7 +14,7 @@ from typing import List, Optional, Callable
 from enum import Enum
 import pygame
 from models import Vector2D, GameState
-import config
+from games.DuckHunt import config
 
 
 class MenuAction(str, Enum):

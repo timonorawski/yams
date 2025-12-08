@@ -15,9 +15,9 @@ from typing import List
 from unittest.mock import MagicMock, patch
 
 from models import Vector2D, EventType
-from input.input_event import InputEvent
-from input.sources.base import InputSource
-from input.sources.mouse import MouseInputSource
+from games.DuckHunt.input.input_event import InputEvent
+from games.DuckHunt.input.sources.base import InputSource
+from games.DuckHunt.input.sources.mouse import MouseInputSource
 
 
 class MockInputSource(InputSource):

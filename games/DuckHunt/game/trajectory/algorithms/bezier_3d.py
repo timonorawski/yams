@@ -31,7 +31,7 @@ Examples:
 
 from typing import Dict
 from models import Vector2D
-from game.trajectory.base import Trajectory, TrajectoryData, TrajectoryAlgorithm
+from games.DuckHunt.game.trajectory.base import Trajectory, TrajectoryData, TrajectoryAlgorithm
 
 
 class Bezier3DTrajectoryImpl(Trajectory):
@@ -259,5 +259,5 @@ class Bezier3DTrajectory:
 
 
 # Auto-register this algorithm when module is imported
-from game.trajectory.registry import TrajectoryRegistry
+from games.DuckHunt.game.trajectory.registry import TrajectoryRegistry
 TrajectoryRegistry.register("bezier_3d", Bezier3DTrajectory)
