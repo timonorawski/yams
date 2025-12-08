@@ -242,6 +242,10 @@ Examples:
 
         # Handle pygame events
         for event in pygame.event.get():
+            # Let game handle event first (for level chooser, etc.)
+            if hasattr(game, 'handle_pygame_event') and game.handle_pygame_event(event):
+                continue
+
             if event.type == pygame.QUIT:
                 running = False
             elif event.type == pygame.KEYDOWN:

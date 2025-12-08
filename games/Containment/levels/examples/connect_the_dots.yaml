@@ -1,0 +1,42 @@
+# Pure Connect-the-Dots Mode
+# Every hit creates a wall to the nearest previous hit
+# Strategic placement builds an enclosure around the ball
+
+name: "Connect the Dots"
+description: "Build walls by connecting your shots - strategic placement is key"
+difficulty: 2
+author: "core"
+version: 1
+
+objectives:
+  type: survive
+  time_limit: 90
+
+ball:
+  count: 1
+  speed: 100
+  radius: 22
+  spawn: center
+  ai: dumb
+
+environment:
+  edges:
+    mode: bounce
+
+hit_modes:
+  selection: random  # Only one mode, so selection doesn't matter
+  modes:
+    - type: connect
+      config:
+        threshold: 50      # Generous threshold - easier to connect
+        fallback: point     # Isolated hits become small obstacles
+        fallback_config:
+          radius: 12
+
+pacing:
+  archery:
+    ball.speed: 70
+    hit_modes.modes[0].config.threshold: 250  # Even more generous for slow shooting
+  blaster:
+    ball.speed: 150
+    hit_modes.modes[0].config.threshold: 120  # Tighter threshold for rapid fire

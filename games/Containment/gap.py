@@ -157,6 +157,38 @@ class GapManager:
             )
             self.gaps.append(gap)
 
+    def add_gap_from_config(
+        self,
+        edge: str,
+        start_ratio: float,
+        end_ratio: float
+    ) -> None:
+        """Add a gap from level configuration.
+
+        Args:
+            edge: Edge name ('top', 'bottom', 'left', 'right')
+            start_ratio: Normalized start position (0-1)
+            end_ratio: Normalized end position (0-1)
+        """
+        edge_enum = Edge(edge.lower())
+
+        # Calculate width based on ratio range
+        if edge_enum in (Edge.TOP, Edge.BOTTOM):
+            edge_length = self.screen_width
+        else:
+            edge_length = self.screen_height
+
+        width = (end_ratio - start_ratio) * edge_length
+
+        gap = Gap(
+            edge=edge_enum,
+            start=start_ratio,
+            width=width,
+            screen_width=self.screen_width,
+            screen_height=self.screen_height,
+        )
+        self.gaps.append(gap)
+
     def check_escape(self, ball_pos: Vector2D, ball_radius: float) -> bool:
         """Check if ball has escaped through any gap."""
         for gap in self.gaps:

@@ -1,0 +1,64 @@
+# Morph Hit Mode Demo
+# Demonstrates shape-morphing obstacles
+
+name: "Shape Shifters"
+description: "Obstacles that morph between different shapes"
+difficulty: 3
+author: "core"
+version: 1
+
+objectives:
+  type: survive
+  time_limit: 60
+
+ball:
+  count: 1
+  speed: 130
+  radius: 20
+  spawn: center
+  ai: dumb
+
+environment:
+  edges:
+    mode: bounce
+
+hit_modes:
+  selection: random
+  modes:
+    # Morph obstacles - shape changers
+    - type: morph
+      weight: 3
+      config:
+        shapes: [triangle, square, pentagon]  # Cycle through these shapes
+        morph_interval: 2.0  # Change shape every 2 seconds
+        size: 50
+        rotation_speed: 30
+        pulsate: true  # Size oscillation
+        pulsate_amount: 0.15  # ±15% size variation
+
+    # Fast morphing variant
+    - type: morph
+      weight: 2
+      config:
+        shapes: [triangle, hexagon]  # Quick alternation
+        morph_interval: 1.0  # Faster shape changes
+        size: [40, 60]  # Random size
+        rotation_speed: [40, 60]  # Random rotation
+        pulsate: false
+
+    # Regular deflectors for balance
+    - type: deflector
+      weight: 2
+      config:
+        angle: random
+        length: 60
+
+pacing:
+  archery:
+    ball.speed: 80
+    hit_modes.modes[0].config.size: 60
+  throwing:
+    ball.speed: 130
+  blaster:
+    ball.speed: 190
+    hit_modes.modes[0].config.morph_interval: 1.5

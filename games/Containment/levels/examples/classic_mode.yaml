@@ -1,0 +1,48 @@
+# Classic Containment Mode
+# Ball tries to escape through gaps; player builds walls to contain it
+
+name: "Classic Containment"
+description: "Block the gaps to keep the ball contained"
+difficulty: 2
+author: "core"
+version: 1
+
+objectives:
+  type: survive
+  time_limit: 60
+
+ball:
+  count: 1
+  speed: 150
+  radius: 20
+  spawn: center
+  ai: dumb
+
+environment:
+  edges:
+    mode: gaps
+    gaps:
+      - edge: top
+        range: [0.35, 0.65]
+      - edge: bottom
+        range: [0.35, 0.65]
+      - edge: left
+        range: [0.35, 0.65]
+      - edge: right
+        range: [0.35, 0.65]
+
+hit_modes:
+  selection: random
+  modes:
+    - type: deflector
+      config:
+        angle: random
+        length: 60
+
+pacing:
+  archery:
+    ball.speed: 80
+    hit_modes.modes[0].config.length: 80
+  blaster:
+    ball.speed: 220
+    hit_modes.modes[0].config.length: 40

@@ -23,6 +23,10 @@ Adversarial containment game where a ball/entity tries to escape through gaps at
 - [x] Palette support
 - [x] Quiver/retrieval support
 - [x] HUD showing mode, time, bounces, deflector count
+- [x] **YAML Level Loader** with full schema support
+- [x] **All Hit Modes**: deflector, spinner, point, connect, morph, grow
+- [x] **Hit Mode Selection**: random, sequential, weighted
+- [x] **Level Chooser UI**: Tile-based level selection (`--choose-level`)
 
 ### CLI Flags
 
@@ -39,16 +43,21 @@ python dev_game.py containment --tempo wild   # Fast, chaotic
 
 # Endless mode
 python dev_game.py containment --time-limit 0
+
+# Level chooser UI
+python dev_game.py containment --choose-level
+
+# Load a specific level file
+python dev_game.py containment --level all_hit_modes
+python dev_game.py containment --level connect_the_dots
+python dev_game.py containment --level mixed_hits
 ```
 
 ### Not Yet Implemented
 
-- [ ] Connect-the-dots wall building (proximity-based)
 - [ ] Capture zone win condition
 - [ ] Ball AI (reactive/strategic modes)
 - [ ] Bouncing bomb hazards
-- [ ] Projectile-spawned morphing geometry
-- [ ] YAML level loader
 - [ ] Multiplayer modes
 
 ---
@@ -146,15 +155,21 @@ Behavior:
 
 ## Game States
 
+Uses standard `GameState` enum from `games/common/game_state.py`:
+
 ```python
 class GameState(Enum):
-    COUNTDOWN = "countdown"      # Pre-game countdown
     PLAYING = "playing"          # Active gameplay
+    PAUSED = "paused"            # Manual pause
     RETRIEVAL = "retrieval"      # Paused for arrow retrieval (archery mode)
-    ESCAPED = "escaped"          # Ball escaped - loss
-    CONTAINED = "contained"      # Ball trapped - win
-    TIME_UP = "time_up"          # Survived time limit - win
+    GAME_OVER = "game_over"      # Ball escaped - loss
+    WON = "won"                  # Survived time limit - win
 ```
+
+Internal game logic maps specific conditions to standard states:
+- Ball escapes through gap → `GAME_OVER`
+- Time limit reached → `WON`
+- Quiver empty → `RETRIEVAL`
 
 ---
 
@@ -223,16 +238,30 @@ MVP Features:
 - [x] AMS color palette support
 - [x] Test palette cycling (P key)
 
-### Phase 6: Advanced Features (NOT STARTED)
+### Phase 6: Level System & Hit Modes ✓ COMPLETE
+
+**Goal:** Data-driven levels, flexible hit mechanics
+
+- [x] YAML level loader (`games/Containment/levels/level_loader.py`)
+- [x] Level schema documentation (`games/Containment/levels/schema.md`)
+- [x] Example levels (classic_mode, dynamic_mode, mixed_hits, sequential_builder, all_hit_modes)
+- [x] `--level` CLI flag
+- [x] Hit mode: **deflector** - Basic wall segment
+- [x] Hit mode: **spinner** - Player-spawned rotating polygon
+- [x] Hit mode: **point** - Simple circular obstacle
+- [x] Hit mode: **connect** - Connect-the-dots wall building
+- [x] Hit mode: **morph** - Shape-changing obstacle with pulsation
+- [x] Hit mode: **grow** - Circular obstacle that grows when hit again
+- [x] Hit mode selection: random, sequential, weighted
+
+### Phase 7: Advanced Features (NOT STARTED)
 
 **Goal:** Depth and replayability
 
-- [ ] Connect-the-dots wall building mode
 - [ ] Capture zone win condition (pinball mode)
 - [ ] Multiple balls (Wild mode)
 - [ ] Bouncing bomb hazards
-- [ ] Projectile-spawned morphing geometry
-- [ ] YAML level loader
+- [ ] Ball AI (reactive/strategic modes)
 - [ ] Containment win condition (trap detection)
 - [ ] Leaderboards / personal bests
 
@@ -365,16 +394,15 @@ ARGUMENTS = [
 
 ### Proposed Redesign Ideas
 
-#### 1. Dynamic Environment Instead of Static Walls
+#### 1. Dynamic Environment Instead of Static Walls ✓ IMPLEMENTED
 
-Replace static walls/gaps with **rotating geometric structures**:
+Use `--mode dynamic` or level YAML with `environment.spinners`. Rotating polygons create ever-changing geometry.
 
-- Generatively placed polygons that rotate continuously
-- Create ever-changing gaps and openings
-- Ball must navigate through shifting geometry
-- Player can never "solve" the level permanently
-
+```bash
+python dev_game.py containment --mode dynamic --spinner-count 5
 ```
+
+```text
 Before (static):          After (dynamic):
 ┌────────────────┐        ┌────────────────┐
 │    ████        │        │    ◇ rotating  │
@@ -383,26 +411,28 @@ Before (static):          After (dynamic):
 └────────────────┘        └────────────────┘
 ```
 
-#### 2. Connect-the-Dots Wall Building
+#### 2. Connect-the-Dots Wall Building ✓ IMPLEMENTED
 
-Projectile placement creates geometry based on proximity:
+Projectile placement creates geometry based on proximity. Use `--level connect_the_dots` or set `hit_modes.type: connect` in level YAML.
 
-- **Close together (< threshold):** Forms a wall segment between them
-- **Far apart:** Just a point obstacle (circle or random small shape)
-- **Three close:** Could form a triangle enclosure
+**Implemented behavior:**
 
-This rewards intentional, strategic placement over spam.
+- First hit drops a dot
+- Hit within threshold of existing dot: creates wall from dot to hit position, consumes dot, leaves new dot at hit
+- Chain hits to build multi-segment walls
+- Hit outside threshold: drops independent dot
 
-```python
-def on_hit(position):
-    nearby = find_hits_within_radius(position, CONNECT_THRESHOLD)
-    if nearby:
-        # Create wall segment(s) connecting to nearby hits
-        for hit in nearby:
-            create_wall_segment(hit.position, position)
-    else:
-        # Isolated hit - just a small obstacle
-        create_point_obstacle(position)
+```yaml
+# Example level config
+hit_modes:
+  selection: random
+  modes:
+    - type: connect
+      config:
+        threshold: 200
+        fallback: point
+        fallback_config:
+          radius: 12
 ```
 
 #### 3. Alternative Win Condition: Capture Zone
@@ -435,54 +465,46 @@ Instead of "contain indefinitely," engineer a bounce INTO a capture zone:
 - Creates tension beyond just the ball
 - Forces rushed/imperfect shots
 
-#### 5. Projectile-Spawned Dynamic Geometry
+#### 5. Projectile-Spawned Dynamic Geometry ✓ IMPLEMENTED
 
-Projectiles themselves spawn rotating/morphing obstacles:
+Projectiles spawn rotating/morphing obstacles. Use hit modes `spinner`, `morph`, or `grow`.
 
-- Each hit creates a shape that rotates and changes
-- Could cycle through polygon types (triangle → square → pentagon)
-- Or continuously morph vertices
-- Adds chaos and unpredictability to your own placements
+**Implemented obstacle types:**
 
-**Size dynamics:**
+- **Spinner** (`type: spinner`): Rotating polygon (triangle → hexagon)
+- **Morph** (`type: morph`): Cycles through shapes, optional pulsation
+- **Grow** (`type: grow`): Circular obstacle that expands when hit again
 
-- **Pulsating:** Geometry breathes in/out over time (sinusoidal size)
-- **Growth on grouping:** Hit within existing geometry = that geometry grows larger
-  - Creates risk/reward: intentional grouping builds bigger walls, but requires precision
-  - Accidental grouping might block areas you didn't intend
-- **Decay:** Geometry slowly shrinks over time, needs "feeding" with more hits to maintain
+**Size dynamics (implemented):**
 
-```python
-class SpawnedGeometry:
-    def __init__(self, position, base_size=50):
-        self.position = position
-        self.base_size = base_size
-        self.growth_level = 1.0  # Multiplier from grouping
-        self.pulse_phase = 0.0
+- **Pulsating:** Morph obstacles can pulse (sinusoidal size) via `pulsate: true`
+- **Growth on hit:** Grow obstacles expand when hit within their bounds via `growth_per_hit`
+- **Growth cap:** Configurable via `max_size`
 
-    def add_grouped_hit(self):
-        """Another projectile landed within this geometry."""
-        self.growth_level += 0.3  # Grow by 30%
+```yaml
+# Example: morphing obstacle config
+- type: morph
+  config:
+    shapes: [triangle, square, pentagon, hexagon]
+    morph_interval: 2.0
+    size: 50
+    rotation_speed: 30
+    pulsate: true
+    pulse_speed: 2.0
+    pulse_amount: 0.15
 
-    def get_current_size(self, time):
-        pulse = 1.0 + 0.15 * math.sin(self.pulse_phase + time * 2)  # ±15% pulsation
-        return self.base_size * self.growth_level * pulse
-
-    def contains(self, point) -> bool:
-        """Check if point is within current geometry bounds."""
-        # Used to detect grouping hits
-        pass
+# Example: growing obstacle config
+- type: grow
+  config:
+    initial_size: 25
+    growth_per_hit: 0.3
+    max_size: 100
 ```
 
-**Variants to test:**
+**Not yet implemented:**
 
-- Random shape on spawn
-- Shape cycles through variants over time
-- Shape determined by hit timing (hit during certain phase = certain shape)
-- Side count increases/decreases rhythmically
-- **Pulsation speed** varies by shape type
-- **Growth cap** or unlimited scaling?
-- **Decay rate** balanced against growth rate
+- Decay (geometry shrinks over time)
+- Shape determined by hit timing
 
 ---
 
@@ -492,16 +514,17 @@ class SpawnedGeometry:
 |------|---------------|---------------|--------|
 | **Classic** | Static walls, close gaps | Survive time | ✓ Implemented |
 | **Dynamic** | Rotating spinners, no permanent solutions | Survive time | ✓ Implemented |
-| **Architect** | Connect-the-dots walls | Build enclosure / capture zone | Planned |
-| **Pinball** | Engineer bounces | Guide ball to capture zone | Planned |
-| **Chaos** | Projectiles spawn morphing geometry | Survive the madness | Planned |
+| **Architect** | Connect-the-dots walls | Survive time / Build enclosure | ✓ `--level connect_the_dots` |
+| **Chaos** | Projectiles spawn morphing/growing geometry | Survive the madness | ✓ `--level all_hit_modes` |
+| **Mixed** | Weighted random hit modes | Survive time | ✓ `--level mixed_hits` |
+| **Pinball** | Engineer bounces | Guide ball to capture zone | Planned (needs capture zone) |
 | **Minefield** | Bouncing bombs + ball | Survive without hitting bombs | Planned |
 
-**Next priority:** Architect (connect-the-dots) - would add strategic depth to deflector placement.
+**Implemented via Level System:** The YAML level loader enables all variant modes through hit mode configuration. Use `--choose-level` to browse available levels or `--level <name>` to load directly.
 
 ---
 
-## Level Builder Toolkit
+## Level Builder Toolkit ✓ IMPLEMENTED
 
 ### Philosophy
 
@@ -512,162 +535,133 @@ Separate **mechanics** (code) from **level design** (data). A YAML-based level d
 - Difficulty progression via level sequences
 - A/B testing different configurations
 
-### Level Definition Schema
+### Current Implementation
+
+```text
+games/Containment/
+├── levels/
+│   ├── __init__.py              # Module exports
+│   ├── level_loader.py          # Parse YAML, validate, instantiate
+│   ├── schema.md                # Full YAML schema documentation
+│   └── examples/
+│       ├── classic_mode.yaml    # Classic gaps mode
+│       ├── dynamic_mode.yaml    # Rotating spinners
+│       ├── mixed_hits.yaml      # Weighted hit mode selection
+│       ├── sequential_builder.yaml  # Sequential hit modes
+│       ├── all_hit_modes.yaml   # Showcases all 6 hit modes
+│       ├── connect_the_dots.yaml    # Pure connect mode
+│       └── morph_demo.yaml      # Morphing obstacles demo
+├── morph_obstacle.py            # Shape-morphing obstacles
+├── grow_obstacle.py             # Growing obstacles
+├── level_chooser.py             # Tile-based level selection UI
+└── game_mode.py                 # Uses level loader
+```
+
+### Level Definition Schema (Implemented)
+
+See `games/Containment/levels/schema.md` for full documentation. Example:
 
 ```yaml
-# levels/containment/dynamic_intro.yaml
-name: "Spinning Gates"
-description: "Learn to navigate rotating obstacles"
-difficulty: 1
+name: "Mixed Obstacles"
+description: "Each shot spawns different obstacle types"
+difficulty: 3
 author: "core"
+version: 1
 
-# Win/lose conditions
 objectives:
-  type: survive  # survive | capture | escape
-  time_limit: 60  # seconds (null = endless)
-  capture_zone:   # only for type: capture
-    position: [0.5, 0.9]
-    radius: 0.08
+  type: survive
+  time_limit: 90
 
-# Ball configuration
 ball:
   count: 1
-  speed: 120
-  radius: 20
-  spawn: center  # center | random | position
-  ai: dumb       # dumb | reactive | strategic
+  speed: 140
+  radius: 22
+  spawn: center
+  ai: dumb
 
-# Environment geometry
 environment:
-  # Static walls (screen edges with gaps)
-  walls:
-    - edge: top
-      gaps: [[0.3, 0.4], [0.7, 0.8]]  # [start, end] normalized
-    - edge: bottom
-      gaps: []  # solid wall
+  edges:
+    mode: bounce  # bounce | gaps
 
-  # Dynamic rotating obstacles
   spinners:
-    - position: [0.3, 0.5]
+    - position: [0.5, 0.5]
       shape: triangle
-      size: 80
-      rotation_speed: 45  # degrees/second
+      size: 50
+      rotation_speed: 30
 
-    - position: [0.7, 0.5]
-      shape: rectangle
-      size: 100
-      rotation_speed: -30  # negative = counter-clockwise
+hit_modes:
+  selection: weighted  # random | sequential | weighted
+  modes:
+    - type: deflector
+      weight: 5
+      config:
+        angle: random
+        length: 60
 
-  # Morphing obstacles (change shape over time)
-  morphers:
-    - position: [0.5, 0.3]
-      shapes: [triangle, square, pentagon, hexagon]
-      morph_interval: 2.0  # seconds between shape changes
-      size: 60
+    - type: spinner
+      weight: 2
+      config:
+        shape: random
+        size: [40, 60]
+        rotation_speed: [25, 55]
 
-  # Bouncing hazards
-  bombs:
-    - speed: 100
-      radius: 25
-      spawn: random
-      behavior: bounce  # bounce | seek_player | patrol
+    - type: point
+      weight: 1
+      config:
+        radius: [12, 20]
 
-# Player mechanics
-player:
-  mode: connect_dots  # point | line | connect_dots | morph_spawn
+    - type: connect
+      config:
+        threshold: 100
+        fallback: point
 
-  # For connect_dots mode
-  connect_threshold: 100  # pixels - closer creates walls
+    - type: morph
+      config:
+        shapes: [triangle, square, pentagon]
+        morph_interval: 2.0
+        pulsate: true
 
-  # For morph_spawn mode
-  spawn_shapes: [triangle, square]
-  spawn_rotation: true
+    - type: grow
+      config:
+        initial_size: 25
+        growth_per_hit: 0.3
+        max_size: 100
 
-  # Constraints
-  max_obstacles: null  # null = unlimited
-  obstacle_lifetime: null  # null = permanent, or seconds
-
-# Pacing overrides (optional - defaults from --pacing flag)
 pacing:
   archery:
-    ball_speed: 80
-    connect_threshold: 120  # larger threshold = easier to connect
+    ball.speed: 90
   blaster:
-    ball_speed: 200
-    connect_threshold: 60
+    ball.speed: 200
 ```
 
-### Toolkit Components
+### Hit Mode Types
 
-```
-games/Containment/
-├── toolkit/
-│   ├── __init__.py
-│   ├── level_loader.py      # Parse YAML, validate, instantiate
-│   ├── geometry.py          # Spinner, Morpher, Wall classes
-│   ├── objectives.py        # Win/lose condition checkers
-│   └── spawners.py          # Ball, bomb, obstacle spawning
-├── levels/
-│   ├── tutorial/
-│   │   ├── 01_static.yaml
-│   │   ├── 02_first_spinner.yaml
-│   │   └── 03_connect_dots.yaml
-│   ├── campaign/
-│   │   ├── 01_easy.yaml
-│   │   └── ...
-│   └── challenge/
-│       ├── chaos_mode.yaml
-│       └── minefield.yaml
-└── game_mode.py             # Uses toolkit to run levels
-```
+| Type | Description | Key Config |
+|------|-------------|------------|
+| `deflector` | Line segment wall | `angle`, `length` |
+| `spinner` | Player-spawned rotating polygon | `shape`, `size`, `rotation_speed` |
+| `point` | Circular obstacle | `radius` |
+| `connect` | Connect-the-dots wall building (see below) | `threshold`, `fallback` |
+| `morph` | Shape-changing polygon | `shapes`, `morph_interval`, `pulsate` |
+| `grow` | Circle that grows when hit again | `initial_size`, `growth_per_hit`, `max_size` |
 
-### Level Loader API
-
-```python
-from toolkit.level_loader import load_level, LevelConfig
-
-class ContainmentMode(BaseGame):
-    def __init__(self, level: str = None, **kwargs):
-        if level:
-            self.config = load_level(f"levels/{level}.yaml")
-        else:
-            self.config = LevelConfig.default()
-
-        self._setup_from_config(self.config)
-
-    def _setup_from_config(self, config: LevelConfig):
-        # Ball
-        self.ball = Ball(
-            speed=config.ball.speed,
-            radius=config.ball.radius,
-            ai=config.ball.ai,
-        )
-
-        # Environment
-        for spinner_def in config.environment.spinners:
-            self.spinners.append(Spinner(**spinner_def))
-
-        for morpher_def in config.environment.morphers:
-            self.morphers.append(Morpher(**morpher_def))
-
-        # Objectives
-        self.objective = create_objective(config.objectives)
-```
+**Connect Mode Behavior:**
+- First hit: Drops a visible dot at hit position
+- Hit within threshold of existing dot: Creates wall FROM dot TO hit, consumes dot, places new dot at hit
+- Chain hits within threshold to build multi-segment walls
+- Hit outside threshold: Drops a new independent dot
 
 ### CLI Integration
 
 ```bash
 # Play specific level
-python dev_game.py containment --level tutorial/01_static
+python dev_game.py containment --level mixed_hits
 
-# List available levels
-python dev_game.py containment --list-levels
+# Play from examples directory
+python dev_game.py containment --level all_hit_modes
 
-# Play campaign (sequential levels)
-python dev_game.py containment --campaign
-
-# Random challenge
-python dev_game.py containment --random-level difficulty=3
+# Full path also works
+python dev_game.py containment --level games/Containment/levels/examples/sequential_builder.yaml
 ```
 
 ### Level Editor (Future)
@@ -699,19 +693,25 @@ But YAML-first approach means levels are creatable without the editor.
 
 ## Open Questions (Updated)
 
-1. ~~**Deflector shape:** Line segments? Arrow shapes? Circles?~~ → Now depends on mode (connect-the-dots vs point obstacles)
+### Resolved
 
-2. **Rotation speed:** How fast should dynamic geometry rotate? Needs to be readable but challenging.
+1. ~~**Deflector shape:** Line segments? Arrow shapes? Circles?~~ → **Resolved:** Hit modes now support deflector (line), point (circle), spinner (polygon), morph (changing polygon), grow (expanding circle), connect (line to nearest).
 
-3. **Connect threshold:** What distance triggers wall creation vs point obstacle?
+2. ~~**Rotation speed:** How fast should dynamic geometry rotate?~~ → **Resolved:** Configurable per-obstacle, typically 30-60 degrees/sec. Supports random ranges.
 
-4. **Morphing rate:** If shapes change over time, how fast? Synchronized or independent?
+3. ~~**Connect threshold:** What distance triggers wall creation vs point obstacle?~~ → **Resolved:** Configurable via `threshold` parameter (default 100px). Falls back to configurable type (point/deflector).
 
-5. **Bomb behavior:** Bouncing pattern for hazards? Predictable vs chaotic?
+4. ~~**Morphing rate:** If shapes change over time, how fast?~~ → **Resolved:** `morph_interval` parameter (default 2.0 seconds). Independent per obstacle.
 
-6. **Capture zone placement:** Random? Strategic (hardest corner)? Player-placed?
+5. ~~**Retrieval mechanic:** Does dynamic geometry pause during retrieval?~~ → **Resolved:** Yes, all gameplay pauses during retrieval.
 
-7. **Retrieval mechanic:** Does dynamic geometry pause during retrieval? (Probably yes for archery mode)
+### Still Open
+
+6. **Bomb behavior:** Bouncing pattern for hazards? Predictable vs chaotic? (Not yet implemented)
+
+7. **Capture zone placement:** Random? Strategic (hardest corner)? Player-placed? (Not yet implemented)
+
+8. **Ball AI:** How aggressive should reactive/strategic modes be? (Not yet implemented)
 
 ---
 

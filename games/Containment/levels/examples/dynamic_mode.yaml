@@ -1,0 +1,56 @@
+# Dynamic Containment Mode
+# Ball bounces off screen edges; rotating spinners create obstacles
+
+name: "Dynamic Containment"
+description: "Navigate spinning obstacles while building walls"
+difficulty: 3
+author: "core"
+version: 1
+
+objectives:
+  type: survive
+  time_limit: 90
+
+ball:
+  count: 1
+  speed: 180
+  radius: 20
+  spawn: center
+  ai: dumb
+
+environment:
+  edges:
+    mode: bounce  # All edges are solid walls
+
+  spinners:
+    - position: [0.25, 0.35]
+      shape: triangle
+      size: 70
+      rotation_speed: 45
+
+    - position: [0.75, 0.35]
+      shape: square
+      size: 80
+      rotation_speed: -35
+
+    - position: [0.5, 0.7]
+      shape: pentagon
+      size: 60
+      rotation_speed: 50
+
+hit_modes:
+  selection: random
+  modes:
+    - type: deflector
+      weight: 3
+      config:
+        angle: random
+        length: 60
+
+pacing:
+  archery:
+    ball.speed: 100
+    hit_modes.modes[0].config.length: 80
+  blaster:
+    ball.speed: 250
+    hit_modes.modes[0].config.length: 40

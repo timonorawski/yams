@@ -1,0 +1,76 @@
+# All Hit Modes Demo
+# Demonstrates all available hit mode types in sequential order
+
+name: "Hit Modes Showcase"
+description: "Experience all hit modes: deflector, spinner, point, connect, morph, grow"
+difficulty: 3
+author: "core"
+version: 1
+
+objectives:
+  type: survive
+  time_limit: 120
+
+ball:
+  count: 1
+  speed: 120
+  radius: 20
+  spawn: center
+  ai: dumb
+
+environment:
+  edges:
+    mode: bounce
+
+hit_modes:
+  selection: sequential  # Cycles through each mode in order
+  modes:
+    # 1. Deflector - Basic wall
+    - type: deflector
+      config:
+        angle: random
+        length: 70
+
+    # 2. Spinner - Rotating polygon spawned by player
+    - type: spinner
+      config:
+        shape: square
+        size: 50
+        rotation_speed: [35, 55]
+
+    # 3. Point - Simple circular obstacle
+    - type: point
+      config:
+        radius: [15, 25]
+
+    # 4. Connect - Connect-the-dots (wall to nearest hit)
+    - type: connect
+      config:
+        threshold: 150
+        fallback: point
+        fallback_config:
+          radius: 12
+
+    # 5. Morph - Shape-changing obstacle
+    - type: morph
+      config:
+        shapes: [triangle, square, pentagon]
+        morph_interval: 2.0
+        size: 45
+        rotation_speed: 30
+        pulsate: true
+        pulsate_amount: 0.12
+
+    # 6. Grow - Grows when hit again
+    - type: grow
+      config:
+        initial_size: 25
+        growth_per_hit: 0.35
+        max_size: 100
+        decay_rate: 0
+
+pacing:
+  archery:
+    ball.speed: 80
+  blaster:
+    ball.speed: 180
