@@ -2,13 +2,11 @@
 Game Registry - Auto-discovery and management of AMS games.
 
 Games are automatically discovered by scanning the games/ directory for
-subdirectories containing a game_info.py file that defines the game's
-metadata and entry points.
+subdirectories containing a game_mode.py with a class inheriting from BaseGame.
 
-Each game must provide:
-- game_info.py with NAME, DESCRIPTION, and get_game_mode() function
-- A game mode class that implements handle_input(), update(), render()
-- input/ directory with InputManager abstraction (can be copied from template)
+Game metadata and CLI arguments are retrieved from the game class itself
+(via BaseGame class attributes). Falls back to game_info.py module-level
+variables for backward compatibility with games not yet migrated.
 
 Usage:
     from games.registry import GameRegistry
@@ -16,20 +14,25 @@ Usage:
     registry = GameRegistry()
     available = registry.list_games()  # ['balloonpop', 'duckhunt', ...]
 
-    game_mode = registry.create_game('balloonpop', width=1920, height=1080)
-    input_manager = registry.create_input_manager('balloonpop', ams_session, width, height)
+    # Get game info including CLI arguments
+    info = registry.get_game_info('containment')
+    args = registry.get_game_arguments('containment')
+
+    # Create game instance
+    game = registry.create_game('balloonpop', width=1920, height=1080)
 """
 
-import os
-import sys
 import importlib
 import importlib.util
+import inspect
+import sys
 from pathlib import Path
-from typing import Dict, List, Optional, Any, TYPE_CHECKING
-from dataclasses import dataclass
+from typing import Any, Dict, List, Optional, Type, TYPE_CHECKING
+from dataclasses import dataclass, field
 
 if TYPE_CHECKING:
     from ams.session import AMSSession
+    from games.common.base_game import BaseGame
 
 
 @dataclass
@@ -42,6 +45,9 @@ class GameInfo:
     author: str
     module_path: str  # e.g., 'games.BalloonPop'
 
+    # CLI arguments (from game class or module)
+    arguments: List[Dict[str, Any]] = field(default_factory=list)
+
     # Optional features
     has_config: bool = False
     config_file: Optional[str] = None
@@ -53,6 +59,12 @@ class GameRegistry:
 
     Scans the games/ directory for valid game packages and provides
     a unified interface for creating game instances.
+
+    Discovery works by:
+    1. Looking for game_mode.py in each game directory
+    2. Finding classes that inherit from BaseGame
+    3. Reading metadata from class attributes (NAME, DESCRIPTION, etc.)
+    4. Falling back to game_info.py module variables if no BaseGame found
     """
 
     def __init__(self, games_dir: Optional[Path] = None):
@@ -66,6 +78,7 @@ class GameRegistry:
             games_dir = Path(__file__).parent
         self.games_dir = Path(games_dir)
         self._games: Dict[str, GameInfo] = {}
+        self._game_classes: Dict[str, Type['BaseGame']] = {}
         self._discover_games()
 
     def _discover_games(self) -> None:
@@ -73,22 +86,30 @@ class GameRegistry:
         if not self.games_dir.exists():
             return
 
+        # Skip these directories
+        skip_dirs = {'base', 'common', '__pycache__'}
+
         for item in self.games_dir.iterdir():
             if not item.is_dir():
                 continue
             if item.name.startswith('_') or item.name.startswith('.'):
                 continue
-            if item.name in ('base', '__pycache__'):
+            if item.name.lower() in skip_dirs:
                 continue
 
-            # Check for game_info.py
-            game_info_path = item / 'game_info.py'
-            if game_info_path.exists():
+            # Need either game_mode.py or game_info.py
+            has_game_mode = (item / 'game_mode.py').exists()
+            has_game_info = (item / 'game_info.py').exists()
+
+            if has_game_mode or has_game_info:
                 self._register_game(item)
 
     def _register_game(self, game_dir: Path) -> None:
         """
         Register a game from its directory.
+
+        Attempts to find a BaseGame subclass in game_mode.py first,
+        falling back to game_info.py module variables.
 
         Args:
             game_dir: Path to game directory
@@ -97,25 +118,37 @@ class GameRegistry:
         module_path = f"games.{game_dir.name}"
 
         try:
-            # Import game_info module
-            spec = importlib.util.spec_from_file_location(
-                f"{module_path}.game_info",
-                game_dir / "game_info.py"
-            )
-            if spec is None or spec.loader is None:
-                return
+            # Try to find BaseGame subclass in game_mode.py
+            game_class = self._find_game_class(game_dir, module_path)
 
-            module = importlib.util.module_from_spec(spec)
-            sys.modules[f"{module_path}.game_info"] = module
-            spec.loader.exec_module(module)
+            if game_class is not None:
+                # Use class attributes (preferred method)
+                name = getattr(game_class, 'NAME', game_dir.name)
+                description = getattr(game_class, 'DESCRIPTION', '')
+                version = getattr(game_class, 'VERSION', '1.0.0')
+                author = getattr(game_class, 'AUTHOR', 'Unknown')
 
-            # Extract game info
-            name = getattr(module, 'NAME', game_dir.name)
-            description = getattr(module, 'DESCRIPTION', '')
-            version = getattr(module, 'VERSION', '1.0.0')
-            author = getattr(module, 'AUTHOR', 'Unknown')
+                # Get arguments via class method if available
+                if hasattr(game_class, 'get_arguments'):
+                    arguments = game_class.get_arguments()
+                else:
+                    arguments = getattr(game_class, 'ARGUMENTS', [])
 
-            # Check for config
+                self._game_classes[slug] = game_class
+
+            else:
+                # Fall back to game_info.py module variables
+                game_info_module = self._load_game_info(game_dir, module_path)
+                if game_info_module is None:
+                    return
+
+                name = getattr(game_info_module, 'NAME', game_dir.name)
+                description = getattr(game_info_module, 'DESCRIPTION', '')
+                version = getattr(game_info_module, 'VERSION', '1.0.0')
+                author = getattr(game_info_module, 'AUTHOR', 'Unknown')
+                arguments = getattr(game_info_module, 'ARGUMENTS', [])
+
+            # Check for config files
             has_config = (game_dir / '.env').exists() or (game_dir / 'config.py').exists()
             config_file = '.env' if (game_dir / '.env').exists() else None
 
@@ -126,6 +159,7 @@ class GameRegistry:
                 version=version,
                 author=author,
                 module_path=module_path,
+                arguments=arguments,
                 has_config=has_config,
                 config_file=config_file,
             )
@@ -133,6 +167,84 @@ class GameRegistry:
         except Exception as e:
             # Skip games that fail to load
             print(f"Warning: Failed to load game from {game_dir}: {e}")
+
+    def _find_game_class(self, game_dir: Path, module_path: str) -> Optional[Type['BaseGame']]:
+        """
+        Find a BaseGame subclass in the game's game_mode.py.
+
+        Args:
+            game_dir: Path to game directory
+            module_path: Module path (e.g., 'games.BalloonPop')
+
+        Returns:
+            The game class, or None if not found
+        """
+        game_mode_path = game_dir / 'game_mode.py'
+        if not game_mode_path.exists():
+            return None
+
+        try:
+            # Import BaseGame for isinstance checking
+            from games.common.base_game import BaseGame
+
+            # Import the game_mode module
+            spec = importlib.util.spec_from_file_location(
+                f"{module_path}.game_mode",
+                game_mode_path
+            )
+            if spec is None or spec.loader is None:
+                return None
+
+            module = importlib.util.module_from_spec(spec)
+            sys.modules[f"{module_path}.game_mode"] = module
+            spec.loader.exec_module(module)
+
+            # Find classes that inherit from BaseGame
+            for name, obj in inspect.getmembers(module, inspect.isclass):
+                # Skip imported classes (only want classes defined in this module)
+                if obj.__module__ != module.__name__:
+                    continue
+
+                # Check if it inherits from BaseGame (but isn't BaseGame itself)
+                if issubclass(obj, BaseGame) and obj is not BaseGame:
+                    return obj
+
+        except Exception:
+            # Silently fail - will fall back to game_info.py
+            pass
+
+        return None
+
+    def _load_game_info(self, game_dir: Path, module_path: str):
+        """
+        Load the game_info.py module for a game.
+
+        Args:
+            game_dir: Path to game directory
+            module_path: Module path
+
+        Returns:
+            The module, or None if not found
+        """
+        game_info_path = game_dir / 'game_info.py'
+        if not game_info_path.exists():
+            return None
+
+        try:
+            spec = importlib.util.spec_from_file_location(
+                f"{module_path}.game_info",
+                game_info_path
+            )
+            if spec is None or spec.loader is None:
+                return None
+
+            module = importlib.util.module_from_spec(spec)
+            sys.modules[f"{module_path}.game_info"] = module
+            spec.loader.exec_module(module)
+            return module
+
+        except Exception:
+            return None
 
     def list_games(self) -> List[str]:
         """
@@ -155,6 +267,33 @@ class GameRegistry:
         """
         return self._games.get(slug.lower())
 
+    def get_game_arguments(self, slug: str) -> List[Dict[str, Any]]:
+        """
+        Get CLI arguments for a specific game.
+
+        Args:
+            slug: Game identifier
+
+        Returns:
+            List of argument definitions for argparse
+        """
+        info = self._games.get(slug.lower())
+        if info is None:
+            return []
+        return info.arguments
+
+    def get_game_class(self, slug: str) -> Optional[Type['BaseGame']]:
+        """
+        Get the game class for a specific game.
+
+        Args:
+            slug: Game identifier
+
+        Returns:
+            Game class or None if not found/cached
+        """
+        return self._game_classes.get(slug.lower())
+
     def get_all_games(self) -> Dict[str, GameInfo]:
         """
         Get all registered games.
@@ -174,6 +313,9 @@ class GameRegistry:
         """
         Create a game mode instance.
 
+        Uses the cached game class if available, otherwise falls back
+        to game_info.py's get_game_mode() function.
+
         Args:
             slug: Game identifier
             width: Display width
@@ -191,9 +333,6 @@ class GameRegistry:
             available = ', '.join(self.list_games())
             raise ValueError(f"Unknown game: {slug}. Available: {available}")
 
-        # Import the game's game_info module
-        game_info_module = importlib.import_module(f"{info.module_path}.game_info")
-
         # Update screen size in config if available
         try:
             config_module = importlib.import_module(f"{info.module_path}.config")
@@ -202,7 +341,13 @@ class GameRegistry:
         except (ImportError, AttributeError):
             pass
 
-        # Get the game mode factory
+        # Prefer using cached game class directly
+        game_class = self._game_classes.get(slug.lower())
+        if game_class is not None:
+            return game_class(**kwargs)
+
+        # Fall back to game_info.py's get_game_mode()
+        game_info_module = importlib.import_module(f"{info.module_path}.game_info")
         get_game_mode = getattr(game_info_module, 'get_game_mode', None)
         if get_game_mode is None:
             raise ValueError(f"Game {slug} does not define get_game_mode()")
@@ -271,6 +416,7 @@ class GameRegistry:
 
 # Singleton instance for convenience
 _registry: Optional[GameRegistry] = None
+
 
 def get_registry() -> GameRegistry:
     """Get the global game registry instance."""

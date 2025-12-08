@@ -28,7 +28,6 @@ import pygame
 import sys
 import os
 import argparse
-import importlib
 
 # Ensure project root is on path
 _project_root = os.path.dirname(os.path.abspath(__file__))
@@ -36,22 +35,6 @@ if _project_root not in sys.path:
     sys.path.insert(0, _project_root)
 
 from games.registry import get_registry
-
-
-def get_game_arguments(registry, game_slug: str) -> list:
-    """Get game-specific arguments from game_info.py ARGUMENTS list."""
-    if not game_slug:
-        return []
-
-    info = registry.get_game_info(game_slug)
-    if not info:
-        return []
-
-    try:
-        game_info_module = importlib.import_module(f"{info.module_path}.game_info")
-        return getattr(game_info_module, 'ARGUMENTS', [])
-    except (ImportError, AttributeError):
-        return []
 
 
 def main():
@@ -115,7 +98,7 @@ Examples:
     # Add game-specific arguments if a game was specified
     game_args_added = set()
     if pre_args.game:
-        game_arguments = get_game_arguments(registry, pre_args.game)
+        game_arguments = registry.get_game_arguments(pre_args.game)
         for arg_def in game_arguments:
             arg_name = arg_def['name']
             # Avoid duplicates
@@ -160,7 +143,7 @@ Examples:
                 print(f"    Version: {info.version}")
 
                 # Show available arguments
-                game_args = get_game_arguments(registry, slug)
+                game_args = registry.get_game_arguments(slug)
                 if game_args:
                     arg_names = [a['name'] for a in game_args]
                     print(f"    Options: {', '.join(arg_names)}")

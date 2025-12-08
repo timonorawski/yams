@@ -1,10 +1,13 @@
 """Base class for all AMS games.
 
-All games must inherit from BaseGame to ensure consistent interface
+All games should inherit from BaseGame to ensure consistent interface
 with dev_game.py, ams_game.py, and the game registry.
+
+Game metadata (NAME, DESCRIPTION, etc.) and CLI arguments (ARGUMENTS)
+are declared as class attributes, making them part of the plugin architecture.
 """
 from abc import ABC, abstractmethod
-from typing import List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import pygame
 
@@ -15,6 +18,13 @@ from games.common.quiver import QuiverState, create_quiver
 
 class BaseGame(ABC):
     """Abstract base class for all AMS games.
+
+    Class Attributes (metadata):
+        NAME: Display name for the game
+        DESCRIPTION: Short description of gameplay
+        VERSION: Semantic version string
+        AUTHOR: Author/team name
+        ARGUMENTS: List of CLI argument definitions for argparse
 
     Subclasses must implement:
         - _get_internal_state() -> GameState: Map internal state to standard state
@@ -30,26 +40,125 @@ class BaseGame(ABC):
 
     Usage:
         class MyGame(BaseGame):
-            def __init__(self, **kwargs):
+            NAME = "My Game"
+            DESCRIPTION = "A fun game"
+            VERSION = "1.0.0"
+            AUTHOR = "Me"
+
+            ARGUMENTS = [
+                {'name': '--difficulty', 'type': str, 'default': 'normal',
+                 'help': 'Game difficulty'},
+            ]
+
+            def __init__(self, difficulty='normal', **kwargs):
                 super().__init__(**kwargs)
-                self._my_state = "playing"
+                self._difficulty = difficulty
 
             def _get_internal_state(self) -> GameState:
-                if self._my_state == "dead":
-                    return GameState.GAME_OVER
                 return GameState.PLAYING
-
-            def get_score(self) -> int:
-                return self._score
 
             # ... implement other abstract methods
     """
+
+    # =========================================================================
+    # Game Metadata (override in subclasses)
+    # =========================================================================
+
+    NAME: str = "Unnamed Game"
+    DESCRIPTION: str = "No description"
+    VERSION: str = "1.0.0"
+    AUTHOR: str = "Unknown"
+
+    # CLI argument definitions for argparse
+    # Each entry is a dict with keys: name, type, default, help, choices (optional), action (optional)
+    # Example:
+    #   ARGUMENTS = [
+    #       {'name': '--difficulty', 'type': str, 'default': 'normal',
+    #        'choices': ['easy', 'normal', 'hard'], 'help': 'Game difficulty'},
+    #       {'name': '--time-limit', 'type': int, 'default': 60,
+    #        'help': 'Time limit in seconds (0=unlimited)'},
+    #   ]
+    ARGUMENTS: List[Dict[str, Any]] = []
+
+    # =========================================================================
+    # Standard Arguments (automatically available to all games)
+    # Subclasses can extend ARGUMENTS but these are always included
+    # =========================================================================
+
+    _BASE_ARGUMENTS: List[Dict[str, Any]] = [
+        {
+            'name': '--palette',
+            'type': str,
+            'default': None,
+            'help': 'Test palette: full, bw, warm, cool, mono_red, etc.'
+        },
+        {
+            'name': '--quiver-size',
+            'type': int,
+            'default': None,
+            'help': 'Shots before retrieval pause (0=unlimited)'
+        },
+        {
+            'name': '--retrieval-pause',
+            'type': int,
+            'default': 30,
+            'help': 'Seconds for retrieval (0=manual)'
+        },
+    ]
+
+    @classmethod
+    def get_arguments(cls) -> List[Dict[str, Any]]:
+        """Get all CLI arguments for this game (game-specific + base).
+
+        Returns list of argument definitions suitable for argparse.
+        Game-specific arguments come first, then base arguments.
+        Duplicates by name are removed (game-specific takes precedence).
+        """
+        # Collect argument names from game-specific args
+        seen_names = set()
+        result = []
+
+        # Game-specific arguments first
+        for arg in cls.ARGUMENTS:
+            name = arg.get('name', '')
+            if name and name not in seen_names:
+                seen_names.add(name)
+                result.append(arg)
+
+        # Then base arguments (skip if already defined)
+        for arg in cls._BASE_ARGUMENTS:
+            name = arg.get('name', '')
+            if name and name not in seen_names:
+                seen_names.add(name)
+                result.append(arg)
+
+        return result
+
+    @classmethod
+    def get_info(cls) -> Dict[str, Any]:
+        """Get game metadata as a dictionary.
+
+        Returns:
+            Dict with keys: name, description, version, author, arguments
+        """
+        return {
+            'name': cls.NAME,
+            'description': cls.DESCRIPTION,
+            'version': cls.VERSION,
+            'author': cls.AUTHOR,
+            'arguments': cls.get_arguments(),
+        }
+
+    # =========================================================================
+    # Instance Initialization
+    # =========================================================================
 
     def __init__(
         self,
         # Palette support
         color_palette: Optional[List[Tuple[int, int, int]]] = None,
         palette_name: Optional[str] = None,
+        palette: Optional[str] = None,  # CLI arg name
         # Quiver support
         quiver_size: Optional[int] = None,
         retrieval_pause: int = 30,
@@ -60,11 +169,13 @@ class BaseGame(ABC):
         Args:
             color_palette: AMS-provided colors for CV compatibility
             palette_name: Test palette name for standalone mode
+            palette: Alias for palette_name (CLI arg name)
             quiver_size: Shots before retrieval (None = unlimited)
             retrieval_pause: Seconds for retrieval (0 = manual)
         """
-        # Palette management
-        self._palette = GamePalette(colors=color_palette, palette_name=palette_name)
+        # Palette management (accept either palette_name or palette)
+        effective_palette = palette_name or palette
+        self._palette = GamePalette(colors=color_palette, palette_name=effective_palette)
 
         # Quiver management (None if unlimited)
         self._quiver = create_quiver(quiver_size, retrieval_pause)
