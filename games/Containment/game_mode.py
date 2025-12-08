@@ -283,12 +283,13 @@ class ContainmentMode(BaseGame):
 
         # Check deflector collisions
         if self._deflectors:
-            normal = self._deflectors.check_ball_collision(
+            collision = self._deflectors.check_ball_collision(
                 self._ball.position,
                 self._ball.radius
             )
-            if normal:
-                self._ball.bounce_off_surface(normal)
+            if collision:
+                normal, penetration = collision
+                self._ball.bounce_off_surface(normal, push_out=penetration)
 
         # Check escape
         if self._gaps.check_escape(self._ball.position, self._ball.radius):

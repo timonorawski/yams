@@ -54,10 +54,14 @@ class Ball:
         self.velocity = Vector2D(x=-self.velocity.x, y=self.velocity.y)
         self.bounce_count += 1
 
-    def bounce_off_surface(self, normal: Vector2D) -> None:
+    def bounce_off_surface(self, normal: Vector2D, push_out: float = 0.0) -> None:
         """Bounce off an arbitrary surface given its normal vector.
 
         Uses reflection formula: v' = v - 2(v·n)n
+
+        Args:
+            normal: Surface normal (pointing toward ball)
+            push_out: Distance to push ball along normal to prevent sticking
         """
         # Normalize the normal vector
         n_mag = math.sqrt(normal.x ** 2 + normal.y ** 2)
@@ -65,13 +69,34 @@ class Ball:
             return
         n = Vector2D(x=normal.x / n_mag, y=normal.y / n_mag)
 
-        # Calculate reflection
+        # Check if ball is moving toward the surface (dot product < 0)
+        # If not, skip the bounce to prevent double-bouncing
         dot = self.velocity.x * n.x + self.velocity.y * n.y
+        if dot >= 0:
+            # Ball is already moving away from surface, don't bounce again
+            # But still push out if needed
+            if push_out > 0:
+                self.position = Vector2D(
+                    x=self.position.x + n.x * push_out,
+                    y=self.position.y + n.y * push_out
+                )
+            return
+
+        # Calculate reflection
         self.velocity = Vector2D(
             x=self.velocity.x - 2 * dot * n.x,
             y=self.velocity.y - 2 * dot * n.y
         )
         self.bounce_count += 1
+
+        # Push ball out of collision zone to prevent sticking
+        if push_out > 0:
+            # Add a small buffer (1 pixel) to ensure we're fully clear
+            push_distance = push_out + 1.0
+            self.position = Vector2D(
+                x=self.position.x + n.x * push_distance,
+                y=self.position.y + n.y * push_distance
+            )
 
     def apply_speed_penalty(self, multiplier: float = 1.2) -> None:
         """Increase speed when hit directly (penalty)."""

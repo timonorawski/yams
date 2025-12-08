@@ -57,11 +57,14 @@ class Deflector:
         self,
         ball_pos: Vector2D,
         ball_radius: float
-    ) -> Optional[Vector2D]:
+    ) -> Optional[Tuple[Vector2D, float]]:
         """Check if ball collides with this deflector.
 
-        Returns the collision normal if collision occurs, None otherwise.
+        Returns (collision_normal, penetration_depth) if collision occurs, None otherwise.
         Uses line segment to circle collision detection.
+
+        The penetration depth is how far the ball has penetrated into the deflector,
+        which is needed to push the ball out and prevent it from getting stuck.
         """
         # Vector from start to end
         dx = self.end.x - self.start.x
@@ -77,10 +80,12 @@ class Deflector:
             if dist < ball_radius:
                 # Return normal pointing from deflector to ball
                 if dist > 0:
-                    return Vector2D(
+                    normal = Vector2D(
                         x=(ball_pos.x - self.start.x) / dist,
                         y=(ball_pos.y - self.start.y) / dist
                     )
+                    penetration = ball_radius - dist
+                    return (normal, penetration)
             return None
 
         # Find closest point on line segment to ball center
@@ -102,11 +107,14 @@ class Deflector:
 
         if distance < ball_radius:
             # Collision! Return normal pointing from deflector toward ball
+            penetration = ball_radius - distance
             if distance > 0:
-                return Vector2D(x=dist_x / distance, y=dist_y / distance)
+                normal = Vector2D(x=dist_x / distance, y=dist_y / distance)
+                return (normal, penetration)
             else:
                 # Ball center exactly on line, use perpendicular
-                return self.normal
+                # Penetration is full radius in this edge case
+                return (self.normal, ball_radius)
 
         return None
 
@@ -168,15 +176,15 @@ class DeflectorManager:
         self,
         ball_pos: Vector2D,
         ball_radius: float
-    ) -> Optional[Vector2D]:
+    ) -> Optional[Tuple[Vector2D, float]]:
         """Check if ball collides with any deflector.
 
-        Returns collision normal if collision, None otherwise.
+        Returns (collision_normal, penetration_depth) if collision, None otherwise.
         """
         for deflector in self.deflectors:
-            normal = deflector.check_ball_collision(ball_pos, ball_radius)
-            if normal is not None:
-                return normal
+            result = deflector.check_ball_collision(ball_pos, ball_radius)
+            if result is not None:
+                return result
         return None
 
     @property
