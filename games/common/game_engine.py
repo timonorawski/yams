@@ -56,18 +56,33 @@ class GameEngineLevelData(Protocol):
 
 
 @dataclass
+class RenderWhen:
+    """Condition for conditional rendering."""
+    property: str
+    value: Any = None
+    compare: str = "equals"  # equals, not_equals, greater_than, less_than
+
+
+@dataclass
 class RenderCommand:
     """A single render primitive."""
-    shape: str  # rectangle, circle, triangle, polygon, line, sprite
+    shape: str  # rectangle, circle, triangle, polygon, line, sprite, text
     color: str = "$color"  # Color or $property reference
     fill: bool = True
     line_width: int = 1
+    alpha: Any = None  # 0-255 or $property or {lua: expr} (None = fully opaque)
     # Shape-specific:
     points: List[Tuple[float, float]] = field(default_factory=list)  # For polygon/triangle (normalized 0-1)
     offset: Tuple[float, float] = (0, 0)  # Offset from entity position
     size: Optional[Tuple[float, float]] = None  # Override entity size
     sprite_name: str = ""  # For sprite shape
     radius: Optional[float] = None  # For circle (normalized to min(w,h)/2)
+    # Text shape:
+    text: str = ""  # Text content or $property reference
+    font_size: int = 20
+    align: str = "center"  # center, left, right
+    # Conditional rendering:
+    when: Optional[RenderWhen] = None  # Only render if condition is true
 
 
 @dataclass
@@ -231,7 +246,46 @@ class GameEngineSkin:
                          screen: pygame.Surface) -> None:
         """Render entity using a list of render commands."""
         for cmd in commands:
+            # Check when condition
+            if cmd.when and not self._evaluate_when(entity, cmd.when):
+                continue
             self._render_command(entity, cmd, screen)
+
+    def _evaluate_when(self, entity: Entity, when: RenderWhen) -> bool:
+        """Evaluate a when condition against entity properties."""
+        # Get property value (handle computed properties)
+        prop_value = self._get_entity_property(entity, when.property)
+
+        # Compare
+        if when.compare == 'equals':
+            return prop_value == when.value
+        elif when.compare == 'not_equals':
+            return prop_value != when.value
+        elif when.compare == 'greater_than':
+            return prop_value is not None and prop_value > when.value
+        elif when.compare == 'less_than':
+            return prop_value is not None and prop_value < when.value
+        return False
+
+    def _get_entity_property(self, entity: Entity, prop_name: str) -> Any:
+        """Get entity property, including computed properties."""
+        # Built-in computed properties
+        if prop_name == 'damage_ratio':
+            max_hits = entity.properties.get('brick_max_hits', 1)
+            hits_remaining = entity.properties.get('brick_hits_remaining', max_hits)
+            if max_hits > 0:
+                return 1 - (hits_remaining / max_hits)
+            return 0
+        elif prop_name == 'health_ratio':
+            max_health = entity.properties.get('max_health', entity.health)
+            if max_health > 0:
+                return entity.health / max_health
+            return 0
+        elif prop_name == 'alive':
+            return entity.alive
+
+        # Regular properties
+        return entity.properties.get(prop_name)
 
     def _render_command(self, entity: Entity, cmd: RenderCommand,
                         screen: pygame.Surface) -> None:
@@ -239,18 +293,34 @@ class GameEngineSkin:
         # Resolve color (handle $property references)
         color = self._resolve_color(entity, cmd.color)
 
+        # Resolve alpha if specified
+        alpha = self._resolve_alpha(entity, cmd.alpha)
+
         # Calculate position and size
         x = int(entity.x + cmd.offset[0])
         y = int(entity.y + cmd.offset[1])
         w = int(cmd.size[0] if cmd.size else entity.width)
         h = int(cmd.size[1] if cmd.size else entity.height)
 
+        # If alpha specified, render to temp surface then blit
+        if alpha is not None and alpha < 255:
+            temp_surface = pygame.Surface((w, h), pygame.SRCALPHA)
+            self._render_shape_to_surface(temp_surface, cmd, color, 0, 0, w, h, entity)
+            temp_surface.set_alpha(alpha)
+            screen.blit(temp_surface, (x, y))
+        else:
+            self._render_shape_to_surface(screen, cmd, color, x, y, w, h, entity)
+
+    def _render_shape_to_surface(self, surface: pygame.Surface, cmd: RenderCommand,
+                                  color: Tuple[int, int, int], x: int, y: int,
+                                  w: int, h: int, entity: Entity) -> None:
+        """Render shape to a surface at given position."""
         if cmd.shape == 'rectangle':
             rect = pygame.Rect(x, y, w, h)
             if cmd.fill:
-                pygame.draw.rect(screen, color, rect)
+                pygame.draw.rect(surface, color, rect)
             else:
-                pygame.draw.rect(screen, color, rect, cmd.line_width)
+                pygame.draw.rect(surface, color, rect, cmd.line_width)
 
         elif cmd.shape == 'circle':
             # Radius: use explicit, or derive from entity size
@@ -260,9 +330,9 @@ class GameEngineSkin:
                 radius = min(w, h) // 2
             center = (x + w // 2, y + h // 2)
             if cmd.fill:
-                pygame.draw.circle(screen, color, center, radius)
+                pygame.draw.circle(surface, color, center, radius)
             else:
-                pygame.draw.circle(screen, color, center, radius, cmd.line_width)
+                pygame.draw.circle(surface, color, center, radius, cmd.line_width)
 
         elif cmd.shape == 'triangle':
             # Points are normalized (0-1) relative to entity bounds
@@ -273,28 +343,76 @@ class GameEngineSkin:
                 # Default: pointing up
                 points = [(x + w // 2, y), (x, y + h), (x + w, y + h)]
             if cmd.fill:
-                pygame.draw.polygon(screen, color, points)
+                pygame.draw.polygon(surface, color, points)
             else:
-                pygame.draw.polygon(screen, color, points, cmd.line_width)
+                pygame.draw.polygon(surface, color, points, cmd.line_width)
 
         elif cmd.shape == 'polygon':
             if cmd.points:
                 points = [(x + int(p[0] * w), y + int(p[1] * h))
                           for p in cmd.points]
                 if cmd.fill:
-                    pygame.draw.polygon(screen, color, points)
+                    pygame.draw.polygon(surface, color, points)
                 else:
-                    pygame.draw.polygon(screen, color, points, cmd.line_width)
+                    pygame.draw.polygon(surface, color, points, cmd.line_width)
 
         elif cmd.shape == 'line':
             if cmd.points and len(cmd.points) >= 2:
                 start = (x + int(cmd.points[0][0] * w), y + int(cmd.points[0][1] * h))
                 end = (x + int(cmd.points[1][0] * w), y + int(cmd.points[1][1] * h))
-                pygame.draw.line(screen, color, start, end, cmd.line_width)
+                pygame.draw.line(surface, color, start, end, cmd.line_width)
 
         elif cmd.shape == 'sprite':
             # Sprite rendering - subclasses can override for asset loading
-            self._render_sprite(entity, cmd.sprite_name or entity.sprite, screen, x, y, w, h)
+            self._render_sprite(entity, cmd.sprite_name or entity.sprite, surface, x, y, w, h)
+
+        elif cmd.shape == 'text':
+            # Text rendering
+            text_content = self._resolve_text(entity, cmd.text)
+            if text_content:
+                font = pygame.font.Font(None, cmd.font_size)
+                text_surface = font.render(str(text_content), True, color)
+                rect = pygame.Rect(x, y, w, h)
+                if cmd.align == 'center':
+                    text_rect = text_surface.get_rect(center=rect.center)
+                elif cmd.align == 'left':
+                    text_rect = text_surface.get_rect(midleft=rect.midleft)
+                else:  # right
+                    text_rect = text_surface.get_rect(midright=rect.midright)
+                surface.blit(text_surface, text_rect)
+
+    def _resolve_alpha(self, entity: Entity, alpha_value: Any) -> Optional[int]:
+        """Resolve alpha value (int, $property, or {lua: expr})."""
+        if alpha_value is None:
+            return None
+
+        if isinstance(alpha_value, (int, float)):
+            return int(alpha_value * 255) if alpha_value <= 1 else int(alpha_value)
+
+        if isinstance(alpha_value, str) and alpha_value.startswith('$'):
+            prop_name = alpha_value[1:]
+            prop_val = self._get_entity_property(entity, prop_name)
+            if prop_val is not None:
+                # Assume 0-1 range, convert to 0-255
+                return int(float(prop_val) * 255)
+            return None
+
+        if isinstance(alpha_value, dict) and 'lua' in alpha_value:
+            # Lua expression evaluation - needs behavior engine
+            # For now, return None (not implemented without engine reference)
+            return None
+
+        return None
+
+    def _resolve_text(self, entity: Entity, text_value: str) -> str:
+        """Resolve text content ($property references)."""
+        if not text_value:
+            return ""
+        if text_value.startswith('$'):
+            prop_name = text_value[1:]
+            val = self._get_entity_property(entity, prop_name)
+            return str(val) if val is not None else ""
+        return text_value
 
     def _render_sprite(self, entity: Entity, sprite_name: str,
                        screen: pygame.Surface, x: int, y: int, w: int, h: int) -> None:
@@ -469,16 +587,31 @@ class GameEngine(BaseGame):
             # Parse render commands
             render_commands = []
             for render_data in type_data.get('render', []):
+                # Parse when condition if present
+                when_data = render_data.get('when')
+                when_cond = None
+                if when_data:
+                    when_cond = RenderWhen(
+                        property=when_data.get('property', ''),
+                        value=when_data.get('value'),
+                        compare=when_data.get('compare', 'equals'),
+                    )
+
                 render_commands.append(RenderCommand(
                     shape=render_data.get('shape', 'rectangle'),
                     color=render_data.get('color', '$color'),
                     fill=render_data.get('fill', True),
                     line_width=render_data.get('line_width', 1),
+                    alpha=render_data.get('alpha'),  # Can be int, $prop, or {lua: expr}
                     points=[tuple(p) for p in render_data.get('points', [])],
                     offset=tuple(render_data.get('offset', [0, 0])),
                     size=tuple(render_data['size']) if render_data.get('size') else None,
                     sprite_name=render_data.get('sprite', ''),
                     radius=render_data.get('radius'),
+                    text=render_data.get('text', ''),
+                    font_size=render_data.get('font_size', 20),
+                    align=render_data.get('align', 'center'),
+                    when=when_cond,
                 ))
 
             game_def.entity_types[name] = EntityTypeConfig(

@@ -29,11 +29,9 @@ Level YAML files define brick layouts using ASCII art.
 from pathlib import Path
 from typing import Optional
 
-import pygame
 import yaml
 
 from games.common import GameEngine, GameEngineSkin
-from ams.behaviors import Entity
 
 from .level_loader import NGLevelLoader
 
@@ -66,43 +64,12 @@ SCREEN_HEIGHT = 600
 class BrickBreakerNGSkin(GameEngineSkin):
     """Geometric rendering skin for BrickBreaker NG.
 
-    Uses YAML render commands for basic shapes, adds:
-    - Damage darkening for multi-hit bricks
-    - Hit count text overlay for multi-hit bricks
+    All rendering is now YAML-driven via game.yaml render commands:
+    - Base brick fill and outline
+    - Damage darkening via alpha: $damage_ratio with when: condition
+    - Hit count text via shape: text with when: condition
     """
-
-    def render_entity(self, entity: Entity, screen: pygame.Surface) -> None:
-        """Render entity using YAML commands + brick damage overlay."""
-        # Use base class YAML-driven rendering
-        super().render_entity(entity, screen)
-
-        # Add damage overlay for bricks
-        if entity.entity_type.startswith('brick') or entity.entity_type.startswith('invader'):
-            self._render_brick_overlay(entity, screen)
-
-    def _render_brick_overlay(self, entity: Entity, screen: pygame.Surface) -> None:
-        """Add damage indication and hit count for multi-hit bricks."""
-        hits_remaining = entity.properties.get('brick_hits_remaining', 1)
-        max_hits = entity.properties.get('brick_max_hits', 1)
-
-        # Only show for multi-hit bricks
-        if max_hits > 1 and hits_remaining > 0:
-            # Damage overlay (darken)
-            damage_ratio = 1 - (hits_remaining / max_hits)
-            if damage_ratio > 0:
-                rect = pygame.Rect(int(entity.x), int(entity.y),
-                                   int(entity.width), int(entity.height))
-                overlay = pygame.Surface((rect.width, rect.height), pygame.SRCALPHA)
-                overlay.fill((0, 0, 0, int(damage_ratio * 100)))
-                screen.blit(overlay, rect.topleft)
-
-            # Hit count text
-            font = pygame.font.Font(None, 20)
-            text = font.render(str(hits_remaining), True, (255, 255, 255))
-            rect = pygame.Rect(int(entity.x), int(entity.y),
-                               int(entity.width), int(entity.height))
-            text_rect = text.get_rect(center=rect.center)
-            screen.blit(text, text_rect)
+    pass  # All rendering handled by base class
 
 
 class BrickBreakerNGMode(GameEngine):

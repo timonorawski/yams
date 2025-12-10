@@ -232,21 +232,71 @@ entity_types:
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `shape` | string | Primitive type: `rectangle`, `circle`, `triangle`, `polygon`, `line`, `sprite` |
+| `shape` | string | Primitive type: `rectangle`, `circle`, `triangle`, `polygon`, `line`, `sprite`, `text` |
 | `color` | string | Color name or `$color` to use entity.color |
 | `fill` | bool | Fill shape (true) or outline only (false) |
 | `line_width` | int | Outline/stroke width in pixels |
+| `alpha` | any | Opacity: 0-1, `$property`, or `{lua: expr}` |
 | `points` | list | Normalized (0-1) coordinates for polygon/triangle/line |
 | `offset` | [x, y] | Offset from entity position |
 | `size` | [w, h] | Override entity dimensions |
 | `radius` | float | For circle, normalized to entity size |
 | `sprite` | string | Sprite filename (for sprite shape) |
+| `text` | string | Text content or `$property` reference (for text shape) |
+| `font_size` | int | Font size in pixels (default: 20) |
+| `align` | string | Text alignment: `center`, `left`, `right` |
+| `when` | object | Conditional rendering (see below) |
+
+#### Conditional Rendering
+
+The `when:` field enables conditional render layers:
+
+```yaml
+render:
+  # Only show for multi-hit bricks
+  - shape: text
+    text: $brick_hits_remaining
+    color: white
+    when:
+      property: brick_max_hits
+      compare: greater_than
+      value: 1
+```
+
+| Field | Description |
+|-------|-------------|
+| `property` | Property name to check |
+| `value` | Value to compare against |
+| `compare` | Comparison: `equals` (default), `not_equals`, `greater_than`, `less_than` |
 
 #### Color References
 
 - `$color` - Use the entity's `color` field
 - `$property_name` - Use value from entity.properties
 - Any color name - Direct color (red, blue, white, etc.)
+
+#### Computed Properties
+
+Built-in computed properties available via `$name`:
+
+| Property | Description |
+|----------|-------------|
+| `$damage_ratio` | `(max_hits - hits_remaining) / max_hits` (0-1, 0 when undamaged) |
+| `$health_ratio` | `health / max_health` (0-1, 1 when full health) |
+| `$alive` | Boolean, whether entity is alive |
+
+Example using computed property for damage overlay:
+```yaml
+render:
+  - shape: rectangle
+    color: black
+    fill: true
+    alpha: $damage_ratio  # Darkens as brick takes damage
+    when:
+      property: brick_max_hits
+      compare: greater_than
+      value: 1
+```
 
 #### Coordinate System
 

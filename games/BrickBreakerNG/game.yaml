@@ -117,13 +117,34 @@ entity_types:
         points: 100
     tags: [enemy, brick]
     render:
+      # Base brick fill
       - shape: rectangle
         color: $color  # Uses entity.color
         fill: true
+      # Outline
       - shape: rectangle
         color: white
         fill: false
         line_width: 1
+      # Damage overlay - darkens brick based on damage taken
+      - shape: rectangle
+        color: black
+        fill: true
+        alpha: $damage_ratio  # 0 when undamaged, approaches 1 as damaged
+        when:
+          property: brick_max_hits
+          compare: greater_than
+          value: 1
+      # Hit count text - only for multi-hit bricks
+      - shape: text
+        text: $brick_hits_remaining
+        color: white
+        font_size: 20
+        align: center
+        when:
+          property: brick_max_hits
+          compare: greater_than
+          value: 1
 
   # ---------------------------------------------------------------------------
   # Basic bricks (single hit, different colors/points)
