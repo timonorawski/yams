@@ -11,8 +11,8 @@ You can play these games with:
 The same game runs identically on a 30-foot projected wall, in a browser, or on a laptop in a classroom.  
 One file. Zero installs for players. Zero dark patterns. Zero pay-to-win.
 
-## The missio
-Modern kids’ games train thumbs and dopamine loops.
+## The mission
+Modern games train thumbs and dopamine loops.
 I wanted my kids to grow up with games that train:
 
 - hand-eye coordination that translates to real life
@@ -23,17 +23,17 @@ I wanted my kids to grow up with games that train:
 So I built a system where the duck dies because the arrow you shot actually hit it in the real world, at the exact moment your brain predicted it would.
 That’s not nostalgia.
 That’s brain-building in its most fun possible form.
-Every game on this platform is engineered from the ground up to be creatable by children (drag-and-drop → YAML → optional tiny safe Lua), instantly playable in a browser, and magically accurate when you play it with real projectiles on a real wall or archery target.
+Every game on this platform is engineered from the ground up to be creatable by children (drag-and-drop (coming) → YAML → optional tiny safe Lua), instantly playable in a browser, and magically accurate when you play it with real projectiles on a real wall or archery target.
 From bedroom screen to 30-foot projected wall with real arrows – no changes.
 
-I also wanted them to be able to make games themselves.  
+I also wanted kids to be able to make games themselves.  
 So everything is designed from the ground up to be creatable and understandable by those who have never written code.
 
 The result is a platform where:
 - Making a complete, polished arcade game is as easy as editing a short text file (YAML)
-- Learning a little coding (Lua) is optional, never required, and always safe
+- Learning a little coding (Lua) is optional, never required, and always safe to share
 - Every game you make instantly works in the browser and on real physical installations
-- Sharing is just sending a link
+- Sharing is just sending a link or a text file
 - Schools, makerspaces, museums, and families get it forever for free
 - Commercial arcades and venues pay a fair price so the project stays alive and keeps getting better for everyone
 
@@ -42,7 +42,7 @@ The result is a platform where:
 - A rock-solid data-driven 2D arcade engine (pure YAML + optional tiny Lua scripts)
 - Full browser deployment via pygame-wasm / pygbag (playable right now)
 - AMS – the physical-input layer that turns projectors + cameras into interactive walls
-- DuckHunt, Brick Breaker NG, Balloon Pop, and more – all running with real arrows or in your browser
+- DuckHunt, Brick Breaker, Balloon Pop, and more – all running with real arrows or in your browser
 - Temporal hit compensation (computer vision pipeline has latency? the duck still gets hit at the right moment)
 
 ## Try it right now
@@ -56,13 +56,13 @@ or just wait for the browser version and play with your finger.
 
 Made with love by one dad who got fed up, for his kids and for yours.
 
-Welcome to the arcade renaissance.
+Welcome to your arcade renaissance.
 
 ## Features for techies
 
 - **3 Detection Backends**: Mouse (testing), laser pointer, object detection
 - **Geometric Calibration**: ArUco marker-based camera-projector alignment
-- **Temporal Hit Detection**: Handles detection latency automatically
+- **Temporal Hit Detection**: Handles cv detection latency automatically
 - **Duck Hunt Game**: Full implementation with multiple modes
 - **Extensible Architecture**: Easy to add new games and detection methods
 
@@ -75,7 +75,7 @@ Welcome to the arcade renaissance.
 
 ## Documentation
 
-- See `CLAUDE.md` for architecture overview
+- See `docs/AMS_ARCHITECTURE.md` for architecture overview
 - See `docs/guides/` for setup guides
 - See `docs/history/` for design rationale
 
