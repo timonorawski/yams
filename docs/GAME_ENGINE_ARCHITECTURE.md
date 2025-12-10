@@ -136,21 +136,62 @@ assets:
 
 ### Assets
 
-The `assets` section maps sound and sprite names to file paths. Names used in Lua behaviors (via `ams.play_sound("name")`) resolve to these paths.
+The `assets` section maps sound and sprite names to file paths. All asset references in Lua behaviors resolve through this mapping—no hardcoded paths in the engine.
 
 ```yaml
 assets:
   sounds:
     # Sound name -> path (relative to assets/ directory)
     paddle_hit: sounds/paddle_hit.wav
+    wall_bounce: sounds/wall_bounce.wav
+    brick_hit: sounds/brick_hit.wav
     brick_break: sounds/brick_break.wav
+    shoot: sounds/shoot.wav
+    player_hit: sounds/player_hit.wav
 
   sprites:
     # Sprite name -> path (for classic skin)
     paddle: sprites/paddle.png
+    ball: sprites/ball.png
 ```
 
-Paths are relative to `games/YourGame/assets/`. The game engine loads sounds on startup.
+#### How It Works
+
+1. **Lua calls `ams.play_sound("paddle_hit")`**
+2. **Engine looks up `"paddle_hit"` in `assets.sounds`**
+3. **Resolves path relative to `games/YourGame/assets/`**
+4. **Plays `games/YourGame/assets/sounds/paddle_hit.wav`**
+
+#### Standard Sound Names
+
+These sound names are used by the built-in Lua behaviors:
+
+| Sound Name | Used By | When |
+|------------|---------|------|
+| `paddle_hit` | `bounce_paddle.lua` | Ball bounces off paddle |
+| `wall_bounce` | `ball.lua` | Ball bounces off wall |
+| `brick_hit` | `take_damage.lua` | Brick takes damage but survives |
+| `brick_break` | `take_damage.lua` | Brick is destroyed |
+| `shoot` | `shoot.lua` | Entity fires projectile |
+| `player_hit` | `hit_player.lua` | Player takes damage |
+
+Games can add custom sounds for custom behaviors. The engine silently ignores sounds that aren't mapped (no crash if sound file missing).
+
+#### Directory Structure
+
+```
+games/YourGame/
+├── game.yaml
+├── assets/
+│   ├── sounds/
+│   │   ├── paddle_hit.wav
+│   │   ├── brick_break.wav
+│   │   └── ...
+│   └── sprites/
+│       ├── paddle.png
+│       └── ...
+└── levels/
+```
 
 ### Entity Types
 
