@@ -15,7 +15,7 @@ Directory structure:
 """
 
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 import uuid
 
 from lupa import LuaRuntime
@@ -78,10 +78,18 @@ class BehaviorEngine:
         # Sound queue (processed by game layer)
         self._sound_queue: list[str] = []
 
+        # Spawn callback - allows GameEngine to inject entity type config
+        # Signature: (entity_type, x, y, vx, vy, width, height, color, sprite) -> Entity
+        self._spawn_callback: Optional[Callable] = None
+
         # Initialize Lua
         self._lua = LuaRuntime(unpack_returned_tuples=True)
         self._api = LuaAPI(self)
         self._setup_lua_environment()
+
+    def set_spawn_callback(self, callback: Callable) -> None:
+        """Set callback for entity spawning (used by GameEngine to apply type config)."""
+        self._spawn_callback = callback
 
     def _setup_lua_environment(self) -> None:
         """Set up the Lua environment with API functions."""
@@ -351,8 +359,18 @@ class BehaviorEngine:
         """
         Spawn entity (called from Lua API).
 
+        If a spawn callback is registered (by GameEngine), uses that to apply
+        entity type config from game.yaml. Otherwise creates directly.
+
         Returns entity ID.
         """
+        # Use spawn callback if available (applies entity type config)
+        if self._spawn_callback:
+            entity = self._spawn_callback(entity_type, x, y, vx, vy, width, height, color, sprite)
+            if entity:
+                return entity.id
+            # Fallback to direct create if callback returns None
+
         entity = self.create_entity(
             entity_type=entity_type,
             x=x, y=y,

@@ -545,6 +545,9 @@ class GameEngine(BaseGame):
         if self.GAME_DEF_FILE and self.GAME_DEF_FILE.exists():
             self._game_def = self._load_game_definition(self.GAME_DEF_FILE)
 
+        # Register spawn callback so Lua spawns use entity type config
+        self._behavior_engine.set_spawn_callback(self._lua_spawn_callback)
+
         # Create skin and give it access to game definition
         self._skin = self._get_skin(skin)
         if self._game_def:
@@ -921,6 +924,22 @@ class GameEngine(BaseGame):
                     y = start_y + row * brick_height
                     self.spawn_entity(entity_type, x, y)
 
+    def _lua_spawn_callback(
+        self, entity_type: str, x: float, y: float,
+        vx: float, vy: float, width: float, height: float,
+        color: str, sprite: str
+    ) -> Optional[Entity]:
+        """Callback for BehaviorEngine.spawn_entity to apply entity type config.
+
+        Called when Lua code spawns entities (e.g., shoot behavior spawning projectiles).
+        Applies entity type config from game.yaml so spawned entities have behaviors.
+        """
+        return self.spawn_entity(
+            entity_type, x, y,
+            vx=vx, vy=vy, width=width, height=height,
+            color=color, sprite=sprite
+        )
+
     def spawn_entity(
         self,
         entity_type: str,
@@ -954,6 +973,8 @@ class GameEngine(BaseGame):
                 entity_type=entity_type,
                 x=x,
                 y=y,
+                vx=overrides.get('vx', 0.0),
+                vy=overrides.get('vy', 0.0),
                 width=overrides.get('width', type_config.width),
                 height=overrides.get('height', type_config.height),
                 color=overrides.get('color', type_config.color),
