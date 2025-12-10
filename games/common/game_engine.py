@@ -132,9 +132,13 @@ class GameDefinition:
     """Complete game definition loaded from YAML."""
 
     name: str = "Unnamed Game"
+    description: str = ""
+    version: str = "1.0.0"
+    author: str = ""
     screen_width: int = 800
     screen_height: int = 600
     background_color: Tuple[int, int, int] = (20, 20, 30)
+    defaults: Dict[str, Any] = field(default_factory=dict)  # Default settings (lives, etc.)
 
     # Entity type definitions
     entity_types: Dict[str, EntityTypeConfig] = field(default_factory=dict)
@@ -419,9 +423,13 @@ class GameEngine(BaseGame):
 
         game_def = GameDefinition(
             name=data.get('name', 'Unnamed Game'),
+            description=data.get('description', ''),
+            version=data.get('version', '1.0.0'),
+            author=data.get('author', ''),
             screen_width=data.get('screen_width', 800),
             screen_height=data.get('screen_height', 600),
             background_color=tuple(data.get('background_color', [20, 20, 30])),
+            defaults=data.get('defaults', {}),
             win_condition=data.get('win_condition', 'destroy_all'),
             win_target=data.get('win_target', 0),
             win_target_type=data.get('win_target_type'),

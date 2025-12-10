@@ -7,9 +7,17 @@
 # The base_type is preserved for win condition checking.
 
 name: "Brick Breaker NG"
+description: "Lua behavior-driven brick breaker"
+version: "1.0.0"
+author: "AMS Team"
+
 screen_width: 800
 screen_height: 600
 background_color: [20, 20, 30]
+
+# Default game settings (can be overridden via CLI)
+defaults:
+  lives: 3
 
 # Win/lose conditions
 win_condition: destroy_all

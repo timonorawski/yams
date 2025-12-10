@@ -30,6 +30,7 @@ from pathlib import Path
 from typing import List, Optional
 
 import pygame
+import yaml
 
 from games.common import GameEngine, GameEngineSkin, GameState
 from ams.behaviors import Entity
@@ -37,10 +38,29 @@ from ams.behaviors import Entity
 from .level_loader import NGLevelLoader, NGLevelData
 
 
-# Screen constants
+# Load game metadata from YAML at import time
+def _load_game_metadata():
+    """Load name/description/version/author/defaults from game.yaml."""
+    game_yaml = Path(__file__).parent / 'game.yaml'
+    if game_yaml.exists():
+        with open(game_yaml) as f:
+            data = yaml.safe_load(f)
+            return {
+                'name': data.get('name', 'Unnamed Game'),
+                'description': data.get('description', ''),
+                'version': data.get('version', '1.0.0'),
+                'author': data.get('author', ''),
+                'defaults': data.get('defaults', {}),
+            }
+    return {'name': 'Unnamed Game', 'description': '', 'version': '1.0.0',
+            'author': '', 'defaults': {}}
+
+_GAME_META = _load_game_metadata()
+
+
+# Screen constants (fallback if not in game.yaml)
 SCREEN_WIDTH = 800
 SCREEN_HEIGHT = 600
-BACKGROUND_COLOR = (20, 20, 30)
 
 
 class BrickBreakerNGSkin(GameEngineSkin):
@@ -88,27 +108,29 @@ class BrickBreakerNGSkin(GameEngineSkin):
 class BrickBreakerNGMode(GameEngine):
     """BrickBreaker NextGen - behavior-driven brick breaker."""
 
-    NAME = "Brick Breaker NG"
-    DESCRIPTION = "Lua behavior-driven brick breaker"
-    VERSION = "1.0.0"
-    AUTHOR = "AMS Team"
+    # Metadata from game.yaml
+    NAME = _GAME_META['name']
+    DESCRIPTION = _GAME_META['description']
+    VERSION = _GAME_META['version']
+    AUTHOR = _GAME_META['author']
 
     # Enable YAML-based game definition and levels
     GAME_DEF_FILE = Path(__file__).parent / 'game.yaml'
     LEVELS_DIR = Path(__file__).parent / 'levels'
 
+    # CLI arguments with defaults from game.yaml
     ARGUMENTS = [
         {
             'name': '--lives',
             'type': int,
-            'default': 3,
+            'default': _GAME_META['defaults'].get('lives', 3),
             'help': 'Starting lives'
         },
     ]
 
     def __init__(
         self,
-        lives: int = 3,
+        lives: int = _GAME_META['defaults'].get('lives', 3),
         width: int = SCREEN_WIDTH,
         height: int = SCREEN_HEIGHT,
         **kwargs,
