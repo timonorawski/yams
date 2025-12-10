@@ -552,27 +552,93 @@ input_mapping:
 
 ### Transform System
 
-Transform is the core primitive for entity metamorphosis—an entity becomes something fundamentally different.
+Transform is the core primitive for entity metamorphosis—an entity becomes something fundamentally different, or is destroyed while spawning children.
 
 ```yaml
 input_mapping:
   paddle_ready:
     on_input:
       transform:
-        into: paddle           # Entity becomes this type
-        spawn:                 # Spawn children at same position
+        type: paddle             # Transform into this type
+        children:                # Spawn children at same position
           - type: ball
-            offset: [52, -20]  # Relative to parent
-            speed: 300         # Spawn properties (behavior reads on_spawn)
+            offset: [52, -20]    # Relative to parent
+            speed: 300           # Spawn property (Lua reads on_spawn)
             angle:
               lua: ams.random_range(-120, -60)
 ```
 
-Transform:
-1. Changes the entity's type (updates behaviors, config, rendering)
-2. Preserves entity ID and position
-3. Optionally spawns child entities with offset and properties
-4. Child properties support `{lua: "..."}` for dynamic values evaluated at spawn time
+#### Transform Types
+
+| `type` Value | Behavior |
+|--------------|----------|
+| `"destroy"` | Spawn children only, destroy parent entity |
+| `"<entity_type>"` | Transform into type, optionally spawn children |
+
+#### Spawn Child Fields
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `type` | string | required | Entity type to spawn |
+| `offset` | [x, y] | [0, 0] | Position relative to parent |
+| `count` | int | 1 | Number to spawn (with `i` in Lua scope) |
+| `inherit_velocity` | float | 0.0 | Fraction of parent velocity to add |
+| `lifetime` | float | null | Auto-set on spawned entity |
+| `$property` | any | - | Reference parent property (e.g., `$color`) |
+| `{lua: ...}` | any | - | Dynamic value evaluated at spawn |
+
+### Lifecycle Transforms
+
+Entity types can define transforms that trigger on spawn or destruction.
+
+```yaml
+entity_types:
+  brick:
+    # Spawn particles when destroyed
+    on_destroy:
+      type: destroy
+      children:
+        - type: particle
+          count: 4
+          offset: [35, 12]        # Center of brick
+          vx: {lua: "ams.random_range(-100, 100)"}
+          vy: {lua: "ams.random_range(-150, -50)"}
+          color: $color           # Inherit parent's color
+
+    # Conditional transforms during update
+    on_update:
+      - when:
+          age: [0.4, null]        # After 0.4 seconds
+        transform:
+          type: destroy           # Auto-destroy
+```
+
+#### on_destroy
+
+Triggers when entity is destroyed. Only spawns children (parent is already being destroyed).
+
+#### on_update
+
+List of conditional transforms checked each frame. Each entry has:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `when.age` | [min, max] | Age range in seconds (`null` = unbounded) |
+| `when.property` | string | Property name to check |
+| `when.value` | any | Expected property value |
+| `when.interval` | float | Repeat every N seconds |
+| `transform` | object | Transform to apply when condition met |
+
+#### Computed Properties for Conditions
+
+| Property | Description |
+|----------|-------------|
+| `$age` | Seconds since entity spawned |
+| `$damage_ratio` | 0 to 1, based on hits taken |
+| `$health_ratio` | 0 to 1, based on remaining health |
+| `$alive` | Boolean, whether entity is alive |
+
+Lifecycle transforms are inherited via `extends`
 
 ### Lose Conditions
 
@@ -589,7 +655,7 @@ lose_conditions:
       destroy: ball
       transform:
         entity_type: paddle
-        into: paddle_ready
+        type: paddle_ready      # Transform paddle back to ready state
 
   # Projectile hits paddle (via property set by collision action)
   - entity_type: paddle
@@ -601,7 +667,7 @@ lose_conditions:
       destroy: ball
       transform:
         entity_type: paddle
-        into: paddle_ready
+        type: paddle_ready
 ```
 
 #### Lose Condition Fields
@@ -614,7 +680,9 @@ lose_conditions:
 | `property` | string | For property_true: property name to check |
 | `action` | string | `lose_life` |
 | `then.destroy` | string | Entity type to destroy |
-| `then.transform` | object | Transform another entity type |
+| `then.transform.entity_type` | string | Which entity type to transform |
+| `then.transform.type` | string | Transform into this type |
+| `then.transform.children` | array | Entities to spawn during transform |
 | `then.clear_property` | string | Property to set to false after action |
 
 ### Win Conditions
