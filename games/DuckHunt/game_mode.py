@@ -49,6 +49,13 @@ class DuckHuntMode(BaseGame):
             'help': 'Level name (from modes/ dir) or "classic" for built-in mode'
         },
         {
+            'name': '--skin',
+            'type': str,
+            'default': 'classic',
+            'choices': ['geometric', 'classic'],
+            'help': 'Visual skin (geometric=circles, classic=sprites)'
+        },
+        {
             'name': '--pacing',
             'type': str,
             'default': 'throwing',
@@ -79,9 +86,13 @@ class DuckHuntMode(BaseGame):
     # Initialization
     # =========================================================================
 
+    # Skin registry - maps skin names to skin classes
+    SKINS = {}  # Populated in __init__ to avoid circular imports
+
     def __init__(
         self,
         level: str = 'classic',
+        skin: str = 'classic',
         pacing: str = 'throwing',
         max_misses: Optional[int] = None,
         target_score: Optional[int] = None,
@@ -92,6 +103,7 @@ class DuckHuntMode(BaseGame):
 
         Args:
             level: Level name or 'classic' for built-in mode
+            skin: Visual skin ('geometric' or 'classic')
             pacing: Device speed preset (archery/throwing/blaster)
             max_misses: Maximum misses before game over (None=unlimited)
             target_score: Score needed to win (None=endless)
@@ -109,13 +121,14 @@ class DuckHuntMode(BaseGame):
 
         # Store configuration
         self._level_name = level
+        self._skin_name = skin
         self._pacing = pacing
         self._max_misses = max_misses
         self._target_score = target_score
 
         # Import game components (delayed import to avoid circular deps)
         from games.DuckHunt.game.duck_target import DuckTarget, DuckPhase
-        from games.DuckHunt.game.sprites import get_duck_sprites
+        from games.DuckHunt.game.skins import GeometricSkin, ClassicSkin
         from games.DuckHunt.game.scoring import ScoreTracker
         from games.DuckHunt.game.feedback import FeedbackManager
         from games.DuckHunt.config import (
@@ -129,8 +142,13 @@ class DuckHuntMode(BaseGame):
         )
         from models import Vector2D, TargetData, TargetState
 
-        # Initialize sprite system
-        self._duck_sprites = get_duck_sprites()
+        # Initialize skin system
+        self.SKINS = {
+            'geometric': GeometricSkin,
+            'classic': ClassicSkin,
+        }
+        skin_class = self.SKINS.get(skin, ClassicSkin)
+        self._skin = skin_class()
 
         # Store imports for use in methods
         self._DuckTarget = DuckTarget
@@ -150,10 +168,6 @@ class DuckHuntMode(BaseGame):
         self._feedback = FeedbackManager(audio_enabled=True)
         self._game_over = False
         self._won = False
-
-        # Shot sound (loaded lazily)
-        self._shot_sound: Optional[pygame.mixer.Sound] = None
-        self._shot_sound_loaded = False
 
         # Level configuration (loaded from YAML or defaults)
         self._level_config = None
@@ -297,7 +311,7 @@ class DuckHuntMode(BaseGame):
             # Check all targets for hit
             for i, target in enumerate(self._targets):
                 if target.is_active and target.contains_point(event.position):
-                    # Target was hit - use DuckTarget.hit() for sprite-based hit handling
+                    # Target was hit - use DuckTarget.hit() for phase transition
                     self._targets[i] = target.hit()
 
                     # Update score
@@ -306,8 +320,8 @@ class DuckHuntMode(BaseGame):
                     # Add visual and audio feedback
                     self._feedback.add_hit_effect(event.position, points=100)
 
-                    # Play shot sound if available
-                    self._play_shot_sound()
+                    # Play hit sound via skin
+                    self._skin.play_hit_sound()
 
                     # Check for combo milestone
                     new_combo = self._score_tracker.get_stats().current_combo
@@ -323,6 +337,7 @@ class DuckHuntMode(BaseGame):
             if not hit_detected:
                 self._score_tracker = self._score_tracker.record_miss()
                 self._feedback.add_miss_effect(event.position)
+                self._skin.play_miss_sound()
 
     def update(self, dt: float) -> None:
         """Update game logic."""
@@ -335,13 +350,16 @@ class DuckHuntMode(BaseGame):
         if self.state != GameState.PLAYING:
             return
 
+        # Update skin (for animations)
+        self._skin.update(dt)
+
         # Update all targets using DuckTarget's phase-based logic
         updated_targets = []
 
         for target in self._targets:
             # DuckTarget.update() handles:
             # - FLYING: normal movement
-            # - HIT_PAUSE: stay in place showing hit sprite
+            # - HIT_PAUSE: stay in place
             # - FALLING: gravity-based fall
             updated_target = target.update(dt)
 
@@ -350,6 +368,7 @@ class DuckHuntMode(BaseGame):
                 # Only count as miss if it was an alive target that escaped
                 if target.phase == self._DuckPhase.FLYING:
                     self._score_tracker = self._score_tracker.record_miss()
+                    self._skin.play_escape_sound()
                 # Don't add to updated list - target is gone
             else:
                 updated_targets.append(updated_target)
@@ -376,9 +395,9 @@ class DuckHuntMode(BaseGame):
         bg_color = self._palette.get_background_color()
         screen.fill(bg_color)
 
-        # Render all targets (DuckTarget handles sprite rendering based on phase)
+        # Render all targets via skin
         for target in self._targets:
-            target.render(screen)
+            self._skin.render_target(target, screen)
 
         # Render feedback effects
         self._feedback.render(screen)
@@ -443,28 +462,11 @@ class DuckHuntMode(BaseGame):
             state=self._TargetState.ALIVE,
         )
 
-        # Create DuckTarget with sprite support
-        self._targets.append(self._DuckTarget(target_data, sprites=self._duck_sprites))
+        # Create DuckTarget
+        self._targets.append(self._DuckTarget(target_data))
 
-    def _play_shot_sound(self) -> None:
-        """Play shot sound effect if available."""
-        import os
-
-        # Load sound lazily on first use
-        if not self._shot_sound_loaded:
-            self._shot_sound_loaded = True
-            sound_path = os.path.join(
-                os.path.dirname(__file__), "assets", "shot.wav"
-            )
-            if os.path.exists(sound_path):
-                try:
-                    self._shot_sound = pygame.mixer.Sound(sound_path)
-                except Exception as e:
-                    print(f"Warning: Could not load shot.wav: {e}")
-
-        # Play sound if loaded
-        if self._shot_sound:
-            self._shot_sound.play()
+        # Play spawn sound via skin
+        self._skin.play_spawn_sound()
 
     def _increase_difficulty(self) -> None:
         """Increase game difficulty by speeding up targets."""

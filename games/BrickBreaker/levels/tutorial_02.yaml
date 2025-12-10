@@ -1,0 +1,52 @@
+name: "Tutorial 2 - Tough Bricks"
+description: "Some bricks need multiple hits to destroy. Gray bricks take 2 hits, silver takes 3!"
+difficulty: 2
+author: "AMS Team"
+
+brick_types:
+  red:
+    color: red
+    hits: 1
+    points: 100
+  blue:
+    color: blue
+    hits: 1
+    points: 100
+  gray:
+    color: gray
+    hits: 2
+    points: 200
+  silver:
+    color: silver
+    hits: 3
+    points: 300
+
+brick_width: 70
+brick_height: 25
+grid_offset_x: 65
+grid_offset_y: 80
+
+layout: |
+  SSSSSSSSSSSSSSSS
+  GGGGGGGGGGGGGGGG
+  RRRRRRRRRRRRRRRR
+  BBBBBBBBBBBBBBBB
+  GGGGGGGGGGGGGGGG
+  SSSSSSSSSSSSSSSS
+
+layout_key:
+  R: red
+  B: blue
+  G: gray
+  S: silver
+  .: empty
+
+paddle:
+  width: 130
+  speed: 500
+
+ball:
+  speed: 300
+  radius: 10
+
+lives: 3

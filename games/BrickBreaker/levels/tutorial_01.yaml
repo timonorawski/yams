@@ -1,0 +1,58 @@
+name: "Tutorial 1 - The Basics"
+description: "Learn to break bricks! Simple single-hit bricks in a classic pattern."
+difficulty: 1
+author: "AMS Team"
+
+brick_types:
+  red:
+    color: red
+    hits: 1
+    points: 100
+  orange:
+    color: orange
+    hits: 1
+    points: 90
+  yellow:
+    color: yellow
+    hits: 1
+    points: 80
+  green:
+    color: green
+    hits: 1
+    points: 70
+  blue:
+    color: blue
+    hits: 1
+    points: 60
+
+# Grid configuration
+brick_width: 70
+brick_height: 25
+grid_offset_x: 65
+grid_offset_y: 80
+
+# ASCII layout - each character maps to a brick type
+layout: |
+  RRRRRRRRRRRRRRRR
+  OOOOOOOOOOOOOOOO
+  YYYYYYYYYYYYYYYY
+  GGGGGGGGGGGGGGGG
+  BBBBBBBBBBBBBBBB
+
+layout_key:
+  R: red
+  O: orange
+  Y: yellow
+  G: green
+  B: blue
+  .: empty
+
+paddle:
+  width: 120
+  speed: 500
+
+ball:
+  speed: 280
+  radius: 10
+
+lives: 3

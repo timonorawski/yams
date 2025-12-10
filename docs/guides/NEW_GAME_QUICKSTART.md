@@ -480,6 +480,85 @@ def update(self, dt: float):
 
 See [BASE_GAME_API.md](../architecture/BASE_GAME_API.md#level-system) for full documentation.
 
+## Skins System (Optional)
+
+Games can implement multiple visual representations through a skins system. This is useful for CV-friendly modes, accessibility, or theming.
+
+### Quick Skins Setup
+
+**1. Create skins directory:**
+```bash
+mkdir -p games/MyGame/game/skins
+```
+
+**2. Create base skin (games/MyGame/game/skins/base.py):**
+```python
+from abc import ABC, abstractmethod
+import pygame
+
+class GameSkin(ABC):
+    NAME: str = "base"
+
+    @abstractmethod
+    def render_target(self, target, screen: pygame.Surface) -> None:
+        pass
+
+    def update(self, dt: float) -> None:
+        pass
+
+    def play_hit_sound(self) -> None:
+        pass
+```
+
+**3. Create concrete skins:**
+```python
+# games/MyGame/game/skins/geometric.py
+class GeometricSkin(GameSkin):
+    NAME = "geometric"
+
+    def render_target(self, target, screen):
+        pygame.draw.circle(screen, (255, 100, 100),
+                          (int(target.x), int(target.y)), target.radius)
+
+# games/MyGame/game/skins/classic.py
+class ClassicSkin(GameSkin):
+    NAME = "classic"
+
+    def render_target(self, target, screen):
+        # Sprite-based rendering
+        ...
+```
+
+**4. Wire up in game:**
+```python
+class MyGameMode(BaseGame):
+    ARGUMENTS = [
+        {'name': '--skin', 'type': str, 'default': 'classic',
+         'choices': ['geometric', 'classic'], 'help': 'Visual skin'},
+    ]
+
+    def __init__(self, skin='classic', **kwargs):
+        super().__init__(**kwargs)
+        from .game.skins import GeometricSkin, ClassicSkin
+        skins = {'geometric': GeometricSkin, 'classic': ClassicSkin}
+        self._skin = skins.get(skin, ClassicSkin)()
+
+    def render(self, screen):
+        for target in self._targets:
+            self._skin.render_target(target, screen)
+```
+
+### Usage
+```bash
+# CV-friendly geometric shapes
+python ams_game.py --game mygame --backend mouse --skin geometric
+
+# Classic sprite visuals
+python ams_game.py --game mygame --backend mouse --skin classic
+```
+
+See [BASE_GAME_API.md](../architecture/BASE_GAME_API.md#skins-system-visual-themes) for full documentation.
+
 ## Game Actions (Optional)
 
 Games can expose contextual actions that appear in the web controller UI (retry, skip, next level, etc.).
@@ -539,7 +618,7 @@ See [BASE_GAME_API.md](../architecture/BASE_GAME_API.md#game-actions) for full d
 | ManyTargets | Complex internal states |
 | FruitSlice | Arcing targets, bombs |
 | GrowingTargets | Score-vs-difficulty tradeoff |
-| DuckHunt | Multiple modes, trajectories |
+| DuckHunt | Multiple modes, trajectories, **skins system** |
 
 ## Troubleshooting
 

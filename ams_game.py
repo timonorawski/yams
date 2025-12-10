@@ -719,7 +719,7 @@ def launch_game_generic(args, screen, detection_backend, ams, registry: GameRegi
 
     # Collect game-specific kwargs from args
     game_kwargs = {}
-    for key in ['mode', 'spawn_rate', 'max_escaped', 'target_pops']:
+    for key in ['mode', 'spawn_rate', 'max_escaped', 'target_pops', 'skin', 'level', 'pacing']:
         if hasattr(args, key):
             value = getattr(args, key)
             if value is not None:
@@ -894,6 +894,26 @@ Examples:
         type=str,
         default='classic_archery',
         help='Duck Hunt game mode (default: classic_archery)'
+    )
+    parser.add_argument(
+        '--skin',
+        type=str,
+        choices=['geometric', 'classic'],
+        default='classic',
+        help='Visual skin for duckhunt (geometric=circles, classic=sprites)'
+    )
+    parser.add_argument(
+        '--level',
+        type=str,
+        default='classic',
+        help='Level name for duckhunt (from levels/ dir or "classic")'
+    )
+    parser.add_argument(
+        '--pacing',
+        type=str,
+        choices=['archery', 'throwing', 'blaster'],
+        default='throwing',
+        help='Device speed preset for duckhunt'
     )
 
     # Camera/detection settings

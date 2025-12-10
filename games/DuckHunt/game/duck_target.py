@@ -1,18 +1,21 @@
 """
 DuckTarget class for Duck Hunt game.
 
-Extends the base Target with sprite-based rendering, hit animations,
-and falling behavior.
+Wraps the base Target with duck-specific behavior:
+- Duck color assignment
+- Hit pause phase before falling
+- Gravity-based falling animation
+
+Note: Rendering is handled by skins (see game/skins/), not by DuckTarget.
 """
 
 import random
 from typing import Optional
 from enum import Enum
-import pygame
 
 from models import TargetData, Vector2D, TargetState
 from .target import Target
-from .sprites import DuckSprites, DuckColor, DuckDirection, get_duck_sprites
+from .sprites import DuckColor  # Just the enum, not the sprite manager
 
 
 class DuckPhase(Enum):
@@ -23,13 +26,14 @@ class DuckPhase(Enum):
 
 
 class DuckTarget:
-    """A duck target with sprite-based rendering and falling animation.
+    """A duck target with hit/fall behavior.
 
     Wraps a Target and adds:
-    - Sprite-based rendering with animation
-    - Duck color assignment
-    - Hit pause phase (shows hit sprite for ~2 seconds before falling)
+    - Duck color assignment (for skin rendering)
+    - Hit pause phase before falling
     - Gravity-based falling animation
+
+    Note: Rendering is handled externally by skins.
     """
 
     # Physics constants
@@ -40,18 +44,15 @@ class DuckTarget:
         self,
         data: TargetData,
         color: Optional[DuckColor] = None,
-        sprites: Optional[DuckSprites] = None
     ):
         """Initialize duck target.
 
         Args:
             data: Target data model
             color: Duck color (random if None)
-            sprites: Sprite manager (uses global if None)
         """
         self._target = Target(data)
         self._color = color or random.choice(list(DuckColor))
-        self._sprites = sprites or get_duck_sprites()
         self._phase = DuckPhase.FLYING
         self._hit_timer = 0.0
         self._fall_velocity = 0.0  # Separate y velocity for falling
@@ -101,13 +102,13 @@ class DuckTarget:
             size=self._target.data.size,
             state=TargetState.HIT
         )
-        new_duck = DuckTarget(hit_data, self._color, self._sprites)
+        new_duck = DuckTarget(hit_data, self._color)
         new_duck._phase = DuckPhase.HIT_PAUSE
         new_duck._hit_timer = 0.0
         return new_duck
 
     def update(self, dt: float) -> 'DuckTarget':
-        """Update duck position and animation state.
+        """Update duck position and phase state.
 
         Args:
             dt: Time delta in seconds
@@ -115,13 +116,10 @@ class DuckTarget:
         Returns:
             New DuckTarget instance with updated state
         """
-        # Update sprite animation time
-        self._sprites.update(dt)
-
         if self._phase == DuckPhase.FLYING:
             # Normal flight - delegate to base Target
             new_target = self._target.update(dt)
-            new_duck = DuckTarget(new_target.data, self._color, self._sprites)
+            new_duck = DuckTarget(new_target.data, self._color)
             new_duck._phase = DuckPhase.FLYING
             return new_duck
 
@@ -131,13 +129,13 @@ class DuckTarget:
 
             if new_hit_timer >= self.HIT_PAUSE_DURATION:
                 # Transition to falling
-                new_duck = DuckTarget(self._target.data, self._color, self._sprites)
+                new_duck = DuckTarget(self._target.data, self._color)
                 new_duck._phase = DuckPhase.FALLING
                 new_duck._fall_velocity = 0.0
                 return new_duck
             else:
                 # Stay in hit pause
-                new_duck = DuckTarget(self._target.data, self._color, self._sprites)
+                new_duck = DuckTarget(self._target.data, self._color)
                 new_duck._phase = DuckPhase.HIT_PAUSE
                 new_duck._hit_timer = new_hit_timer
                 return new_duck
@@ -157,54 +155,12 @@ class DuckTarget:
                 state=TargetState.HIT
             )
 
-            new_duck = DuckTarget(new_data, self._color, self._sprites)
+            new_duck = DuckTarget(new_data, self._color)
             new_duck._phase = DuckPhase.FALLING
             new_duck._fall_velocity = new_fall_velocity
             return new_duck
 
         return self
-
-    def render(self, screen: pygame.Surface, color: Optional[tuple] = None) -> None:
-        """Render the duck sprite on screen.
-
-        Args:
-            screen: Pygame surface to draw on
-            color: Ignored (kept for API compatibility with Target)
-        """
-        if not self._sprites.is_loaded:
-            # Fallback to circle rendering if sprites not loaded
-            self._target.render(screen, color)
-            return
-
-        # Determine which direction sprite to use
-        if self._phase == DuckPhase.HIT_PAUSE:
-            direction = DuckDirection.HIT
-        elif self._phase == DuckPhase.FALLING:
-            direction = DuckDirection.FALLING
-        else:
-            # Flying - determine direction from velocity
-            vx = self._target.data.velocity.x
-            vy = self._target.data.velocity.y
-            direction = self._sprites.get_direction_from_velocity(vx, vy)
-
-        # Calculate scale based on target size vs sprite size
-        sprite_width, sprite_height = self._sprites.sprite_size
-        target_size = self._target.data.size
-        scale = target_size / max(sprite_width, sprite_height)
-
-        # Get the current animation frame
-        frame = self._sprites.get_frame(self._color, direction, scale)
-
-        if frame is None:
-            # Fallback to circle rendering
-            self._target.render(screen, color)
-            return
-
-        # Position sprite centered on target position
-        pos_x = int(self._target.data.position.x - frame.get_width() / 2)
-        pos_y = int(self._target.data.position.y - frame.get_height() / 2)
-
-        screen.blit(frame, (pos_x, pos_y))
 
     def set_state(self, state: TargetState) -> 'DuckTarget':
         """Create new duck with updated state.
@@ -216,7 +172,7 @@ class DuckTarget:
             New DuckTarget instance with updated state
         """
         new_target = self._target.set_state(state)
-        new_duck = DuckTarget(new_target.data, self._color, self._sprites)
+        new_duck = DuckTarget(new_target.data, self._color)
         new_duck._phase = self._phase
         new_duck._hit_timer = self._hit_timer
         new_duck._fall_velocity = self._fall_velocity

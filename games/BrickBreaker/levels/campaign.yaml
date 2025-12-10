@@ -1,0 +1,9 @@
+group: true
+name: "Tutorial Campaign"
+description: "Learn BrickBreaker from basics to advanced mechanics"
+author: "AMS Team"
+
+levels:
+  - tutorial_01
+  - tutorial_02
+  - space_invaders

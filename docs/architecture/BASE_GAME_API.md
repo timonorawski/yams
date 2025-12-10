@@ -603,6 +603,155 @@ class TargetPractice(BaseGame):
         screen.blit(text_surf, rect)
 ```
 
+## Skins System (Visual Themes)
+
+Games can implement multiple visual representations through a skins system. This is useful for:
+- **CV-friendly modes**: Simple geometric shapes for reliable detection
+- **Classic visuals**: Sprite-based rendering with animations
+- **Accessibility**: High-contrast or simplified visuals
+- **Theming**: Holiday themes, custom branding, etc.
+
+### Implementing Skins
+
+**1. Create Skin Base Class:**
+
+```python
+# games/MyGame/game/skins/base.py
+from abc import ABC, abstractmethod
+import pygame
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from ..target import Target
+
+class GameSkin(ABC):
+    """Base class for game skins (visuals + audio)."""
+
+    NAME: str = "base"
+    DESCRIPTION: str = "Base skin"
+
+    @abstractmethod
+    def render_target(self, target: 'Target', screen: pygame.Surface) -> None:
+        """Render a target to the screen."""
+        pass
+
+    def update(self, dt: float) -> None:
+        """Update skin state (animations, etc.)."""
+        pass
+
+    def play_hit_sound(self) -> None:
+        """Play sound when target is hit."""
+        pass
+
+    def play_miss_sound(self) -> None:
+        """Play sound when shot misses."""
+        pass
+```
+
+**2. Create Concrete Skins:**
+
+```python
+# games/MyGame/game/skins/geometric.py
+class GeometricSkin(GameSkin):
+    """Simple circles for CV testing."""
+
+    NAME = "geometric"
+    DESCRIPTION = "Simple shapes for testing and CV calibration"
+
+    def render_target(self, target, screen):
+        pos = (int(target.x), int(target.y))
+        pygame.draw.circle(screen, (255, 100, 100), pos, target.radius)
+        pygame.draw.circle(screen, (255, 255, 255), pos, target.radius, 2)
+
+# games/MyGame/game/skins/classic.py
+class ClassicSkin(GameSkin):
+    """Sprite-based rendering with sounds."""
+
+    NAME = "classic"
+    DESCRIPTION = "Original style with sprites and sounds"
+
+    def __init__(self):
+        self._sprites = None
+        self._hit_sound = None
+        self._initialized = False
+
+    def _ensure_initialized(self):
+        """Lazy loading of assets."""
+        if self._initialized:
+            return
+        self._sprites = load_sprites()
+        self._hit_sound = pygame.mixer.Sound("assets/hit.ogg")
+        self._initialized = True
+
+    def render_target(self, target, screen):
+        self._ensure_initialized()
+        frame = self._sprites.get_frame(target.state)
+        screen.blit(frame, (target.x, target.y))
+
+    def play_hit_sound(self):
+        self._ensure_initialized()
+        if self._hit_sound:
+            self._hit_sound.play()
+```
+
+**3. Wire Up in Game Mode:**
+
+```python
+class MyGameMode(BaseGame):
+    ARGUMENTS = [
+        {'name': '--skin', 'type': str, 'default': 'classic',
+         'choices': ['geometric', 'classic'], 'help': 'Visual skin'},
+        # ... other arguments
+    ]
+
+    SKINS = {}  # Populated in __init__
+
+    def __init__(self, skin: str = 'classic', **kwargs):
+        super().__init__(**kwargs)
+
+        from .game.skins import GeometricSkin, ClassicSkin
+        self.SKINS = {
+            'geometric': GeometricSkin,
+            'classic': ClassicSkin,
+        }
+        self._skin = self.SKINS.get(skin, ClassicSkin)()
+
+    def handle_input(self, events):
+        for event in events:
+            if self._check_hit(event.position):
+                self._skin.play_hit_sound()
+            else:
+                self._skin.play_miss_sound()
+
+    def update(self, dt):
+        self._skin.update(dt)  # Update animations
+        # ... rest of update
+
+    def render(self, screen):
+        screen.fill(self._palette.get_background_color())
+        for target in self._targets:
+            self._skin.render_target(target, screen)
+```
+
+### Skin Design Principles
+
+1. **Presentation only**: Skins should not change game logic, only visuals and audio
+2. **Lazy initialization**: Load assets only when needed (first render/sound)
+3. **Fallback support**: Provide fallback rendering if assets fail to load
+4. **Registry-based**: Games declare available skins in SKINS dict
+
+### Example: DuckHunt Skins
+
+DuckHunt implements two skins:
+
+```bash
+# CV-friendly geometric circles
+python ams_game.py --game duckhunt --backend mouse --skin geometric
+
+# Classic sprite-based ducks with sounds
+python ams_game.py --game duckhunt --backend mouse --skin classic
+```
+
 ## Level System
 
 Games can opt-in to YAML-based level support by setting `LEVELS_DIR` and implementing level-specific methods.

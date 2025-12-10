@@ -1,0 +1,69 @@
+name: "Space Invaders Mode"
+description: "Bricks descend toward you! Clear them before they reach the paddle."
+difficulty: 3
+author: "AMS Team"
+
+brick_types:
+  invader:
+    color: green
+    hits: 1
+    points: 100
+    descends: true
+    descend_speed: 15
+
+  invader_tough:
+    color: cyan
+    hits: 2
+    points: 200
+    descends: true
+    descend_speed: 12
+
+  invader_moving:
+    color: purple
+    hits: 1
+    points: 150
+    descends: true
+    descend_speed: 15
+    oscillates: true
+    oscillate_speed: 40
+    oscillate_range: 30
+
+  boss:
+    color: red
+    hits: 3
+    points: 500
+    descends: true
+    descend_speed: 8
+    shoots: true
+    shoot_interval: 3.0
+    shoot_speed: 150
+
+brick_width: 60
+brick_height: 30
+grid_offset_x: 100
+grid_offset_y: 60
+
+layout: |
+  ..MMMMMMMMMM..
+  IIIIIIIIIIIIII
+  TTTTTTTTTTTTTT
+  IIIIIIIIIIIIII
+  MMMMMMMMMMMMMM
+  .....BB.......
+
+layout_key:
+  I: invader
+  T: invader_tough
+  M: invader_moving
+  B: boss
+  .: empty
+
+paddle:
+  width: 100
+  speed: 550
+
+ball:
+  speed: 350
+  radius: 10
+
+lives: 3
