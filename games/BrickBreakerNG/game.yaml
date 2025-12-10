@@ -25,6 +25,31 @@ win_target_type: brick  # Win when all entities with base_type 'brick' destroyed
 lose_on_player_death: true
 
 # =============================================================================
+# Assets
+# =============================================================================
+# Sound and sprite mappings. Names used in Lua behaviors map to file paths.
+# Paths are relative to games/BrickBreakerNG/assets/
+
+assets:
+  sounds:
+    # Ball/paddle sounds
+    paddle_hit: sounds/paddle_hit.wav
+    wall_bounce: sounds/wall_bounce.wav
+
+    # Brick sounds
+    brick_hit: sounds/brick_hit.wav
+    brick_break: sounds/brick_break.wav
+
+    # Shooter/projectile sounds
+    shoot: sounds/shoot.wav
+    player_hit: sounds/player_hit.wav
+
+  sprites: {}
+    # Add sprite mappings here when using classic skin
+    # paddle: sprites/paddle.png
+    # ball: sprites/ball.png
+
+# =============================================================================
 # Entity Type Definitions
 # =============================================================================
 # Each type defines default properties and attached behaviors.

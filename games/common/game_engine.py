@@ -171,6 +171,15 @@ class InputMappingConfig:
 
 
 @dataclass
+class AssetsConfig:
+    """Configuration for game assets (sounds, sprites)."""
+    # Sound name -> file path mapping
+    sounds: Dict[str, str] = field(default_factory=dict)
+    # Sprite name -> file path mapping
+    sprites: Dict[str, str] = field(default_factory=dict)
+
+
+@dataclass
 class GameDefinition:
     """Complete game definition loaded from YAML."""
 
@@ -214,6 +223,9 @@ class GameDefinition:
     # Default layout (used when no level specified)
     default_layout: Optional[Dict[str, Any]] = None
 
+    # Assets (sounds, sprites)
+    assets: AssetsConfig = field(default_factory=AssetsConfig)
+
 
 class GameEngineSkin:
     """Abstract base for GameEngine rendering.
@@ -224,10 +236,15 @@ class GameEngineSkin:
 
     def __init__(self):
         self._game_def: Optional[GameDefinition] = None
+        self._sounds: Dict[str, pygame.mixer.Sound] = {}
+        self._assets_dir: Optional[Path] = None
 
-    def set_game_definition(self, game_def: GameDefinition) -> None:
-        """Set game definition for render command lookup."""
+    def set_game_definition(self, game_def: GameDefinition,
+                            assets_dir: Optional[Path] = None) -> None:
+        """Set game definition for render command lookup and load assets."""
         self._game_def = game_def
+        self._assets_dir = assets_dir
+        self._load_sounds()
 
     def render_entity(self, entity: Entity, screen: pygame.Surface) -> None:
         """Render an entity using YAML render commands or fallback."""
@@ -458,8 +475,31 @@ class GameEngineSkin:
         pass
 
     def play_sound(self, sound_name: str) -> None:
-        """Play a sound effect."""
-        pass
+        """Play a sound effect by name (from assets.sounds in game.yaml)."""
+        if sound_name in self._sounds:
+            self._sounds[sound_name].play()
+
+    def _load_sounds(self) -> None:
+        """Load sounds defined in game definition assets."""
+        self._sounds.clear()
+        if not self._game_def:
+            return
+
+        for sound_name, sound_path in self._game_def.assets.sounds.items():
+            self._load_sound(sound_name, sound_path)
+
+    def _load_sound(self, name: str, path: str) -> None:
+        """Load a single sound file."""
+        try:
+            # Resolve path relative to assets_dir if not absolute
+            sound_path = Path(path)
+            if not sound_path.is_absolute() and self._assets_dir:
+                sound_path = self._assets_dir / path
+
+            if sound_path.exists():
+                self._sounds[name] = pygame.mixer.Sound(str(sound_path))
+        except Exception as e:
+            print(f"[GameEngineSkin] Failed to load sound '{name}': {e}")
 
     def _parse_color(self, color_str: str) -> Tuple[int, int, int]:
         """Parse color string to RGB tuple."""
@@ -553,7 +593,9 @@ class GameEngine(BaseGame):
         # Create skin and give it access to game definition
         self._skin = self._get_skin(skin)
         if self._game_def:
-            self._skin.set_game_definition(self._game_def)
+            # Assets dir is relative to the game.yaml file
+            assets_dir = self.GAME_DEF_FILE.parent / 'assets' if self.GAME_DEF_FILE else None
+            self._skin.set_game_definition(self._game_def, assets_dir)
 
         # Player entity reference
         self._player_id: Optional[str] = None
@@ -570,6 +612,13 @@ class GameEngine(BaseGame):
         with open(path) as f:
             data = yaml.safe_load(f)
 
+        # Parse assets section
+        assets_data = data.get('assets', {})
+        assets_config = AssetsConfig(
+            sounds=assets_data.get('sounds', {}),
+            sprites=assets_data.get('sprites', {}),
+        )
+
         game_def = GameDefinition(
             name=data.get('name', 'Unnamed Game'),
             description=data.get('description', ''),
@@ -584,6 +633,7 @@ class GameEngine(BaseGame):
             win_target_type=data.get('win_target_type'),
             lose_on_player_death=data.get('lose_on_player_death', True),
             default_layout=data.get('default_layout'),
+            assets=assets_config,
         )
 
         # First pass: parse all entity types

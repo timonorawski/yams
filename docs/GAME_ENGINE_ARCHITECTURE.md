@@ -121,7 +121,36 @@ default_layout:
     cols: 10
     rows: 5
     row_types: [brick_blue, brick_green, brick_yellow, brick_orange, brick_red]
+
+# Assets (sounds, sprites)
+assets:
+  sounds:
+    paddle_hit: sounds/paddle_hit.wav
+    wall_bounce: sounds/wall_bounce.wav
+    brick_hit: sounds/brick_hit.wav
+    brick_break: sounds/brick_break.wav
+    shoot: sounds/shoot.wav
+    player_hit: sounds/player_hit.wav
+  sprites: {}
 ```
+
+### Assets
+
+The `assets` section maps sound and sprite names to file paths. Names used in Lua behaviors (via `ams.play_sound("name")`) resolve to these paths.
+
+```yaml
+assets:
+  sounds:
+    # Sound name -> path (relative to assets/ directory)
+    paddle_hit: sounds/paddle_hit.wav
+    brick_break: sounds/brick_break.wav
+
+  sprites:
+    # Sprite name -> path (for classic skin)
+    paddle: sprites/paddle.png
+```
+
+Paths are relative to `games/YourGame/assets/`. The game engine loads sounds on startup.
 
 ### Entity Types
 
