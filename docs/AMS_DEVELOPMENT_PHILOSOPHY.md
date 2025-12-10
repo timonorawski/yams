@@ -1,113 +1,94 @@
-# AMS Game Development Philosophy  
-The Core Primal Arcade Games & The Canvas That Never Dies  
-2025–∞
+# AMS Game Architecture — Design Rationale
 
-## The Truth Everyone Forgot
+## Core Observation
 
-There are only roughly six real arcade games.
+Most arcade games are variations on a small number of mechanical patterns. The differences between games are primarily:
 
-Everything else is skin, juice, and minor rule tweaks.
+- Visual presentation (sprites, colors, theme)
+- Tuning parameters (speed, spawn rates, scoring)
+- Composition of behaviors (does it shoot? does it descend?)
 
-1. Breakout / Pong  
-   → Bounce the thing off the paddle  
-2. Space Invaders / Galaga  
-   → Shoot the descending swarm  
-3. Pac-Man  
-   → Navigate the maze, flip predator/prey  
-4. Asteroids  
-   → Thrust + shoot in open space  
-5. Robotron / Gauntlet  
-   → Twin-stick murder room  
-6. Track & Field / Rhythm games  
-   → Hit the button on the beat
+The underlying mechanics are surprisingly few.
 
-From these six primitives, constrained by 256×224 pixels, 16 colors, and a 25-cent coin slot, came the entire golden age of arcade.
+## The Six Primal Patterns
 
-The magic was never the graphics.  
-The magic was the **perfectly brutal constraint**.
+| Pattern | Core Mechanic | Classic Examples |
+|---------|---------------|------------------|
+| **Paddle/Bounce** | Deflect object with player-controlled surface | Breakout, Pong, Arkanoid |
+| **Swarm Defense** | Shoot at descending/approaching enemies | Space Invaders, Galaga, Centipede |
+| **Maze Navigation** | Move through constrained paths, state-based predator/prey | Pac-Man, Rally-X |
+| **Thrust/Inertia** | Player movement with momentum in open space | Asteroids, Lunar Lander |
+| **Arena Survival** | Omnidirectional movement, enemies spawn from edges | Robotron, Smash TV, Geometry Wars |
+| **Rhythm/Timing** | Input must align with temporal pattern | Track & Field, Dance Dance Revolution, Guitar Hero |
 
-## AMS Is the Modern Evolution of That Constraint when we remove the hardware constraints of microcontroller architecture.
+These patterns can combine. Galaga is Swarm Defense + Rhythm (firing cadence). Asteroids is Thrust + Split (fragments). Most "new" arcade games are recombinations with fresh visuals.
 
-We kept the brutality.  
-We removed the coin slot.
+## Architectural Implication
 
-AMS gives you the same primal canvases — but now:
+If six patterns cover most arcade games, then:
 
-- The paddle is moved by real arrows or Nerf darts  
-- The swarm descends across your living-room wall or 50-yard range  
-- The maze is built from arrows stuck in foam  
-- The thrust is controlled by the rhythm of your breath  
-- The murder room is your entire body in real space  
-- The beat is the heartbeat of a stroke patient re-learning to aim
+1. **Behaviors that implement these patterns are the core library**
+2. **Games are primarily data** — which behaviors to use, how to configure them
+3. **New games shouldn't require new code** — just new YAML and assets
 
-Same six games.  
-Infinite reality.
+This is the design goal, not a claim that we've achieved it. Some games will need new behaviors. But those new behaviors join the library for future games.
 
-## The Current Six Core Engines (2025 Edition)
+## What Lives in Code vs. Data
 
-| Primal Game        | AMS Core Engine       | Example Titles (already shipped or trivial) |
-|--------------------|-----------------------|---------------------------------------------|
-| Breakout / Pong    | BrickBreaker          | Brick Breaker, Invader Breaker, Death Star Trench Run |
-| Space Invaders     | SwarmDefense          | Galaga, Missile Command, Asteroids (descending variant) |
-| Pac-Man            | MazeNavigator         | Maze Masochist, Trail Blazer (escort mode) |
-| Asteroids          | OpenSpaceThrust       | Asteroids, Free-Fly Trench Run |
-| Robotron           | Containment           | Containment (the genre you invented) |
-| Rhythm / Track     | RhythmFlapper         | Rhythm Flapper, Note Progression, Duck Hunt (beat-based) |
+**Engine (Python) — stable, rarely changes:**
+- Game loop (input → update → render)
+- Collision detection
+- Lua VM hosting
+- YAML parsing
+- Input handling (physical plane, keyboard, etc.)
+- Rendering and audio playback
 
-Every other game you or the community will ever make is likely just one of these six, with different YAML and sprites - but we're leaving the door open for people to invent new game concepts.
+**Behaviors (Lua) — grows over time:**
+- `descend` — entity moves toward player/bottom
+- `shoot` — entity fires projectiles
+- `bounce` — entity reflects off surfaces
+- `thrust` — momentum-based player movement
+- `patrol` — entity follows a path
+- `rhythm_gate` — input validated against beat
+- `split` — entity spawns children
+- `transform` — entity changes properties
+- `transmute` — entity replaced by new entities
 
-## The Philosophy in One Sentence
+**Game Definitions (YAML) — changes constantly:**
+- Entity types and their sprites
+- Which behaviors attach to which entities
+- Behavior parameters (speed, interval, pattern)
+- Level layout and progression
+- Win/lose conditions
+- Scoring rules
 
-**Code the primal constraints once.  
-Let data do the rest forever.**
+## AMS-Specific Considerations
 
-### What belongs in code (never changes)
-- The core physics loops
-- Temporal state retro-queries
-- Quiver + retrieval rhythm
-- Palette auto-contrast
-- PlaneHitEvent → InputEvent pipeline
-- YAML → behavior interpreter
-- Plugin system for the last 1 %
+AMS has constraints beyond typical game engines:
 
-### What belongs in data (changes every day)
-- Does the brick descend? → `descends: true`
-- Does it shoot back? → `shoots: true`
-- Does it transform into a duck when hit? → `transform: platform_assets.duck`
-- Does it split into four angry pieces? → `split: 4`
-- Does it laugh like the Duck Hunt dog? → `on_hit: dog_laugh`
+- **Physical input** — Arrows/darts hitting a plane, not button presses
+- **Retrieval rhythm** — Mandatory pauses while player retrieves projectiles
+- **Projection context** — Games displayed on walls, foam targets, various surfaces
+- **Accessibility range** — From competitive archers to rehabilitation patients
 
-## The Canvas Is Sacred
+These constraints shape the behaviors:
 
-The canvas is still primitive:
-- 0.0–1.0 normalized coordinates
-- One projectile stream at a time
-- Retrieval pauses are mandatory
-- Latency is a feature, not a bug
+- `rhythm_gate` aligns naturally with retrieval cadence
+- Descend speeds must account for physical aiming time
+- Difficulty tuning has a wider range than typical games
 
-These are not limitations.  
-These are the **new 25-cent coin slot**.
+## The Test
 
-They force the same genius the original arcade designers were forced into.
+The architecture is working if:
 
-Except now anyone can paint on the canvas — with a text file.
+- A new Breakout variant requires only YAML and sprites
+- A new Galaga variant requires only YAML and sprites
+- A genuinely new mechanic requires one new Lua behavior, which then becomes reusable
+- Someone unfamiliar with the codebase can create a game by reading examples
 
-## The Result
+The architecture is failing if:
 
-- A 10-year-old makes “My Little Pony Galaga” in 10 minutes  
-- A stroke therapist makes “slow descending bricks for hand rehab” in 5 minutes  
-- A retro purist makes pixel-perfect Galaga in a weekend  
-- You never write another game loop again
-
-We have built an **arcade platform anyone can build games for**.
-
-Six games.  
-Infinite everything else.
-
-This is the AMS philosophy.
-
-**Code the constraints.  
-Free the creativity.  
-Let the world play.**
-
-— The Arcade Management System Manifesto, 2025
+- "Simple" game variants require Python changes
+- Behaviors have special cases for specific games
+- The YAML schema keeps expanding to handle edge cases
+- Core behaviors need API methods that user behaviors can't access
