@@ -42,10 +42,16 @@ The result is a platform where:
 - A rock-solid data-driven 2D arcade engine (pure YAML + optional tiny Lua scripts)
 - Full browser deployment via pygame-wasm / pygbag (playable right now)
 - AMS – the physical-input layer that turns projectors + cameras into interactive walls
+- a web interface to control your projected game system from your phone
 - DuckHunt, Brick Breaker, Balloon Pop, and more – all running with real arrows or in your browser
 - Temporal hit compensation (computer vision pipeline has latency? the duck still gets hit at the right moment)
 
-## Try it right now
+## What's Coming?
+- visual game editor with immediate playability right in your browser
+- statistics and game tracking (all stored locally, no cloud)
+- joy
+
+## You can try it right now
 
 (Links coming the second the first live web demo is up – literally days away)
 
