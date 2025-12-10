@@ -61,12 +61,12 @@ python ams_game.py --game duckhunt --backend object --fullscreen --display 1
 CC-BY-NC-SA 4.0 with a heart:
 
 You can use, modify, and share this freely for non-commercial purposes
-(home, schools, non-profits, makerspaces, your kids, art projects, whatever).
+(personal use, schools, non-profits, publicly subsidized daycares, makerspaces, art projects, ...).
 
 If you're a business making money with it (installations, arcades, events, etc.),
 don't be a jerk—just reach out and we'll figure out a fair contribution
 or a simple commercial license. No gotchas, no NDAs, no 50-page contracts.
 
-In short: be cool, share alike, and if you're getting paid, help keep it alive.
+In short: be cool, share alike, and if you're getting paid, help keep it alive and make it better for everyone.
 
 https://creativecommons.org/licenses/by-nc-sa/4.0/
