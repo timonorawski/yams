@@ -131,9 +131,9 @@ class WebController:
         self.host = host
         self.port = port
         self.static_dir = static_dir or (Path(__file__).parent / "frontend" / "dist")
-        # Default pygbag dir is build/web relative to project root
+        # Default pygbag dir - pygbag outputs to build/web/build/web
         project_root = Path(__file__).parent.parent.parent
-        self.pygbag_dir = pygbag_dir or (project_root / "build" / "web")
+        self.pygbag_dir = pygbag_dir or (project_root / "build" / "web" / "build" / "web")
 
         self._app = FastAPI(title="AMS Web Controller")
         self._manager = ConnectionManager()
