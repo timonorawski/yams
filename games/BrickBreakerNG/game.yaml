@@ -29,6 +29,35 @@ entity_types:
   # Player entities
   # ---------------------------------------------------------------------------
 
+  # paddle_ready: Composite entity that looks like paddle+ball, transforms on input
+  # This is the "waiting to launch" state
+  paddle_ready:
+    width: 120
+    height: 15
+    color: blue
+    behaviors: [paddle]
+    behavior_config:
+      paddle:
+        speed: 500
+        stop_threshold: 1.0
+    tags: [player]
+    render:
+      # Paddle body
+      - shape: rectangle
+        color: blue
+        fill: true
+      - shape: rectangle
+        color: white
+        fill: false
+        line_width: 2
+      # Attached ball (centered above)
+      - shape: circle
+        color: white
+        fill: true
+        offset: [52, -20]  # center of paddle width, above
+        size: [16, 16]
+
+  # paddle: Active paddle (after ball is launched)
   paddle:
     width: 120
     height: 15
@@ -39,7 +68,16 @@ entity_types:
         speed: 500
         stop_threshold: 1.0
     tags: [player]
+    render:
+      - shape: rectangle
+        color: blue
+        fill: true
+      - shape: rectangle
+        color: white
+        fill: false
+        line_width: 2
 
+  # ball: Active ball in play
   ball:
     width: 16
     height: 16
@@ -51,6 +89,10 @@ entity_types:
         max_speed: 600
         speed_increase: 5
     tags: [ball]
+    render:
+      - shape: circle
+        color: white
+        fill: true
 
   # ---------------------------------------------------------------------------
   # Base brick type (extended by specific colors)
@@ -66,6 +108,14 @@ entity_types:
         hits: 1
         points: 100
     tags: [enemy, brick]
+    render:
+      - shape: rectangle
+        color: $color  # Uses entity.color
+        fill: true
+      - shape: rectangle
+        color: white
+        fill: false
+        line_width: 1
 
   # ---------------------------------------------------------------------------
   # Basic bricks (single hit, different colors/points)
@@ -171,7 +221,21 @@ entity_types:
         interval: 3.0
         projectile_speed: 200
         direction: down
-    tags: [enemy, brick, shooter]  # Additional tag
+    tags: [enemy, brick, shooter]
+    render:
+      # Base brick
+      - shape: rectangle
+        color: $color
+        fill: true
+      - shape: rectangle
+        color: white
+        fill: false
+        line_width: 1
+      # Shooter indicator (triangle pointing down)
+      - shape: triangle
+        color: yellow
+        fill: true
+        points: [[0.5, 0.3], [0.3, 0.7], [0.7, 0.7]]
 
   # ---------------------------------------------------------------------------
   # Indestructible/special bricks
@@ -188,6 +252,19 @@ entity_types:
         indestructible: true
         points: 0
     tags: [brick]  # Not tagged as enemy - won't count for win
+    render:
+      - shape: rectangle
+        color: $color
+        fill: true
+      # X pattern to indicate indestructible
+      - shape: line
+        color: gray
+        line_width: 2
+        points: [[0.1, 0.1], [0.9, 0.9]]
+      - shape: line
+        color: gray
+        line_width: 2
+        points: [[0.9, 0.1], [0.1, 0.9]]
 
   # ---------------------------------------------------------------------------
   # Projectiles
@@ -199,13 +276,100 @@ entity_types:
     color: red
     behaviors: [projectile]
     tags: [projectile, hazard]
+    render:
+      - shape: circle
+        color: red
+        fill: true
+
+# =============================================================================
+# Collision Behaviors
+# =============================================================================
+# Defines what happens when entity types collide.
+# Format: collision_behaviors[entity_a][entity_b] = action to take
+#
+# The action is executed on entity_a when it collides with entity_b.
+# Both sides can have separate actions (ball hitting brick vs brick being hit).
+
+collision_behaviors:
+  # Ball colliding with paddle
+  ball:
+    paddle:
+      action: bounce_paddle
+      modifier:
+        max_angle: 60
+
+    # Ball colliding with brick - bounce off it
+    brick:
+      action: bounce_reflect
+      modifier:
+        speed_increase: 5
+        max_speed: 600
+
+  # Brick being hit by ball - take damage
+  brick:
+    ball:
+      action: take_damage
+      modifier:
+        amount: 1
+
+# =============================================================================
+# Collision Rules (for collision detection)
+# =============================================================================
+# Defines which types can collide - detection only.
+# collision_behaviors above define what happens.
+
+collisions:
+  - [ball, paddle]
+  - [ball, brick]
+
+# =============================================================================
+# Input Mapping
+# =============================================================================
+# Maps input to entity types. Supports:
+# - target_x/target_y: Set property from input position
+# - on_input.transform: Transform entity on input
+# - on_input.when: Condition for transform
+
+input_mapping:
+  # paddle_ready transforms into paddle + ball on input
+  paddle_ready:
+    target_x: paddle_target_x
+    on_input:
+      transform:
+        into: paddle
+        spawn:
+          - type: ball
+            offset: [52, -20]  # Center of paddle (120/2 - 8), above paddle
+            speed: 300         # Spawn property: ball behavior converts to velocity
+            angle:             # Spawn property: {lua: ...} evaluated at spawn time
+              lua: ams.random_range(-120, -60)
+
+  # Active paddle just moves to target
+  paddle:
+    target_x: paddle_target_x
+
+# =============================================================================
+# Lose Conditions
+# =============================================================================
+# Defines events that cause life loss and subsequent actions.
+
+lose_conditions:
+  - entity_type: ball
+    event: exited_screen
+    edge: bottom
+    action: lose_life
+    then:
+      destroy: ball
+      transform:
+        entity_type: paddle
+        into: paddle_ready
 
 # =============================================================================
 # Player Configuration
 # =============================================================================
 
 player:
-  type: paddle
+  type: paddle_ready  # Start with paddle_ready (ball attached)
   spawn: [340, 550]  # x, y position
 
 # =============================================================================

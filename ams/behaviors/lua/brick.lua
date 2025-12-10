@@ -61,4 +61,14 @@ function brick.get_damage_ratio(entity_id)
     return 1 - (hits / max_hits)
 end
 
+-- NOTE: Collision handling has been moved to collision_actions/
+-- The on_hit hook below is kept for legacy/fallback support only.
+-- New games should use collision_behaviors in game.yaml instead.
+
+-- Legacy on_hit handler (only called if no collision_behaviors defined)
+function brick.on_hit(entity_id, other_id, other_type, other_base_type)
+    -- This is now handled by collision_actions/take_damage.lua
+    -- Keeping stub for backwards compatibility with games not using collision_behaviors
+end
+
 return brick

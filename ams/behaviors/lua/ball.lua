@@ -2,16 +2,21 @@
 ball behavior - bouncing ball with velocity
 
 The ball moves according to its velocity and bounces off walls.
-Paddle/brick collisions are handled by the game layer.
+A ball with zero velocity is stationary (not yet launched).
+Collision handling is done via collision_actions when GameEngine detects overlaps.
 
 Properties used:
-  ball_launched: bool - whether ball is active (set by game)
-  ball_attached_to: string - entity ID to follow when not launched
+  ball_speed: float - current speed magnitude (initialized from config)
+  ball_fell: bool - set true when ball goes off bottom of screen
 
 Config options (from YAML):
   speed: float - initial speed magnitude (default: 300)
   max_speed: float - maximum speed (default: 600)
   speed_increase: float - speed added per brick hit (default: 5)
+
+Collision handling via collision_actions:
+  - bounce_paddle.lua: ball vs paddle (angle based on hit position)
+  - bounce_reflect.lua: ball vs brick (AABB reflection)
 
 Usage in YAML:
   behaviors:
@@ -23,34 +28,36 @@ Usage in YAML:
 local ball = {}
 
 function ball.on_spawn(entity_id)
-    ams.set_prop(entity_id, "ball_launched", false)
+    -- Initialize ball_speed from config default
     ams.set_prop(entity_id, "ball_speed", ams.get_config(entity_id, "ball", "speed", 300))
+
+    -- If spawned with speed+angle properties, compute velocity
+    local speed = ams.get_prop(entity_id, "speed")
+    local angle = ams.get_prop(entity_id, "angle")
+
+    if speed and angle then
+        local angle_rad = angle * 3.14159 / 180
+        ams.set_vx(entity_id, speed * ams.cos(angle_rad))
+        ams.set_vy(entity_id, speed * ams.sin(angle_rad))
+        ams.set_prop(entity_id, "ball_speed", speed)
+        -- Clear spawn properties
+        ams.set_prop(entity_id, "speed", nil)
+        ams.set_prop(entity_id, "angle", nil)
+    end
 end
 
 function ball.on_update(entity_id, dt)
-    local launched = ams.get_prop(entity_id, "ball_launched")
+    local vx = ams.get_vx(entity_id)
+    local vy = ams.get_vy(entity_id)
 
-    if not launched then
-        -- Follow attached entity (paddle)
-        local attached_id = ams.get_prop(entity_id, "ball_attached_to")
-        if attached_id and ams.is_alive(attached_id) then
-            local paddle_x = ams.get_x(attached_id)
-            local paddle_width = ams.get_width(attached_id)
-            local paddle_y = ams.get_y(attached_id)
-            local ball_radius = ams.get_width(entity_id) / 2
-
-            -- Center ball on paddle, above it
-            ams.set_x(entity_id, paddle_x + paddle_width / 2 - ball_radius)
-            ams.set_y(entity_id, paddle_y - ball_radius * 2 - 5)
-        end
+    -- Ball with no velocity doesn't move (waiting to be launched)
+    if vx == 0 and vy == 0 then
         return
     end
 
     -- Move ball
     local x = ams.get_x(entity_id)
     local y = ams.get_y(entity_id)
-    local vx = ams.get_vx(entity_id)
-    local vy = ams.get_vy(entity_id)
 
     x = x + vx * dt
     y = y + vy * dt
@@ -91,7 +98,7 @@ function ball.on_update(entity_id, dt)
     end
 end
 
--- Called by game to launch the ball
+-- Called by game to launch the ball at an angle
 function ball.launch(entity_id, angle_degrees)
     local speed = ams.get_prop(entity_id, "ball_speed") or 300
     local angle_degrees = angle_degrees or -75  -- Default: mostly up, slightly right
@@ -102,8 +109,6 @@ function ball.launch(entity_id, angle_degrees)
 
     ams.set_vx(entity_id, vx)
     ams.set_vy(entity_id, vy)
-    ams.set_prop(entity_id, "ball_launched", true)
-    ams.set_prop(entity_id, "ball_fell", false)
 end
 
 -- Called by game after paddle hit to adjust angle
@@ -154,6 +159,18 @@ function ball.increase_speed(entity_id)
     ams.set_vy(entity_id, vy * ratio)
 
     ams.set_prop(entity_id, "ball_speed", new_speed)
+end
+
+-- NOTE: Collision handling has been moved to collision_actions/
+-- The on_hit hook below is kept for legacy/fallback support only.
+-- New games should use collision_behaviors in game.yaml instead.
+
+-- Legacy on_hit handler (only called if no collision_behaviors defined)
+function ball.on_hit(entity_id, other_id, other_type, other_base_type)
+    -- This is now handled by collision_actions:
+    -- - bounce_paddle.lua (ball vs paddle)
+    -- - bounce_reflect.lua (ball vs brick)
+    -- Keeping stub for backwards compatibility with games not using collision_behaviors
 end
 
 return ball

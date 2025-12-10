@@ -3,10 +3,15 @@ Behavior Engine - manages Lua VM and entity behaviors.
 
 The engine:
 1. Initializes the Lua runtime
-2. Loads behavior scripts
+2. Loads behavior scripts (single-entity) and collision actions (two-entity)
 3. Attaches behaviors to entities
 4. Calls behavior lifecycle hooks (on_update, on_hit, on_spawn, on_destroy)
-5. Manages entity spawning and destruction
+5. Dispatches collision actions when entities collide
+6. Manages entity spawning and destruction
+
+Directory structure:
+- ams/behaviors/lua/           - Entity behaviors (single entity)
+- ams/behaviors/collision_actions/ - Collision actions (two entities)
 """
 
 from pathlib import Path
@@ -44,8 +49,9 @@ class BehaviorEngine:
             render(entity)
     """
 
-    # Default path to look for Lua behaviors
+    # Default paths for Lua scripts
     BEHAVIORS_DIR = Path(__file__).parent / 'lua'
+    COLLISION_ACTIONS_DIR = Path(__file__).parent / 'collision_actions'
 
     def __init__(self, screen_width: float = 800, screen_height: float = 600):
         self.screen_width = screen_width
@@ -58,6 +64,9 @@ class BehaviorEngine:
 
         # Loaded behavior scripts (name -> lua function table)
         self._behaviors: dict[str, Any] = {}
+
+        # Loaded collision actions (name -> lua function table)
+        self._collision_actions: dict[str, Any] = {}
 
         # Pending entity spawns/destroys (processed end of frame)
         self._pending_spawns: list[Entity] = []
@@ -184,6 +193,105 @@ class BehaviorEngine:
                     count += 1
         return count
 
+    def load_collision_action(self, name: str, path: Optional[Path] = None) -> bool:
+        """
+        Load a collision action script.
+
+        Collision actions handle two-entity interactions (collisions).
+        They expose an `execute(entity_a_id, entity_b_id, modifier)` function.
+
+        If path is None, looks in COLLISION_ACTIONS_DIR for {name}.lua.
+
+        Returns True if loaded successfully.
+        """
+        if name in self._collision_actions:
+            return True  # Already loaded
+
+        if path is None:
+            path = self.COLLISION_ACTIONS_DIR / f"{name}.lua"
+
+        if not path.exists():
+            print(f"[BehaviorEngine] Collision action not found: {path}")
+            return False
+
+        try:
+            code = path.read_text()
+            result = self._lua.execute(code)
+
+            if result is None:
+                g = self._lua.globals()
+                result = getattr(g, name, None)
+
+            if result is None:
+                print(f"[BehaviorEngine] Collision action {name} did not return a table")
+                return False
+
+            self._collision_actions[name] = result
+            return True
+
+        except Exception as e:
+            print(f"[BehaviorEngine] Error loading collision action {name}: {e}")
+            return False
+
+    def load_collision_actions_from_dir(self, directory: Optional[Path] = None) -> int:
+        """Load all collision action .lua files from directory. Returns count loaded."""
+        if directory is None:
+            directory = self.COLLISION_ACTIONS_DIR
+
+        count = 0
+        if directory.exists():
+            for lua_file in directory.glob("*.lua"):
+                name = lua_file.stem
+                if self.load_collision_action(name, lua_file):
+                    count += 1
+        return count
+
+    def execute_collision_action(
+        self,
+        action_name: str,
+        entity_a: Entity,
+        entity_b: Entity,
+        modifier: Optional[dict[str, Any]] = None
+    ) -> bool:
+        """
+        Execute a collision action between two entities.
+
+        Args:
+            action_name: Name of the collision action to execute
+            entity_a: First entity in collision (the one whose collision rule triggered)
+            entity_b: Second entity in collision
+            modifier: Optional config dict passed to the action
+
+        Returns:
+            True if action executed successfully
+        """
+        # Load action if not already loaded
+        if action_name not in self._collision_actions:
+            if not self.load_collision_action(action_name):
+                return False
+
+        action = self._collision_actions.get(action_name)
+        if not action:
+            return False
+
+        execute_fn = getattr(action, 'execute', None)
+        if not execute_fn:
+            print(f"[BehaviorEngine] Collision action {action_name} has no execute function")
+            return False
+
+        try:
+            # Convert modifier dict to Lua table if provided
+            lua_modifier = None
+            if modifier:
+                lua_modifier = self._lua.table_from(modifier)
+
+            execute_fn(entity_a.id, entity_b.id, lua_modifier)
+            return True
+
+        except Exception as e:
+            print(f"[BehaviorEngine] Error executing collision action {action_name}: {e}")
+            return False
+
     def create_entity(
         self,
         entity_type: str,
@@ -264,6 +372,45 @@ class BehaviorEngine:
         """Get all alive entities."""
         return [e for e in self.entities.values() if e.alive]
 
+    def update_entity_behaviors(self, entity: Entity) -> None:
+        """Re-register an entity's behaviors after transform.
+
+        Called when an entity's type changes to ensure new behaviors
+        are properly loaded and on_spawn is called.
+
+        Args:
+            entity: The entity whose behaviors have changed
+        """
+        # Ensure all new behaviors are loaded
+        for behavior_name in entity.behaviors:
+            self.load_behavior(behavior_name)
+
+        # Clear any old behavior state from properties
+        # (behaviors should init fresh via on_spawn)
+
+        # Call on_spawn for new behaviors
+        self._call_lifecycle('on_spawn', entity)
+
+    def evaluate_expression(self, expression: str) -> float:
+        """Evaluate a Lua expression and return the result.
+
+        Used for dynamic values in spawn configs like:
+            angle: {lua: "ams.random_range(-60, -120)"}
+
+        The expression must be complete Lua code - use ams.* explicitly.
+
+        Args:
+            expression: Lua expression string (e.g., "ams.random_range(-60, -120)")
+
+        Returns:
+            Evaluated result as float
+        """
+        try:
+            result = self._lua.eval(expression)
+            return float(result)
+        except Exception:
+            return 0.0
+
     def update(self, dt: float) -> None:
         """
         Update all entities and their behaviors.
@@ -294,7 +441,7 @@ class BehaviorEngine:
     def notify_hit(self, entity: Entity, other: Optional[Entity] = None,
                    hit_x: float = 0.0, hit_y: float = 0.0) -> None:
         """
-        Notify entity of a hit/collision.
+        Notify entity of a hit/collision (legacy API).
 
         Args:
             entity: The entity that was hit
@@ -304,6 +451,23 @@ class BehaviorEngine:
         if entity.alive:
             other_id = other.id if other else ""
             self._call_lifecycle('on_hit', entity, other_id, hit_x, hit_y)
+
+    def notify_collision(self, entity: Entity, other: Entity,
+                         other_type: str, other_base_type: str) -> None:
+        """
+        Notify entity of collision with another entity.
+
+        Called by GameEngine when collision rules match.
+
+        Args:
+            entity: The entity being notified
+            other: The other entity it collided with
+            other_type: Type of the other entity (e.g., 'brick_red')
+            other_base_type: Base type of other entity (e.g., 'brick')
+        """
+        if entity.alive:
+            self._call_lifecycle('on_hit', entity,
+                                 other.id, other_type, other_base_type)
 
     def _call_lifecycle(self, method_name: str, entity: Entity, *args) -> None:
         """Call a lifecycle method on all of an entity's behaviors."""
