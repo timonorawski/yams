@@ -40,6 +40,7 @@ class Entity:
     # State
     health: int = 1
     alive: bool = True
+    spawn_time: float = 0.0  # Game time when entity was spawned
 
     # Custom properties (behaviors can read/write)
     properties: dict[str, Any] = field(default_factory=dict)

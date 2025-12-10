@@ -336,6 +336,7 @@ class BehaviorEngine:
             height=height,
             behaviors=behaviors or [],
             behavior_config=behavior_config or {},
+            spawn_time=self.elapsed_time,
             **kwargs
         )
 
@@ -428,6 +429,13 @@ class BehaviorEngine:
             return float(result)
         except Exception:
             return 0.0
+
+    def set_global(self, name: str, value: Any) -> None:
+        """Set a global variable in the Lua environment.
+
+        Used to pass iteration context (like 'i' in count loops) to Lua expressions.
+        """
+        self._lua.globals()[name] = value
 
     def update(self, dt: float) -> None:
         """

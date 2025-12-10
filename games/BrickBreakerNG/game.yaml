@@ -121,6 +121,34 @@ entity_types:
         fill: true
 
   # ---------------------------------------------------------------------------
+  # Particle (for death effects)
+  # ---------------------------------------------------------------------------
+  # Small squares that fly outward and fade. Uses on_update transform to
+  # destroy itself after lifetime expires.
+
+  particle:
+    width: 6
+    height: 6
+    color: white
+    behaviors: [projectile]         # Reuse projectile for velocity movement
+    behavior_config:
+      projectile:
+        direction: 1                # Moves in velocity direction
+    tags: [effect]
+    # Auto-destroy after lifetime via on_update
+    on_update:
+      - when:
+          age: [0.4, null]          # After 0.4 seconds
+        transform:
+          type: destroy             # Just destroy, no children
+    render:
+      - shape: rectangle
+        color: $color
+        fill: true
+        # Fade out based on age (requires $age in alpha calculation)
+        # For now, just a solid square
+
+  # ---------------------------------------------------------------------------
   # Base brick type (extended by specific colors)
   # ---------------------------------------------------------------------------
 
@@ -134,6 +162,16 @@ entity_types:
         hits: 1
         points: 100
     tags: [enemy, brick]
+    # Death effect: spawn 4 particles flying outward
+    on_destroy:
+      type: destroy
+      children:
+        - type: particle
+          count: 4
+          offset: [35, 12]              # Center of brick
+          vx: {lua: "ams.random_range(-100, 100)"}
+          vy: {lua: "ams.random_range(-150, -50)"}
+          color: $color                 # Inherit brick's color
     render:
       # Base brick fill
       - shape: rectangle
@@ -391,12 +429,12 @@ input_mapping:
     target_x: paddle_target_x
     on_input:
       transform:
-        into: paddle
-        spawn:
+        type: paddle                  # Transform into paddle
+        children:
           - type: ball
-            offset: [52, -20]  # Center of paddle (120/2 - 8), above paddle
-            speed: 300         # Spawn property: ball behavior converts to velocity
-            angle:             # Spawn property: {lua: ...} evaluated at spawn time
+            offset: [52, -20]         # Center of paddle (120/2 - 8), above paddle
+            speed: 300                # Spawn property: ball behavior converts to velocity
+            angle:                    # Spawn property: {lua: ...} evaluated at spawn time
               lua: ams.random_range(-120, -60)
 
   # Active paddle just moves to target
@@ -417,7 +455,7 @@ lose_conditions:
       destroy: ball
       transform:
         entity_type: paddle
-        into: paddle_ready
+        type: paddle_ready            # Transform paddle into paddle_ready
 
   # Projectile hitting paddle causes life loss
   - entity_type: paddle
@@ -429,7 +467,7 @@ lose_conditions:
       destroy: ball
       transform:
         entity_type: paddle
-        into: paddle_ready
+        type: paddle_ready            # Transform paddle into paddle_ready
 
 # =============================================================================
 # Player Configuration

@@ -104,27 +104,60 @@ class EntityTypeConfig:
     render_as: List[str] = field(default_factory=list)  # Composite rendering
     render: List[RenderCommand] = field(default_factory=list)  # Render primitives
 
+    # Lifecycle transforms
+    on_destroy: Optional['TransformConfig'] = None  # Transform on destroy (explosions, death effects)
+    on_update: List['OnUpdateTransform'] = field(default_factory=list)  # Conditional transforms
+
 
 @dataclass
 class SpawnConfig:
     """Configuration for spawning an entity during transform."""
     entity_type: str
     offset: Tuple[float, float] = (0, 0)  # Relative to parent position
-    properties: Dict[str, Any] = field(default_factory=dict)  # Properties to set on spawned entity
+    count: int = 1  # Number to spawn (for radial explosions, etc.)
+    inherit_velocity: float = 0.0  # Fraction of parent velocity to add (0-1)
+    lifetime: Optional[float] = None  # Auto-destroy after N seconds
+    properties: Dict[str, Any] = field(default_factory=dict)  # Properties ({lua: ...} expressions supported)
 
 
 @dataclass
 class TransformConfig:
-    """Configuration for entity transformation."""
-    into: str  # Target entity type to transform into
-    spawn: List[SpawnConfig] = field(default_factory=list)  # Additional entities to spawn
+    """Configuration for entity transformation.
+
+    Types:
+    - "destroy" - Destroy entity, spawn children only (death effects)
+    - "<entity_type>" - Transform into another type, optionally spawn children
+    """
+    type: str = "destroy"  # "destroy" or entity type name
+    children: List[SpawnConfig] = field(default_factory=list)  # Entities to spawn
 
 
 @dataclass
 class WhenCondition:
-    """Condition for triggering an action."""
-    property: str  # Property name to check
-    value: Any  # Expected value
+    """Extensible condition for triggering actions.
+
+    Supports multiple condition types:
+    - property/value: Check entity property equals value
+    - age: Check entity age in range [min, max)
+    - interval: Repeat every N seconds (uses last_trigger tracking)
+    """
+    # Property check
+    property: Optional[str] = None  # Property name to check
+    value: Any = None  # Expected value
+
+    # Age check (seconds since spawn)
+    age_min: Optional[float] = None  # Min age (inclusive)
+    age_max: Optional[float] = None  # Max age (exclusive)
+
+    # Repeating
+    interval: Optional[float] = None  # Repeat every N seconds
+
+
+@dataclass
+class OnUpdateTransform:
+    """Transform triggered during update based on conditions."""
+    when: Optional[WhenCondition] = None  # Condition (age, property, interval)
+    transform: Optional[TransformConfig] = None
 
 
 @dataclass
@@ -150,6 +183,13 @@ class CollisionRule:
 
 
 @dataclass
+class TargetedTransform:
+    """Transform targeting a specific entity type (for lose conditions)."""
+    entity_type: str  # Which entity type to transform
+    transform: TransformConfig  # The transform to apply
+
+
+@dataclass
 class LoseConditionConfig:
     """Configuration for a lose condition."""
     entity_type: str  # Type to watch
@@ -158,7 +198,7 @@ class LoseConditionConfig:
     property_name: Optional[str] = None  # For property_true: property to check
     action: str = "lose_life"  # Action to take
     then_destroy: Optional[str] = None  # Entity type to destroy
-    then_transform: Optional[Dict[str, str]] = None  # {entity_type: X, into: Y}
+    then_transform: Optional[TargetedTransform] = None  # Transform another entity
     then_clear_property: Optional[str] = None  # Property to clear after action
 
 
@@ -238,6 +278,7 @@ class GameEngineSkin:
         self._game_def: Optional[GameDefinition] = None
         self._sounds: Dict[str, pygame.mixer.Sound] = {}
         self._assets_dir: Optional[Path] = None
+        self._elapsed_time: float = 0.0  # Set by engine each frame
 
     def set_game_definition(self, game_def: GameDefinition,
                             assets_dir: Optional[Path] = None) -> None:
@@ -302,6 +343,9 @@ class GameEngineSkin:
             return 0
         elif prop_name == 'alive':
             return entity.alive
+        elif prop_name == 'age':
+            # Seconds since spawn
+            return self._elapsed_time - entity.spawn_time
 
         # Regular properties
         return entity.properties.get(prop_name)
@@ -669,6 +713,15 @@ class GameEngine(BaseGame):
                     when=when_cond,
                 ))
 
+            # Parse lifecycle transforms
+            on_destroy = None
+            on_update = []
+            if 'on_destroy' in type_data:
+                on_destroy = self._parse_transform_config(type_data['on_destroy'])
+            if 'on_update' in type_data:
+                for update_data in type_data['on_update']:
+                    on_update.append(self._parse_on_update_transform(update_data))
+
             game_def.entity_types[name] = EntityTypeConfig(
                 name=name,
                 width=type_data.get('width', 32),
@@ -683,6 +736,8 @@ class GameEngine(BaseGame):
                 extends=type_data.get('extends'),
                 render_as=type_data.get('render_as', []),
                 render=render_commands,
+                on_destroy=on_destroy,
+                on_update=on_update,
             )
 
         # Second pass: resolve inheritance
@@ -746,29 +801,11 @@ class GameEngine(BaseGame):
 
                 # Parse transform
                 if 'transform' in on_input_data:
-                    transform_data = on_input_data['transform']
-                    spawn_configs = []
-                    for spawn_data in transform_data.get('spawn', []):
-                        # All keys except 'type' and 'offset' become properties
-                        props = {k: v for k, v in spawn_data.items()
-                                 if k not in ('type', 'offset')}
-                        spawn_configs.append(SpawnConfig(
-                            entity_type=spawn_data.get('type', ''),
-                            offset=tuple(spawn_data.get('offset', [0, 0])),
-                            properties=props,
-                        ))
-                    transform_config = TransformConfig(
-                        into=transform_data.get('into', ''),
-                        spawn=spawn_configs,
-                    )
+                    transform_config = self._parse_transform_config(on_input_data['transform'])
 
                 # Parse when condition
                 if 'when' in on_input_data:
-                    when_data = on_input_data['when']
-                    when_condition = WhenCondition(
-                        property=when_data.get('property', ''),
-                        value=when_data.get('value'),
-                    )
+                    when_condition = self._parse_when_condition(on_input_data['when'])
 
                 on_input = InputAction(
                     transform=transform_config,
@@ -799,7 +836,15 @@ class GameEngine(BaseGame):
             if 'then' in condition_data:
                 then_data = condition_data['then']
                 if 'transform' in then_data:
-                    then_transform = then_data['transform']
+                    transform_data = then_data['transform']
+                    # Parse the targeted transform
+                    target_type = transform_data.get('entity_type', '')
+                    # The transform config itself (type, children)
+                    transform_config = self._parse_transform_config(transform_data)
+                    then_transform = TargetedTransform(
+                        entity_type=target_type,
+                        transform=transform_config,
+                    )
 
             game_def.lose_conditions.append(LoseConditionConfig(
                 entity_type=condition_data.get('entity_type', ''),
@@ -819,6 +864,63 @@ class GameEngine(BaseGame):
             game_def.player_spawn = tuple(player_data.get('spawn', [400, 500]))
 
         return game_def
+
+    def _parse_spawn_config(self, data: Dict[str, Any]) -> SpawnConfig:
+        """Parse a spawn config from YAML."""
+        # Reserved keys that are NOT properties
+        reserved = ('type', 'offset', 'count', 'inherit_velocity', 'lifetime')
+        props = {k: v for k, v in data.items() if k not in reserved}
+
+        return SpawnConfig(
+            entity_type=data.get('type', ''),
+            offset=tuple(data.get('offset', [0, 0])),
+            count=data.get('count', 1),
+            inherit_velocity=data.get('inherit_velocity', 0.0),
+            lifetime=data.get('lifetime'),
+            properties=props,
+        )
+
+    def _parse_transform_config(self, data: Dict[str, Any]) -> TransformConfig:
+        """Parse a transform config from YAML."""
+        children = []
+        for child_data in data.get('children', []):
+            children.append(self._parse_spawn_config(child_data))
+
+        return TransformConfig(
+            type=data.get('type', 'destroy'),
+            children=children,
+        )
+
+    def _parse_when_condition(self, data: Dict[str, Any]) -> WhenCondition:
+        """Parse a when condition from YAML."""
+        # Parse age range: [min, max] | [min, ] | [, max]
+        age_min = None
+        age_max = None
+        if 'age' in data:
+            age = data['age']
+            if isinstance(age, list) and len(age) >= 2:
+                age_min = age[0] if age[0] is not None else None
+                age_max = age[1] if age[1] is not None else None
+
+        return WhenCondition(
+            property=data.get('property'),
+            value=data.get('value'),
+            age_min=age_min,
+            age_max=age_max,
+            interval=data.get('interval'),
+        )
+
+    def _parse_on_update_transform(self, data: Dict[str, Any]) -> OnUpdateTransform:
+        """Parse an on_update transform from YAML."""
+        when = None
+        transform = None
+
+        if 'when' in data:
+            when = self._parse_when_condition(data['when'])
+        if 'transform' in data:
+            transform = self._parse_transform_config(data['transform'])
+
+        return OnUpdateTransform(when=when, transform=transform)
 
     def _resolve_entity_inheritance(self, game_def: GameDefinition) -> None:
         """Resolve 'extends' inheritance for entity types."""
@@ -857,6 +959,12 @@ class GameEngine(BaseGame):
                     # Inherit render commands if not overridden
                     if not config.render and base.render:
                         config.render = base.render.copy()
+
+                    # Inherit lifecycle transforms if not overridden
+                    if not config.on_destroy and base.on_destroy:
+                        config.on_destroy = base.on_destroy
+                    if not config.on_update and base.on_update:
+                        config.on_update = base.on_update.copy()
 
                     # Set base_type (walk up the chain)
                     config.base_type = base.base_type or config.extends
@@ -1116,7 +1224,7 @@ class GameEngine(BaseGame):
     def _handle_input_action(self, entity: Entity, action: InputAction) -> None:
         """Handle an input action for an entity."""
         # Check when condition if present
-        if action.when:
+        if action.when and action.when.property:
             prop_value = entity.properties.get(action.when.property)
             if prop_value != action.when.value:
                 # Condition not met, skip action
@@ -1124,11 +1232,7 @@ class GameEngine(BaseGame):
 
         # Execute transform if configured
         if action.transform:
-            self.transform_entity(
-                entity,
-                action.transform.into,
-                action.transform.spawn
-            )
+            self.apply_transform(entity, action.transform)
 
     def _handle_player_input(self, event: InputEvent) -> None:
         """Handle a single input event.
@@ -1149,6 +1253,9 @@ class GameEngine(BaseGame):
         for sound in self._behavior_engine.pop_sounds():
             self._skin.play_sound(sound)
 
+        # Check on_update transforms (age-based, property-based, interval)
+        self._check_on_update_transforms()
+
         # Check collisions
         self._check_collisions()
 
@@ -1161,6 +1268,58 @@ class GameEngine(BaseGame):
         # Check win/lose conditions
         self._check_win_conditions()
         self._check_lose_conditions()
+
+    def _check_on_update_transforms(self) -> None:
+        """Check and apply on_update transforms based on conditions.
+
+        Evaluates age-based, property-based, and interval conditions
+        for each entity and applies matching transforms.
+        """
+        if not self._game_def:
+            return
+
+        current_time = self._behavior_engine.elapsed_time
+
+        for entity in self._behavior_engine.get_alive_entities():
+            type_config = self._game_def.entity_types.get(entity.entity_type)
+            if not type_config or not type_config.on_update:
+                continue
+
+            entity_age = current_time - entity.spawn_time
+
+            for update_transform in type_config.on_update:
+                if not update_transform.when or not update_transform.transform:
+                    continue
+
+                when = update_transform.when
+
+                # Check age condition
+                if when.age_min is not None or when.age_max is not None:
+                    if when.age_min is not None and entity_age < when.age_min:
+                        continue
+                    if when.age_max is not None and entity_age >= when.age_max:
+                        continue
+
+                # Check property condition
+                if when.property is not None:
+                    prop_value = entity.properties.get(when.property)
+                    if prop_value != when.value:
+                        continue
+
+                # Check interval (uses entity property to track last trigger)
+                if when.interval is not None:
+                    last_trigger_key = f'_last_trigger_{id(update_transform)}'
+                    last_trigger = entity.properties.get(last_trigger_key, 0)
+                    if current_time - last_trigger < when.interval:
+                        continue
+                    entity.properties[last_trigger_key] = current_time
+
+                # Condition met - apply transform
+                self.apply_transform(entity, update_transform.transform)
+
+                # If entity was destroyed, stop processing its transforms
+                if not entity.alive:
+                    break
 
     def _check_collisions(self) -> None:
         """Check collisions based on rules defined in game.yaml.
@@ -1312,13 +1471,22 @@ class GameEngine(BaseGame):
     def _on_entity_destroyed(self, entity: Entity) -> None:
         """Handle entity destruction.
 
-        Override to add scoring, effects, etc.
+        Applies on_destroy transforms and scoring.
         """
-        # Default: add points if entity type has them
-        if self._game_def:
-            type_config = self._game_def.entity_types.get(entity.entity_type)
-            if type_config:
-                self._score += type_config.points
+        if not self._game_def:
+            return
+
+        type_config = self._game_def.entity_types.get(entity.entity_type)
+        if not type_config:
+            return
+
+        # Add points
+        self._score += type_config.points
+
+        # Apply on_destroy transform (spawn death effects, etc.)
+        if type_config.on_destroy:
+            # Spawn children at entity's position
+            self._spawn_children(entity, type_config.on_destroy.children)
 
     def _check_win_conditions(self) -> None:
         """Check if player has won based on game definition.
@@ -1439,42 +1607,51 @@ class GameEngine(BaseGame):
 
         if condition.then_transform:
             # Transform another entity type
-            target_type = condition.then_transform.get('entity_type')
-            into_type = condition.then_transform.get('into')
-            if target_type and into_type:
-                targets = self._get_entities_matching_type(
-                    target_type,
-                    self._behavior_engine.get_alive_entities()
-                )
-                if targets:
-                    # Transform first matching entity
-                    self.transform_entity(targets[0], into_type)
+            targets = self._get_entities_matching_type(
+                condition.then_transform.entity_type,
+                self._behavior_engine.get_alive_entities()
+            )
+            if targets:
+                # Transform first matching entity
+                self.apply_transform(targets[0], condition.then_transform.transform)
 
         if condition.then_clear_property:
             # Clear the property that triggered the condition
             entity.properties[condition.then_clear_property] = False
 
-    def transform_entity(self, entity: Entity, into_type: str,
-                         spawn_configs: Optional[List[SpawnConfig]] = None) -> Optional[Entity]:
-        """Transform an entity into another type, optionally spawning children.
+    def apply_transform(self, entity: Entity, transform: TransformConfig) -> Optional[Entity]:
+        """Apply a transform to an entity.
 
-        This is the core transform primitive - entity becomes fundamentally different.
+        This is the core transform primitive. Two modes:
+        - type="destroy": Spawn children, destroy entity
+        - type="<entity_type>": Transform into another type, spawn children
 
         Args:
             entity: The entity to transform
-            into_type: Entity type to transform into
-            spawn_configs: Optional list of entities to spawn alongside
+            transform: Transform configuration
 
         Returns:
-            The transformed entity (same ID, different type)
+            The transformed entity (or None if destroyed)
         """
+        # Spawn children first (before entity is potentially destroyed)
+        self._spawn_children(entity, transform.children)
+
+        # Handle destroy vs transform
+        if transform.type == "destroy":
+            entity.destroy()
+            return None
+        else:
+            # Transform into another type
+            return self._transform_into_type(entity, transform.type)
+
+    def _transform_into_type(self, entity: Entity, into_type: str) -> Optional[Entity]:
+        """Transform entity into another type, keeping position and ID."""
         if not self._game_def or into_type not in self._game_def.entity_types:
             return None
 
-        # Get the new type config
         new_config = self._game_def.entity_types[into_type]
 
-        # Transform the entity - keep position and ID, change type
+        # Transform - keep position and ID, change type
         entity.entity_type = into_type
         entity.width = new_config.width
         entity.height = new_config.height
@@ -1488,27 +1665,86 @@ class GameEngine(BaseGame):
         # Re-register with behavior engine for new behaviors
         self._behavior_engine.update_entity_behaviors(entity)
 
-        # Spawn child entities if configured
-        if spawn_configs:
-            for spawn in spawn_configs:
-                # Calculate spawn position
-                spawn_x = entity.x + spawn.offset[0]
-                spawn_y = entity.y + spawn.offset[1]
+        return entity
 
-                # Evaluate spawn properties (handle {lua: ...} expressions)
-                spawn_props = {
-                    key: self._evaluate_property_value(value)
-                    for key, value in spawn.properties.items()
-                }
+    def _spawn_children(self, parent: Entity, children: List[SpawnConfig]) -> List[Entity]:
+        """Spawn child entities relative to parent.
 
-                # Spawn the child entity with properties already set
-                # (so on_spawn can access them)
+        Handles count, inherit_velocity, lifetime, and {lua:...} expressions.
+        """
+        spawned = []
+
+        for spawn in children:
+            count = spawn.count
+
+            for i in range(count):
+                # Make 'i' available for Lua expressions
+                self._behavior_engine.set_global('i', i)
+
+                # Evaluate offset (may be {lua: ...})
+                if isinstance(spawn.offset, dict) and 'lua' in spawn.offset:
+                    offset = self._evaluate_property_value(spawn.offset)
+                    if isinstance(offset, (list, tuple)) and len(offset) >= 2:
+                        offset_x, offset_y = offset[0], offset[1]
+                    else:
+                        offset_x, offset_y = 0, 0
+                else:
+                    offset_x, offset_y = spawn.offset
+
+                spawn_x = parent.x + offset_x
+                spawn_y = parent.y + offset_y
+
+                # Evaluate all properties (handle {lua: ...} and $property refs)
+                spawn_props = {}
+                for key, value in spawn.properties.items():
+                    if isinstance(value, str) and value.startswith('$'):
+                        # Resolve from parent entity
+                        prop_name = value[1:]
+                        if prop_name == 'color':
+                            spawn_props[key] = parent.color
+                        else:
+                            spawn_props[key] = parent.properties.get(prop_name)
+                    else:
+                        spawn_props[key] = self._evaluate_property_value(value)
+
+                # Add lifetime as property if specified
+                if spawn.lifetime is not None:
+                    spawn_props['lifetime'] = spawn.lifetime
+
+                # Calculate inherited velocity
+                inherited_vx = parent.vx * spawn.inherit_velocity
+                inherited_vy = parent.vy * spawn.inherit_velocity
+
+                # If spawn has explicit velocity, add inherited
+                if 'vx' in spawn_props:
+                    spawn_props['vx'] = spawn_props['vx'] + inherited_vx
+                elif spawn.inherit_velocity > 0:
+                    spawn_props['vx'] = inherited_vx
+
+                if 'vy' in spawn_props:
+                    spawn_props['vy'] = spawn_props['vy'] + inherited_vy
+                elif spawn.inherit_velocity > 0:
+                    spawn_props['vy'] = inherited_vy
+
+                # Extract color/vx/vy from properties into overrides
+                overrides = {}
+                if 'color' in spawn_props:
+                    overrides['color'] = spawn_props.pop('color')
+                if 'vx' in spawn_props:
+                    overrides['vx'] = spawn_props.pop('vx')
+                if 'vy' in spawn_props:
+                    overrides['vy'] = spawn_props.pop('vy')
+
+                # Spawn the child
                 child = self.spawn_entity(
                     spawn.entity_type, spawn_x, spawn_y,
-                    properties=spawn_props
+                    properties=spawn_props,
+                    **overrides
                 )
+                if child:
+                    spawned.append(child)
 
-        return entity
+        return spawned
 
     def _evaluate_property_value(self, value: Any) -> Any:
         """Evaluate a property value - either literal or {lua: "expression"}."""
@@ -1529,6 +1765,9 @@ class GameEngine(BaseGame):
         if self._game_def:
             bg = self._game_def.background_color
         screen.fill(bg)
+
+        # Update skin's elapsed time for $age property
+        self._skin._elapsed_time = self._behavior_engine.elapsed_time
 
         # Render all entities
         for entity in self._behavior_engine.get_alive_entities():
