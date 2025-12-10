@@ -14,7 +14,12 @@ Provides:
 
 from games.common.game_state import GameState
 from games.common.base_game import BaseGame
-from games.common.game_engine import GameEngine, GameEngineSkin
+from games.common.game_engine import (
+    GameEngine,
+    GameEngineSkin,
+    EntityPlacement,
+    GameEngineLevelData,
+)
 from games.common.palette import GamePalette, TEST_PALETTES, get_palette_names
 from games.common.quiver import QuiverState, create_quiver
 from games.common.pacing import get_pacing_preset, get_pacing_names, scale_for_pacing
@@ -30,6 +35,8 @@ __all__ = [
     'BaseGame',
     'GameEngine',
     'GameEngineSkin',
+    'EntityPlacement',
+    'GameEngineLevelData',
     'GamePalette',
     'TEST_PALETTES',
     'get_palette_names',

@@ -22,12 +22,20 @@ class BrickPlacement:
 
 @dataclass
 class NGLevelData:
-    """Parsed level data for BrickBreaker NG."""
+    """Parsed level data for BrickBreaker NG.
+
+    Conforms to GameEngineLevelData protocol for generic level application.
+    """
 
     name: str = "Unnamed Level"
     difficulty: int = 1
+    lives: int = 3
 
-    # Grid configuration
+    # Player spawn position (GameEngineLevelData protocol)
+    player_x: float = 340
+    player_y: float = 550
+
+    # Grid configuration (BrickBreaker-specific)
     grid_cols: int = 10
     grid_rows: int = 5
     brick_width: float = 70
@@ -35,19 +43,14 @@ class NGLevelData:
     start_x: float = 65
     start_y: float = 60
 
-    # Brick placements parsed from layout
+    # Entity placements (GameEngineLevelData protocol uses 'entities')
+    # For backwards compatibility, we store as 'bricks' but expose as 'entities'
     bricks: List[BrickPlacement] = field(default_factory=list)
 
-    # Player config
-    paddle_x: float = 340
-    paddle_y: float = 550
-    paddle_overrides: Dict[str, Any] = field(default_factory=dict)
-
-    ball_x: float = 392
-    ball_y: float = 525
-    ball_overrides: Dict[str, Any] = field(default_factory=dict)
-
-    lives: int = 3
+    @property
+    def entities(self) -> List[BrickPlacement]:
+        """Alias for bricks - conforms to GameEngineLevelData protocol."""
+        return self.bricks
 
 
 class NGLevelLoader(LevelLoader[NGLevelData]):
@@ -80,22 +83,10 @@ class NGLevelLoader(LevelLoader[NGLevelData]):
         level.start_x = grid.get('start_x', 65)
         level.start_y = grid.get('start_y', 60)
 
-        # Parse paddle config
+        # Parse player/paddle config (uses player_x/player_y for protocol)
         paddle = data.get('paddle', {})
-        level.paddle_x = paddle.get('x', 340)
-        level.paddle_y = paddle.get('y', 550)
-        # Collect any overrides (width, behavior_config, etc.)
-        for key in ['width', 'height', 'behavior_config']:
-            if key in paddle:
-                level.paddle_overrides[key] = paddle[key]
-
-        # Parse ball config
-        ball = data.get('ball', {})
-        level.ball_x = ball.get('x', 392)
-        level.ball_y = ball.get('y', 525)
-        for key in ['behavior_config']:
-            if key in ball:
-                level.ball_overrides[key] = ball[key]
+        level.player_x = paddle.get('x', 340)
+        level.player_y = paddle.get('y', 550)
 
         # Parse ASCII layout
         layout_str = data.get('layout', '')

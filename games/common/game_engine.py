@@ -19,7 +19,7 @@ Usage:
 from abc import abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Protocol, Tuple, runtime_checkable
 
 import pygame
 import yaml
@@ -27,6 +27,32 @@ import yaml
 from games.common import BaseGame, GameState
 from games.common.input import InputEvent
 from ams.behaviors import BehaviorEngine, Entity
+
+
+# Protocol for entity placements in levels
+@dataclass
+class EntityPlacement:
+    """An entity to spawn at a specific position."""
+    entity_type: str
+    x: float
+    y: float
+
+
+@runtime_checkable
+class GameEngineLevelData(Protocol):
+    """Protocol for level data that GameEngine can apply.
+
+    Level loaders should return data conforming to this protocol.
+    """
+    name: str
+    lives: int
+
+    # Player spawn position (uses game.yaml player.type)
+    player_x: float
+    player_y: float
+
+    # Entity placements to spawn
+    entities: List[EntityPlacement]
 
 
 @dataclass
@@ -683,6 +709,53 @@ class GameEngine(BaseGame):
 
         # Spawn default layout if present
         self._spawn_default_layout()
+
+    def _apply_level_config(self, level_data: Any) -> None:
+        """Apply level configuration - spawn entities from level data.
+
+        Works with any level data conforming to GameEngineLevelData protocol:
+        - name: str
+        - lives: int
+        - player_x, player_y: float
+        - entities: List[EntityPlacement]
+
+        Args:
+            level_data: Parsed level data (should conform to GameEngineLevelData)
+        """
+        # Clear existing entities
+        self._behavior_engine.clear()
+
+        # Set level name for HUD
+        self._level_name = getattr(level_data, 'name', 'Level')
+
+        # Apply lives from level
+        lives = getattr(level_data, 'lives', self._starting_lives)
+        self._lives = lives
+        self._starting_lives = lives
+
+        # Spawn player entity at level-specified position
+        if self._game_def and self._game_def.player_type:
+            player_x = getattr(level_data, 'player_x', self._game_def.player_spawn[0])
+            player_y = getattr(level_data, 'player_y', self._game_def.player_spawn[1])
+            player = self.spawn_entity(
+                self._game_def.player_type,
+                x=player_x,
+                y=player_y,
+            )
+            if player:
+                self._player_id = player.id
+
+        # Spawn entities from level
+        entities = getattr(level_data, 'entities', [])
+        for placement in entities:
+            self.spawn_entity(
+                placement.entity_type,
+                x=placement.x,
+                y=placement.y,
+            )
+
+        # Reset game state
+        self._internal_state = GameState.PLAYING
 
     def _spawn_default_layout(self) -> None:
         """Spawn entities from default_layout in game.yaml."""

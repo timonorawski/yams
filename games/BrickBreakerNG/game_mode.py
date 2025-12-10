@@ -27,15 +27,15 @@ Level YAML files define brick layouts using ASCII art.
 """
 
 from pathlib import Path
-from typing import List, Optional
+from typing import Optional
 
 import pygame
 import yaml
 
-from games.common import GameEngine, GameEngineSkin, GameState
+from games.common import GameEngine, GameEngineSkin
 from ams.behaviors import Entity
 
-from .level_loader import NGLevelLoader, NGLevelData
+from .level_loader import NGLevelLoader
 
 
 # Load game metadata from YAML at import time
@@ -157,51 +157,9 @@ class BrickBreakerNGMode(GameEngine):
         """Create BrickBreaker NG level loader."""
         return NGLevelLoader(self.LEVELS_DIR)
 
-    def _apply_level_config(self, level_data: NGLevelData) -> None:
-        """Apply level configuration - spawn entities from level YAML.
-
-        Args:
-            level_data: Parsed level data from NGLevelLoader
-        """
-        # Clear existing entities
-        self._behavior_engine.clear()
-
-        # Set level name for HUD
-        self._level_name = level_data.name
-
-        # Apply lives from level
-        self._lives = level_data.lives
-        self._starting_lives = level_data.lives
-
-        # Spawn paddle_ready (composite entity: paddle with ball attached)
-        # Transform system will handle splitting into paddle + ball on first input
-        paddle_ready = self.spawn_entity(
-            'paddle_ready',
-            x=level_data.paddle_x,
-            y=level_data.paddle_y,
-            **level_data.paddle_overrides,
-        )
-        if paddle_ready:
-            self._paddle_id = paddle_ready.id
-
-        # Spawn bricks from ASCII layout
-        for brick_placement in level_data.bricks:
-            self.spawn_entity(
-                brick_placement.entity_type,
-                x=brick_placement.x,
-                y=brick_placement.y,
-            )
-
-        # Reset game state
-        self._internal_state = GameState.PLAYING
-
-    def _on_level_transition(self) -> None:
-        """Reset state when transitioning to next level in a group."""
-        # Ball will be reset by _apply_level_config
-        pass
-
     # All game logic is now handled declaratively by GameEngine:
     # - player spawn: player.type + player.spawn in game.yaml
+    # - level application: GameEngine._apply_level_config() using protocol
     # - default layout: default_layout.brick_grid in game.yaml
     # - input mapping: input_mapping in game.yaml
     # - collision behaviors: collision_behaviors in game.yaml
