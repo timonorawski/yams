@@ -338,6 +338,16 @@
               "type": "integer",
               "minimum": 1,
               "description": "Region height"
+            },
+            "flip_x": {
+              "type": "boolean",
+              "default": false,
+              "description": "Flip sprite horizontally"
+            },
+            "flip_y": {
+              "type": "boolean",
+              "default": false,
+              "description": "Flip sprite vertically"
             }
           },
           "additionalProperties": false
@@ -484,7 +494,11 @@
         },
         "sprite_name": {
           "type": "string",
-          "description": "Sprite name for sprite shape"
+          "description": "Sprite name for sprite shape (alias: sprite)"
+        },
+        "sprite": {
+          "type": "string",
+          "description": "Sprite name for sprite shape (alias for sprite_name)"
         },
         "text": {
           "type": "string",
@@ -505,6 +519,11 @@
         "when": {
           "$ref": "#/$defs/render_when",
           "description": "Condition for rendering"
+        },
+        "stop": {
+          "type": "boolean",
+          "default": false,
+          "description": "Stop processing further render commands after this one"
         }
       },
       "additionalProperties": false
@@ -524,9 +543,13 @@
         },
         "compare": {
           "type": "string",
-          "enum": ["equals", "not_equals", "greater_than", "less_than"],
+          "enum": ["equals", "not_equals", "greater_than", "less_than", "between"],
           "default": "equals",
           "description": "Comparison operator"
+        },
+        "min": {
+          "type": "number",
+          "description": "Minimum value for 'between' comparison (min <= value < max)"
         }
       },
       "additionalProperties": false

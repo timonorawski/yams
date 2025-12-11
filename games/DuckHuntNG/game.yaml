@@ -24,6 +24,195 @@ win_condition: reach_score
 win_target: 1000
 
 # =============================================================================
+# Assets - Sprite Sheet Definitions
+# =============================================================================
+# Sprite sheet: assets/sprites.png
+# Layout: Dog rows (0-1), then duck rows (green=2, blue=3, red=4)
+# Each duck row: 3 right-flight, 3 up-right, 1 hit, 4 falling
+# Transparent color: [159, 227, 163] (light green background)
+
+assets:
+  sprites:
+    # Green duck sprites (row at y=126)
+    green_right_1:
+      file: sprites.png
+      x: 7
+      y: 126
+      width: 37
+      height: 41
+      transparent: [159, 227, 163]
+    green_right_2:
+      file: sprites.png
+      x: 48
+      y: 126
+      width: 37
+      height: 41
+      transparent: [159, 227, 163]
+    green_right_3:
+      file: sprites.png
+      x: 88
+      y: 126
+      width: 37
+      height: 41
+      transparent: [159, 227, 163]
+    green_up_1:
+      file: sprites.png
+      x: 134
+      y: 126
+      width: 35
+      height: 41
+      transparent: [159, 227, 163]
+    green_up_2:
+      file: sprites.png
+      x: 168
+      y: 126
+      width: 35
+      height: 41
+      transparent: [159, 227, 163]
+    green_up_3:
+      file: sprites.png
+      x: 202
+      y: 126
+      width: 35
+      height: 41
+      transparent: [159, 227, 163]
+    green_hit:
+      file: sprites.png
+      x: 236
+      y: 126
+      width: 35
+      height: 41
+      transparent: [159, 227, 163]
+    green_fall_1:
+      file: sprites.png
+      x: 279
+      y: 126
+      width: 22
+      height: 41
+      transparent: [159, 227, 163]
+    green_fall_2:
+      file: sprites.png
+      x: 302
+      y: 126
+      width: 22
+      height: 41
+      transparent: [159, 227, 163]
+
+    # Green duck LEFT sprites (flipped from right)
+    green_left_1:
+      file: sprites.png
+      x: 7
+      y: 126
+      width: 37
+      height: 41
+      transparent: [159, 227, 163]
+      flip_x: true
+    green_left_2:
+      file: sprites.png
+      x: 48
+      y: 126
+      width: 37
+      height: 41
+      transparent: [159, 227, 163]
+      flip_x: true
+    green_left_3:
+      file: sprites.png
+      x: 88
+      y: 126
+      width: 37
+      height: 41
+      transparent: [159, 227, 163]
+      flip_x: true
+
+    # Green duck UP_LEFT sprites (flipped from up_right)
+    green_up_left_1:
+      file: sprites.png
+      x: 134
+      y: 126
+      width: 35
+      height: 41
+      transparent: [159, 227, 163]
+      flip_x: true
+    green_up_left_2:
+      file: sprites.png
+      x: 168
+      y: 126
+      width: 35
+      height: 41
+      transparent: [159, 227, 163]
+      flip_x: true
+    green_up_left_3:
+      file: sprites.png
+      x: 202
+      y: 126
+      width: 35
+      height: 41
+      transparent: [159, 227, 163]
+      flip_x: true
+
+    # Blue duck sprites (row at y=168)
+    blue_right_1:
+      file: sprites.png
+      x: 7
+      y: 168
+      width: 37
+      height: 41
+      transparent: [159, 227, 163]
+    blue_left_1:
+      file: sprites.png
+      x: 7
+      y: 168
+      width: 37
+      height: 41
+      transparent: [159, 227, 163]
+      flip_x: true
+    blue_hit:
+      file: sprites.png
+      x: 236
+      y: 168
+      width: 35
+      height: 41
+      transparent: [159, 227, 163]
+    blue_fall_1:
+      file: sprites.png
+      x: 279
+      y: 168
+      width: 22
+      height: 41
+      transparent: [159, 227, 163]
+
+    # Red duck sprites (row at y=210)
+    red_right_1:
+      file: sprites.png
+      x: 7
+      y: 210
+      width: 37
+      height: 41
+      transparent: [159, 227, 163]
+    red_left_1:
+      file: sprites.png
+      x: 7
+      y: 210
+      width: 37
+      height: 41
+      transparent: [159, 227, 163]
+      flip_x: true
+    red_hit:
+      file: sprites.png
+      x: 236
+      y: 210
+      width: 35
+      height: 41
+      transparent: [159, 227, 163]
+    red_fall_1:
+      file: sprites.png
+      x: 279
+      y: 210
+      width: 22
+      height: 41
+      transparent: [159, 227, 163]
+
+# =============================================================================
 # Entity Types
 # =============================================================================
 
@@ -36,37 +225,55 @@ entity_types:
   # When clicked (on_hit), transforms to duck_hit.
 
   duck_flying:
-    width: 50
-    height: 50
+    width: 37
+    height: 41
     color: green
-    behaviors: [bounce]
+    sprite: green_right_1
+    behaviors: [bounce, animate]
     behavior_config:
       bounce:
         walls: top_sides
         min_y: 50
         max_y: 0.6
+      animate:
+        frames: 3
+        fps: 8
     tags: [duck, target]
     render:
-      # Duck body (oval)
-      - shape: circle
-        color: $color
-        fill: true
-      # Eye
-      - shape: circle
-        color: white
-        fill: true
-        offset: [30, 10]
-        size: [10, 10]
-      - shape: circle
-        color: black
-        fill: true
-        offset: [33, 12]
-        size: [4, 4]
-      # Beak
-      - shape: triangle
-        color: orange
-        fill: true
-        points: [[0.9, 0.4], [1.2, 0.5], [0.9, 0.6]]
+      # Heading: 0° = up, 90° = right, 180° = down, 270° = left
+      # Sprite names use {frame} template (1, 2, 3)
+      # Up-right (0° - 90°): use up-right sprite
+      - shape: sprite
+        sprite: green_up_{frame}
+        when:
+          property: heading
+          compare: between
+          min: 0
+          value: 90
+      # Right-down (90° - 180°): use horizontal right sprite
+      - shape: sprite
+        sprite: green_right_{frame}
+        when:
+          property: heading
+          compare: between
+          min: 90
+          value: 180
+      # Down-left (180° - 270°): use horizontal left sprite
+      - shape: sprite
+        sprite: green_left_{frame}
+        when:
+          property: heading
+          compare: between
+          min: 180
+          value: 270
+      # Up-left (270° - 360°): use up-left sprite
+      - shape: sprite
+        sprite: green_up_left_{frame}
+        when:
+          property: heading
+          compare: between
+          min: 270
+          value: 360
 
   # ---------------------------------------------------------------------------
   # Duck - Hit state (pause before falling)
@@ -74,9 +281,10 @@ entity_types:
   # Static, shows hit effect for 0.5 seconds, then transforms to falling.
 
   duck_hit:
-    width: 50
-    height: 50
+    width: 35
+    height: 41
     color: red
+    sprite: green_hit
     behaviors:
       - lua: |
           local hit = {}
@@ -93,28 +301,8 @@ entity_types:
         transform:
           type: duck_falling
     render:
-      # Hit effect - X eyes
-      - shape: circle
-        color: $color
-        fill: true
-      # X for left eye
-      - shape: line
-        color: white
-        line_width: 2
-        points: [[0.15, 0.2], [0.35, 0.4]]
-      - shape: line
-        color: white
-        line_width: 2
-        points: [[0.35, 0.2], [0.15, 0.4]]
-      # X for right eye
-      - shape: line
-        color: white
-        line_width: 2
-        points: [[0.55, 0.2], [0.75, 0.4]]
-      - shape: line
-        color: white
-        line_width: 2
-        points: [[0.75, 0.2], [0.55, 0.4]]
+      - shape: sprite
+        sprite_name: green_hit
 
   # ---------------------------------------------------------------------------
   # Duck - Falling state
@@ -122,9 +310,10 @@ entity_types:
   # Falls with gravity, destroyed when off screen.
 
   duck_falling:
-    width: 50
-    height: 50
+    width: 22
+    height: 41
     color: gray
+    sprite: green_fall_1
     behaviors: [gravity]
     behavior_config:
       gravity:
@@ -132,18 +321,8 @@ entity_types:
         destroy_offscreen: true
     tags: [duck]
     render:
-      - shape: circle
-        color: $color
-        fill: true
-      # Closed eyes (lines)
-      - shape: line
-        color: black
-        line_width: 2
-        points: [[0.2, 0.3], [0.4, 0.3]]
-      - shape: line
-        color: black
-        line_width: 2
-        points: [[0.6, 0.3], [0.8, 0.3]]
+      - shape: sprite
+        sprite_name: green_fall_1
 
   # ---------------------------------------------------------------------------
   # Spawner - invisible entity that spawns ducks
@@ -204,11 +383,8 @@ entity_types:
                           vy = -speed
                       end
 
-                      -- Random color
-                      local colors = {"green", "blue", "red", "cyan", "magenta"}
-                      local color = colors[math.floor(ams.random() * 5) + 1]
-
-                      ams.spawn("duck_flying", x, y, vx, vy, 50, 50, color, "")
+                      -- Use entity type defaults (0, 0 = use type config size)
+                      ams.spawn("duck_flying", x, y, vx, vy, 0, 0, "", "")
                   end
               end
 

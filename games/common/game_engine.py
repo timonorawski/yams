@@ -143,7 +143,8 @@ class RenderWhen:
     """Condition for conditional rendering."""
     property: str
     value: Any = None
-    compare: str = "equals"  # equals, not_equals, greater_than, less_than
+    compare: str = "equals"  # equals, not_equals, greater_than, less_than, between
+    min: Optional[float] = None  # For 'between': min <= value < max (value is max)
 
 
 @dataclass
@@ -166,6 +167,7 @@ class RenderCommand:
     align: str = "center"  # center, left, right
     # Conditional rendering:
     when: Optional[RenderWhen] = None  # Only render if condition is true
+    stop: bool = False  # If true, stop processing further render commands after this one
 
 
 @dataclass
@@ -325,6 +327,7 @@ class SpriteConfig:
     - File path: file: sprites/paddle.png
     - Data URI: data: "data:image/png;base64,iVBORw0KGgo..."
     - Either can have region extraction (x, y, width, height)
+    - Flip horizontally/vertically (flip_x, flip_y)
     """
     file: str = ""  # Path to image file (mutually exclusive with data)
     data: Optional[str] = None  # Data URI (data:image/png;base64,...)
@@ -334,6 +337,9 @@ class SpriteConfig:
     y: Optional[int] = None  # Region y offset
     width: Optional[int] = None  # Region width (None = full image)
     height: Optional[int] = None  # Region height (None = full image)
+    # Flip options:
+    flip_x: bool = False  # Flip horizontally
+    flip_y: bool = False  # Flip vertically
 
 
 @dataclass
@@ -466,6 +472,9 @@ class GameEngineSkin:
             if cmd.when and not self._evaluate_when(entity, cmd.when):
                 continue
             self._render_command(entity, cmd, screen)
+            # Stop processing further commands if stop flag is set
+            if cmd.stop:
+                break
 
     def _evaluate_when(self, entity: Entity, when: RenderWhen) -> bool:
         """Evaluate a when condition against entity properties."""
@@ -481,6 +490,11 @@ class GameEngineSkin:
             return prop_value is not None and prop_value > when.value
         elif when.compare == 'less_than':
             return prop_value is not None and prop_value < when.value
+        elif when.compare == 'between':
+            # min <= value < max (value field is max, min field is min)
+            if prop_value is None or when.min is None:
+                return False
+            return when.min <= prop_value < when.value
         return False
 
     def _get_entity_property(self, entity: Entity, prop_name: str) -> Any:
@@ -502,6 +516,32 @@ class GameEngineSkin:
         elif prop_name == 'age':
             # Seconds since spawn
             return self._elapsed_time - entity.spawn_time
+        # Velocity properties (direct entity attributes)
+        elif prop_name == 'vx':
+            return entity.vx
+        elif prop_name == 'vy':
+            return entity.vy
+        # Direction properties (computed from velocity)
+        elif prop_name == 'facing':
+            # Returns 'left' or 'right' based on horizontal velocity
+            return 'left' if entity.vx < 0 else 'right'
+        elif prop_name == 'moving_up':
+            return entity.vy < 0
+        elif prop_name == 'moving_down':
+            return entity.vy > 0
+        elif prop_name == 'heading':
+            # Heading in degrees, 0° = north (up), clockwise
+            # 0° = up, 90° = right, 180° = down, 270° = left
+            import math
+            if entity.vx == 0 and entity.vy == 0:
+                return 0  # Stationary defaults to north
+            # atan2 gives angle from positive x-axis, counterclockwise
+            # We want angle from negative y-axis (north), clockwise
+            angle_rad = math.atan2(entity.vx, -entity.vy)
+            heading = math.degrees(angle_rad)
+            if heading < 0:
+                heading += 360
+            return heading
 
         # Regular properties
         return entity.properties.get(prop_name)
@@ -633,6 +673,26 @@ class GameEngineSkin:
             return str(val) if val is not None else ""
         return text_value
 
+    def _resolve_sprite_template(self, entity: Entity, sprite_name: str) -> str:
+        """Resolve template placeholders in sprite name.
+
+        Supports {property_name} syntax to substitute entity properties.
+        Example: "green_right_{frame}" with frame=2 -> "green_right_2"
+        """
+        import re
+
+        def replace_placeholder(match):
+            prop_name = match.group(1)
+            value = entity.properties.get(prop_name)
+            if value is not None:
+                # Convert to int if it's a whole number float
+                if isinstance(value, float) and value == int(value):
+                    return str(int(value))
+                return str(value)
+            return match.group(0)  # Keep original if property not found
+
+        return re.sub(r'\{(\w+)\}', replace_placeholder, sprite_name)
+
     def _render_sprite(self, entity: Entity, sprite_name: str,
                        screen: pygame.Surface, x: int, y: int, w: int, h: int) -> None:
         """Render a sprite from loaded assets."""
@@ -642,8 +702,11 @@ class GameEngineSkin:
             pygame.draw.rect(screen, color, pygame.Rect(x, y, w, h))
             return
 
+        # Resolve template placeholders like {frame}
+        resolved_name = self._resolve_sprite_template(entity, sprite_name)
+
         # Check if sprite is loaded
-        sprite = self._sprites.get(sprite_name)
+        sprite = self._sprites.get(resolved_name)
         if sprite is None:
             # Fallback to colored rectangle
             color = self._parse_color(entity.color)
@@ -817,6 +880,13 @@ class GameEngineSkin:
             # Apply transparency color key
             if config.transparent:
                 sprite.set_colorkey(config.transparent)
+
+            # Apply flip transformations
+            if config.flip_x or config.flip_y:
+                sprite = pygame.transform.flip(sprite, config.flip_x, config.flip_y)
+                # Re-apply colorkey after flip (transform may lose it)
+                if config.transparent:
+                    sprite.set_colorkey(config.transparent)
 
             self._sprites[name] = sprite
 
@@ -1003,6 +1073,7 @@ class GameEngine(BaseGame):
                         property=when_data.get('property', ''),
                         value=when_data.get('value'),
                         compare=when_data.get('compare', 'equals'),
+                        min=when_data.get('min'),
                     )
 
                 render_commands.append(RenderCommand(
@@ -1014,12 +1085,13 @@ class GameEngine(BaseGame):
                     points=[tuple(p) for p in render_data.get('points', [])],
                     offset=tuple(render_data.get('offset', [0, 0])),
                     size=tuple(render_data['size']) if render_data.get('size') else None,
-                    sprite_name=render_data.get('sprite', ''),
+                    sprite_name=render_data.get('sprite_name', render_data.get('sprite', '')),
                     radius=render_data.get('radius'),
                     text=render_data.get('text', ''),
                     font_size=render_data.get('font_size', 20),
                     align=render_data.get('align', 'center'),
                     when=when_cond,
+                    stop=render_data.get('stop', False),
                 ))
 
             # Parse lifecycle transforms
@@ -1436,6 +1508,8 @@ class GameEngine(BaseGame):
                     y=sprite_data.get('y'),
                     width=sprite_data.get('width'),
                     height=sprite_data.get('height'),
+                    flip_x=sprite_data.get('flip_x', False),
+                    flip_y=sprite_data.get('flip_y', False),
                 )
 
         return result
@@ -1647,12 +1721,19 @@ class GameEngine(BaseGame):
 
         Called when Lua code spawns entities (e.g., shoot behavior spawning projectiles).
         Applies entity type config from game.yaml so spawned entities have behaviors.
+
+        Width/height of 0 means "use entity type defaults".
         """
-        return self.spawn_entity(
-            entity_type, x, y,
-            vx=vx, vy=vy, width=width, height=height,
-            color=color, sprite=sprite
-        )
+        overrides: Dict[str, Any] = {'vx': vx, 'vy': vy}
+        if width > 0:
+            overrides['width'] = width
+        if height > 0:
+            overrides['height'] = height
+        if color:
+            overrides['color'] = color
+        if sprite:
+            overrides['sprite'] = sprite
+        return self.spawn_entity(entity_type, x, y, **overrides)
 
     def spawn_entity(
         self,
