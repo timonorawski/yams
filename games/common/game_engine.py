@@ -80,6 +80,7 @@ def validate_game_yaml(data: Dict[str, Any], source_path: Optional[Path] = None)
 
     try:
         import jsonschema
+        from jsonschema import RefResolver
     except ImportError as e:
         error_msg = "jsonschema package not installed - required for YAML validation"
         if _SKIP_VALIDATION:
@@ -88,7 +89,14 @@ def validate_game_yaml(data: Dict[str, Any], source_path: Optional[Path] = None)
         raise ImportError(error_msg) from e
 
     try:
-        jsonschema.validate(data, schema)
+        # Create resolver with local schema store for external $ref
+        schema_store = {}
+        for schema_file in _SCHEMAS_DIR.glob('*.json'):
+            with open(schema_file) as f:
+                schema_store[schema_file.name] = json.load(f)
+
+        resolver = RefResolver.from_schema(schema, store=schema_store)
+        jsonschema.validate(data, schema, resolver=resolver)
     except jsonschema.ValidationError as e:
         path_str = f" in {source_path}" if source_path else ""
         error_msg = f"Schema validation error{path_str}: {e.message} at {'/'.join(str(p) for p in e.absolute_path)}"

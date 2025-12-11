@@ -135,22 +135,8 @@
       "required": ["type", "spawn"]
     },
     "default_layout": {
-      "type": "object",
-      "description": "Default level layout when no level is specified",
-      "properties": {
-        "ball_spawn": {
-          "$ref": "#/$defs/point_2d"
-        },
-        "brick_grid": {
-          "$ref": "#/$defs/brick_grid"
-        },
-        "entities": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/entity_placement"
-          }
-        }
-      }
+      "$ref": "level.schema.json#/$defs/level_definition",
+      "description": "Default level layout when no level is specified (inline level definition)"
     }
   },
 
@@ -787,76 +773,6 @@
         }
       },
       "additionalProperties": false
-    },
-
-    "brick_grid": {
-      "type": "object",
-      "description": "Grid layout for bricks",
-      "properties": {
-        "start_x": {
-          "type": "number",
-          "description": "Starting X position"
-        },
-        "start_y": {
-          "type": "number",
-          "description": "Starting Y position"
-        },
-        "cols": {
-          "type": "integer",
-          "minimum": 1,
-          "description": "Number of columns"
-        },
-        "rows": {
-          "type": "integer",
-          "minimum": 1,
-          "description": "Number of rows"
-        },
-        "spacing_x": {
-          "type": "number",
-          "description": "Horizontal spacing between bricks"
-        },
-        "spacing_y": {
-          "type": "number",
-          "description": "Vertical spacing between bricks"
-        },
-        "row_types": {
-          "type": "array",
-          "items": { "type": "string" },
-          "description": "Entity type for each row (bottom to top)"
-        }
-      },
-      "additionalProperties": false
-    },
-
-    "entity_placement": {
-      "type": "object",
-      "description": "Entity placement in a level",
-      "required": ["type", "x", "y"],
-      "properties": {
-        "type": {
-          "type": "string",
-          "description": "Entity type name"
-        },
-        "x": {
-          "oneOf": [
-            { "type": "number" },
-            { "$ref": "#/$defs/lua_expression" },
-            { "$ref": "#/$defs/call_generator" }
-          ],
-          "description": "X position"
-        },
-        "y": {
-          "oneOf": [
-            { "type": "number" },
-            { "$ref": "#/$defs/lua_expression" },
-            { "$ref": "#/$defs/call_generator" }
-          ],
-          "description": "Y position"
-        }
-      },
-      "additionalProperties": {
-        "$ref": "#/$defs/dynamic_value"
-      }
     }
   }
 }
