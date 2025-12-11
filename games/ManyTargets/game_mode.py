@@ -11,9 +11,9 @@ from typing import List, Optional
 import pygame
 
 from models import Vector2D
-from games.common import GameState
-from games.common.base_game import BaseGame
-from games.common.input import InputEvent
+from ams.games import GameState
+from ams.games.base_game import BaseGame
+from ams.games.input import InputEvent
 from games.ManyTargets import config
 from games.ManyTargets.target_field import TargetField, MissMode, HitResult
 

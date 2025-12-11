@@ -9,8 +9,8 @@ import time
 from typing import List, Optional
 import pygame
 
-from games.common import GameState
-from games.common.base_game import BaseGame
+from ams.games import GameState
+from ams.games.base_game import BaseGame
 from games.BalloonPop.balloon import Balloon, BalloonState
 from games.BalloonPop.input.input_event import InputEvent
 from games.BalloonPop.config import (

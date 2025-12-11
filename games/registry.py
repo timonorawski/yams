@@ -32,7 +32,7 @@ from dataclasses import dataclass, field
 
 if TYPE_CHECKING:
     from ams.session import AMSSession
-    from games.common.base_game import BaseGame
+    from ams.games.base_game import BaseGame
     from ams.content_fs import ContentFS
 
 
@@ -196,7 +196,7 @@ class GameRegistry:
 
         try:
             # Use GameEngine factory to create class from YAML
-            from games.common import GameEngine
+            from ams.games.game_engine import GameEngine
             game_class = GameEngine.from_yaml(yaml_path)
 
             # Extract metadata from class (set by factory)
@@ -244,7 +244,7 @@ class GameRegistry:
 
         try:
             # Import BaseGame for isinstance checking
-            from games.common.base_game import BaseGame
+            from ams.games.base_game import BaseGame
 
             # Import the game_mode module
             spec = importlib.util.spec_from_file_location(
@@ -448,7 +448,7 @@ class GameRegistry:
             input_manager_module = importlib.import_module(f"{info.module_path}.input.input_manager")
         except ModuleNotFoundError:
             # Use common input module (for GameEngine-based games)
-            input_manager_module = importlib.import_module("games.common.input.input_manager")
+            input_manager_module = importlib.import_module("ams.games.input.input_manager")
         InputManager = input_manager_module.InputManager
 
         if ams_session is not None:
@@ -461,7 +461,7 @@ class GameRegistry:
                 mouse_module = importlib.import_module(f"{info.module_path}.input.sources.mouse")
             except ModuleNotFoundError:
                 # Use common mouse input source
-                mouse_module = importlib.import_module("games.common.input.sources.mouse")
+                mouse_module = importlib.import_module("ams.games.input.sources.mouse")
             source = mouse_module.MouseInputSource()
 
         return InputManager(source)
@@ -481,7 +481,7 @@ class GameRegistry:
             raise ValueError(f"Unknown game: {slug}")
 
         # All games should use the common GameState
-        from games.common import GameState
+        from ams.games import GameState
         return GameState
 
 

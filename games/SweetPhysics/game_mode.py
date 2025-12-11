@@ -29,10 +29,10 @@ except Exception as e:
     _browser_log(f"[SweetPhysics game_mode.py] pymunk FAILED: {e}")
     raise
 
-from games.common import GameState
-from games.common.base_game import BaseGame
-from games.common.input import InputEvent
-from games.common.levels import LevelLoader
+from ams.games import GameState
+from ams.games.base_game import BaseGame
+from ams.games.input import InputEvent
+from ams.games.levels import LevelLoader
 from games.SweetPhysics import config
 from games.SweetPhysics.physics import PhysicsWorld
 from games.SweetPhysics.elements import Candy, Rope, Goal, Star, Platform

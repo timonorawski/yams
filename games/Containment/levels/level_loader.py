@@ -526,7 +526,7 @@ def shape_name_to_sides(shape: str) -> int:
 # Level Loader Class (integrates with BaseGame level system)
 # =============================================================================
 
-from games.common.levels import LevelLoader as BaseLevelLoader
+from ams.games.levels import LevelLoader as BaseLevelLoader
 
 
 class ContainmentLevelLoader(BaseLevelLoader[LevelConfig]):

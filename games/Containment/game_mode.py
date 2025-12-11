@@ -31,10 +31,10 @@ try:
     from models import Vector2D
     _browser_log("[game_mode.py] models.Vector2D import OK")
 
-    from games.common import GameState
+    from ams.games import GameState
     _browser_log("[game_mode.py] GameState import OK")
 
-    from games.common.base_game import BaseGame
+    from ams.games.base_game import BaseGame
     _browser_log("[game_mode.py] BaseGame import OK")
 
     from games.Containment.ball import Ball, create_ball
@@ -58,7 +58,7 @@ try:
     from games.Containment import config
     _browser_log("[game_mode.py] config import OK")
 
-    from games.common.levels import LevelLoader
+    from ams.games.levels import LevelLoader
     _browser_log("[game_mode.py] LevelLoader import OK")
 
     from games.Containment.levels import (

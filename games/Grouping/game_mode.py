@@ -12,8 +12,8 @@ from typing import List, Optional
 import pygame
 
 from models import Vector2D
-from games.common import GameState
-from games.common.base_game import BaseGame
+from ams.games import GameState
+from ams.games.base_game import BaseGame
 from games.Grouping.input.input_event import InputEvent
 from games.Grouping import config
 from games.Grouping.grouping_round import GroupingRound, GroupingMethod

@@ -25,9 +25,12 @@ from typing import Any, Dict, List, Optional, Protocol, Tuple, Type, runtime_che
 import pygame
 import yaml
 
-from games.common import BaseGame, GameState
-from games.common.input import InputEvent
-from ams.behaviors import BehaviorEngine, Entity
+from ams.games.base_game import BaseGame
+from ams.games.game_state import GameState
+from ams.games.input.input_event import InputEvent
+from ams.lua import LuaEngine, Entity
+from ams.games.game_engine.api import GameLuaAPI
+from ams.games.game_engine.entity import GameEntity
 
 if TYPE_CHECKING:
     from ams.content_fs import ContentFS
@@ -970,7 +973,7 @@ class GameEngine(BaseGame):
     """YAML-driven game engine with Lua behaviors.
 
     This extends BaseGame to provide:
-    - Automatic entity management via BehaviorEngine
+    - Automatic entity management via LuaEngine
     - YAML-based game definitions
     - Lua behavior scripting
     - Standard collision detection patterns
@@ -1087,11 +1090,12 @@ class GameEngine(BaseGame):
         self._inline_collision_action_counter = 0
         self._inline_input_action_counter = 0
 
-        # Create behavior engine with ContentFS
-        self._behavior_engine = BehaviorEngine(
+        # Create behavior engine with ContentFS and game-specific API
+        self._behavior_engine = LuaEngine(
             content_fs=self._content_fs,
             screen_width=width,
             screen_height=height,
+            api_class=GameLuaAPI,
         )
 
         # Load core behaviors from ContentFS
@@ -2029,7 +2033,7 @@ class GameEngine(BaseGame):
         vx: float, vy: float, width: float, height: float,
         color: str, sprite: str
     ) -> Optional[Entity]:
-        """Callback for BehaviorEngine.spawn_entity to apply entity type config.
+        """Callback for LuaEngine.spawn_entity to apply entity type config.
 
         Called when Lua code spawns entities (e.g., shoot behavior spawning projectiles).
         Applies entity type config from game.yaml so spawned entities have behaviors.
@@ -2259,7 +2263,7 @@ class GameEngine(BaseGame):
         # Check collisions
         self._check_collisions()
 
-        # Note: destroyed entities are handled via callback from BehaviorEngine
+        # Note: destroyed entities are handled via callback from LuaEngine
         # (see _on_entity_destroyed, registered via set_destroy_callback)
 
         # Update skin

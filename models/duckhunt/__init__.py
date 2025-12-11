@@ -9,7 +9,7 @@ including enums, game-specific data structures, and configuration models.
 from .enums import (
     EventType,
     TargetState,
-    GameState,  # Re-exported from games.common.game_state for backward compatibility
+    GameState,  # Re-exported from ams.games.game_state for backward compatibility
     DuckHuntInternalState,
     EffectType,
 )
@@ -38,7 +38,7 @@ __all__ = [
     # Enums
     "EventType",
     "TargetState",
-    "GameState",  # Common GameState from games.common
+    "GameState",  # Common GameState from ams.games
     "DuckHuntInternalState",  # DuckHunt-specific internal states
     "EffectType",
     # Game models

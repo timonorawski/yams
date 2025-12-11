@@ -11,8 +11,8 @@ from typing import List, Optional, Dict, Any
 
 import pygame
 
-from games.common import BaseGame, GameState
-from games.common.input import InputEvent
+from ams.games import BaseGame, GameState
+from ams.games.input import InputEvent
 
 from .config import (
     SCREEN_WIDTH, SCREEN_HEIGHT, BACKGROUND_COLOR,

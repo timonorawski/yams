@@ -391,7 +391,7 @@ class AMSWebIntegration:
         self.current_game.update(dt)
 
         # Check game over
-        from games.common import GameState as GS
+        from ams.games import GameState as GS
         if self.current_game.state == GS.GAME_OVER:
             print(f"\nGAME OVER! Final Score: {self.current_game.get_score()}")
             self._handle_stop_game({})
@@ -515,7 +515,7 @@ class AMSWebIntegration:
 
         try:
             # Create a temporary loader to enumerate levels
-            from games.common.levels import SimpleLevelLoader
+            from ams.games.levels import SimpleLevelLoader
 
             levels_dir = game_class.LEVELS_DIR
             if not levels_dir or not levels_dir.exists():

@@ -1,7 +1,9 @@
 """
-Input Sources - Various input backends.
+Backward compatibility - re-exports from ams.games.input.sources.
+
+This module provides backward compatibility for code that imports from games.common.input.sources.
+All functionality has been moved to ams.games.input.sources.
 """
-from games.common.input.sources.base import InputSource
-from games.common.input.sources.mouse import MouseInputSource
+from ams.games.input.sources import InputSource, MouseInputSource
 
 __all__ = ['InputSource', 'MouseInputSource']

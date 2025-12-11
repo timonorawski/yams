@@ -14,7 +14,7 @@ _root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 if _root not in sys.path:
     sys.path.insert(0, _root)
 
-from games.common import GameState
+from ams.games import GameState
 from games.Containment.game_mode import ContainmentMode
 from games.Containment.input.input_manager import InputManager
 from games.Containment.input.sources.mouse import MouseInputSource

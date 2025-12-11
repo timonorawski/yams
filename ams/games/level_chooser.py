@@ -5,7 +5,7 @@ with level support. Can be navigated with mouse clicks or projectile
 hits in AMS mode.
 
 Usage:
-    from games.common.level_chooser import LevelChooserUI
+    from ams.games.level_chooser import LevelChooserUI
 
     # In your game's render method, when show_level_chooser is True:
     if self._level_chooser_ui is None:
@@ -26,7 +26,7 @@ from typing import Callable, List, Optional, Tuple, TYPE_CHECKING
 import pygame
 
 if TYPE_CHECKING:
-    from games.common.levels import LevelLoader, LevelInfo
+    from ams.games.levels import LevelLoader, LevelInfo
 
 
 @dataclass

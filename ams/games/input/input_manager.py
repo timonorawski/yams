@@ -5,8 +5,8 @@ This is a shared module used by all games.
 """
 from typing import List, Optional
 
-from games.common.input.input_event import InputEvent
-from games.common.input.sources.base import InputSource
+from ams.games.input.input_event import InputEvent
+from ams.games.input.sources.base import InputSource
 
 
 class InputManager:

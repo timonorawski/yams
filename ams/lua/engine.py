@@ -1,8 +1,8 @@
 """
-Behavior Engine - manages Lua VM and entity behaviors.
+Lua Engine - Core Lua sandbox and runtime for game scripting.
 
 The engine:
-1. Initializes the Lua runtime
+1. Initializes the Lua runtime with sandbox protections
 2. Loads behavior scripts (single-entity) and collision actions (two-entity)
 3. Loads generator scripts for dynamic property values
 4. Attaches behaviors to entities
@@ -11,10 +11,10 @@ The engine:
 7. Manages entity spawning and destruction
 
 Directory structure:
-- ams/behaviors/lua/               - Entity behaviors (single entity)
-- ams/behaviors/collision_actions/ - Collision actions (two entities)
-- ams/behaviors/generators/        - Property generators (return computed values)
-- ams/input_actions/               - Input actions (triggered by user input)
+- ams/games/game_engine/lua/behaviors/         - Entity behaviors (single entity)
+- ams/games/game_engine/lua/collision_actions/ - Collision actions (two entities)
+- ams/games/game_engine/lua/generators/        - Property generators (return computed values)
+- ams/input_actions/                           - Input actions (triggered by user input)
 """
 
 from typing import Any, Callable, Optional, TYPE_CHECKING
@@ -23,7 +23,7 @@ import uuid
 from lupa import LuaRuntime
 
 from .entity import Entity
-from .api import LuaAPI
+from .api import LuaAPIBase
 
 if TYPE_CHECKING:
     from ams.content_fs import ContentFS
@@ -69,16 +69,18 @@ class ScheduledCallback:
         self.entity_id = entity_id
 
 
-class BehaviorEngine:
+class LuaEngine:
     """
-    Manages Lua behaviors and entity lifecycle.
+    Core Lua sandbox engine for game scripting.
+
+    Manages Lua behaviors and entity lifecycle with sandboxed Lua runtime.
 
     Usage:
         from ams.content_fs import ContentFS
 
         content_fs = ContentFS(Path('/path/to/repo'))
-        engine = BehaviorEngine(content_fs, screen_width=800, screen_height=600)
-        engine.load_behaviors_from_dir()  # Loads from ams/behaviors/lua/
+        engine = LuaEngine(content_fs, screen_width=800, screen_height=600)
+        engine.load_behaviors_from_dir()  # Loads from ams/games/game_engine/lua/behaviors/
 
         entity = engine.create_entity('brick', behaviors=['descend'],
                                        behavior_config={'descend': {'speed': 50}})
@@ -94,6 +96,7 @@ class BehaviorEngine:
         content_fs: 'ContentFS',
         screen_width: float = 800,
         screen_height: float = 600,
+        api_class: Optional[type] = None,
     ):
         self._content_fs = content_fs
         self.screen_width = screen_width
@@ -148,7 +151,10 @@ class BehaviorEngine:
             unpack_returned_tuples=True,
             attribute_filter=_lua_attribute_filter
         )
-        self._api = LuaAPI(self)
+
+        # Use provided API class or default to base
+        api_cls = api_class or LuaAPIBase
+        self._api = api_cls(self)
         self._api.set_lua_runtime(self._lua)  # Enable Lua-safe return value conversion
         self._setup_lua_environment()
 
@@ -234,7 +240,7 @@ class BehaviorEngine:
 
         if failures:
             for f in failures:
-                print(f'[BehaviorEngine] SANDBOX FAILURE: {f}')
+                print(f'[LuaEngine] SANDBOX FAILURE: {f}')
             raise RuntimeError(
                 f'Lua sandbox validation failed with {len(failures)} issue(s). '
                 'This is a security risk - refusing to continue.'
@@ -290,62 +296,8 @@ class BehaviorEngine:
         self._lua.execute("ams = {}")
         ams = g.ams
 
-        # Expose all API methods
-        api = self._api
-        ams.get_x = api.get_x
-        ams.get_y = api.get_y
-        ams.set_x = api.set_x
-        ams.set_y = api.set_y
-        ams.get_vx = api.get_vx
-        ams.get_vy = api.get_vy
-        ams.set_vx = api.set_vx
-        ams.set_vy = api.set_vy
-        ams.get_width = api.get_width
-        ams.get_height = api.get_height
-        ams.get_health = api.get_health
-        ams.set_health = api.set_health
-        ams.get_sprite = api.get_sprite
-        ams.set_sprite = api.set_sprite
-        ams.get_color = api.get_color
-        ams.set_color = api.set_color
-        ams.is_alive = api.is_alive
-        ams.destroy = api.destroy
-
-        ams.get_prop = api.get_prop
-        ams.set_prop = api.set_prop
-        ams.get_config = api.get_config
-
-        ams.spawn = api.spawn
-        ams.get_entities_of_type = api.get_entities_of_type
-        ams.get_entities_by_tag = api.get_entities_by_tag
-        ams.count_entities_by_tag = api.count_entities_by_tag
-        ams.get_all_entity_ids = api.get_all_entity_ids
-
-        ams.get_screen_width = api.get_screen_width
-        ams.get_screen_height = api.get_screen_height
-        ams.get_score = api.get_score
-        ams.add_score = api.add_score
-        ams.get_time = api.get_time
-
-        ams.play_sound = api.play_sound
-        ams.schedule = api.schedule
-
-        ams.sin = api.math_sin
-        ams.cos = api.math_cos
-        ams.sqrt = api.math_sqrt
-        ams.atan2 = api.math_atan2
-        ams.random = api.math_random
-        ams.random_range = api.math_random_range
-        ams.clamp = api.math_clamp
-
-        # Parent-child relationships
-        ams.get_parent_id = api.get_parent_id
-        ams.set_parent = api.set_parent
-        ams.detach_from_parent = api.detach_from_parent
-        ams.get_children = api.get_children
-        ams.has_parent = api.has_parent
-
-        ams.log = api.log
+        # Let the API register its methods
+        self._api.register_api(ams)
 
         # Validate sandbox is properly locked down
         self._validate_sandbox()
@@ -357,7 +309,7 @@ class BehaviorEngine:
         Args:
             name: Behavior name (used as key and for default path lookup)
             content_path: ContentFS path to .lua file. If None, looks in
-                         'ams/behaviors/lua/{name}.lua'
+                         'ams/games/game_engine/lua/behaviors/{name}.lua'
 
         Returns True if loaded successfully.
         """
@@ -365,10 +317,10 @@ class BehaviorEngine:
             return True  # Already loaded
 
         if content_path is None:
-            content_path = f'ams/behaviors/lua/{name}.lua'
+            content_path = f'ams/games/game_engine/lua/behaviors/{name}.lua'
 
         if not self._content_fs.exists(content_path):
-            print(f"[BehaviorEngine] Behavior not found: {content_path}")
+            print(f"[LuaEngine] Behavior not found: {content_path}")
             return False
 
         try:
@@ -384,14 +336,14 @@ class BehaviorEngine:
                 result = getattr(g, name, None)
 
             if result is None:
-                print(f"[BehaviorEngine] Behavior {name} did not return a table")
+                print(f"[LuaEngine] Behavior {name} did not return a table")
                 return False
 
             self._behaviors[name] = result
             return True
 
         except Exception as e:
-            print(f"[BehaviorEngine] Error loading {name}: {e}")
+            print(f"[LuaEngine] Error loading {name}: {e}")
             return False
 
     def load_inline_behavior(self, name: str, lua_code: str) -> bool:
@@ -426,27 +378,27 @@ class BehaviorEngine:
             result = self._lua.execute(lua_code)
 
             if result is None:
-                print(f"[BehaviorEngine] Inline behavior {name} did not return a table")
+                print(f"[LuaEngine] Inline behavior {name} did not return a table")
                 return False
 
             self._behaviors[name] = result
             return True
 
         except Exception as e:
-            print(f"[BehaviorEngine] Error loading inline behavior {name}: {e}")
+            print(f"[LuaEngine] Error loading inline behavior {name}: {e}")
             return False
 
     def load_behaviors_from_dir(self, content_dir: Optional[str] = None) -> int:
         """Load all .lua files from ContentFS directory.
 
         Args:
-            content_dir: ContentFS path to directory (e.g., 'ams/behaviors/lua').
-                        If None, uses default 'ams/behaviors/lua'.
+            content_dir: ContentFS path to directory (e.g., 'ams/games/game_engine/lua/behaviors').
+                        If None, uses default 'ams/games/game_engine/lua/behaviors'.
 
         Returns count loaded.
         """
         if content_dir is None:
-            content_dir = 'ams/behaviors/lua'
+            content_dir = 'ams/games/game_engine/lua/behaviors'
 
         count = 0
         if self._content_fs.exists(content_dir):
@@ -468,7 +420,7 @@ class BehaviorEngine:
         Args:
             name: Action name
             content_path: ContentFS path. If None, looks in
-                         'ams/behaviors/collision_actions/{name}.lua'
+                         'ams/games/game_engine/lua/collision_actions/{name}.lua'
 
         Returns True if loaded successfully.
         """
@@ -476,10 +428,10 @@ class BehaviorEngine:
             return True  # Already loaded
 
         if content_path is None:
-            content_path = f'ams/behaviors/collision_actions/{name}.lua'
+            content_path = f'ams/games/game_engine/lua/collision_actions/{name}.lua'
 
         if not self._content_fs.exists(content_path):
-            print(f"[BehaviorEngine] Collision action not found: {content_path}")
+            print(f"[LuaEngine] Collision action not found: {content_path}")
             return False
 
         try:
@@ -491,20 +443,20 @@ class BehaviorEngine:
                 result = getattr(g, name, None)
 
             if result is None:
-                print(f"[BehaviorEngine] Collision action {name} did not return a table")
+                print(f"[LuaEngine] Collision action {name} did not return a table")
                 return False
 
             self._collision_actions[name] = result
             return True
 
         except Exception as e:
-            print(f"[BehaviorEngine] Error loading collision action {name}: {e}")
+            print(f"[LuaEngine] Error loading collision action {name}: {e}")
             return False
 
     def load_collision_actions_from_dir(self, content_dir: Optional[str] = None) -> int:
         """Load all collision action .lua files from ContentFS directory."""
         if content_dir is None:
-            content_dir = 'ams/behaviors/collision_actions'
+            content_dir = 'ams/games/game_engine/lua/collision_actions'
 
         count = 0
         if self._content_fs.exists(content_dir):
@@ -550,14 +502,14 @@ class BehaviorEngine:
             result = self._lua.execute(lua_code)
 
             if result is None:
-                print(f"[BehaviorEngine] Inline collision action {name} did not return a table")
+                print(f"[LuaEngine] Inline collision action {name} did not return a table")
                 return False
 
             self._collision_actions[name] = result
             return True
 
         except Exception as e:
-            print(f"[BehaviorEngine] Error loading inline collision action {name}: {e}")
+            print(f"[LuaEngine] Error loading inline collision action {name}: {e}")
             return False
 
     def execute_collision_action(
@@ -590,7 +542,7 @@ class BehaviorEngine:
 
         execute_fn = getattr(action, 'execute', None)
         if not execute_fn:
-            print(f"[BehaviorEngine] Collision action {action_name} has no execute function")
+            print(f"[LuaEngine] Collision action {action_name} has no execute function")
             return False
 
         try:
@@ -603,7 +555,7 @@ class BehaviorEngine:
             return True
 
         except Exception as e:
-            print(f"[BehaviorEngine] Error executing collision action {action_name}: {e}")
+            print(f"[LuaEngine] Error executing collision action {action_name}: {e}")
             return False
 
     # =========================================================================
@@ -633,7 +585,7 @@ class BehaviorEngine:
             content_path = f'ams/input_actions/{name}.lua'
 
         if not self._content_fs.exists(content_path):
-            print(f"[BehaviorEngine] Input action file not found: {content_path}")
+            print(f"[LuaEngine] Input action file not found: {content_path}")
             return False
 
         try:
@@ -641,14 +593,14 @@ class BehaviorEngine:
             result = self._lua.execute(lua_code)
 
             if result is None or not hasattr(result, 'execute'):
-                print(f"[BehaviorEngine] Input action {name} did not return a table with execute function")
+                print(f"[LuaEngine] Input action {name} did not return a table with execute function")
                 return False
 
             self._input_actions[name] = result
             return True
 
         except Exception as e:
-            print(f"[BehaviorEngine] Error loading input action {name}: {e}")
+            print(f"[LuaEngine] Error loading input action {name}: {e}")
             return False
 
     def load_inline_input_action(self, name: str, lua_code: str) -> bool:
@@ -683,14 +635,14 @@ class BehaviorEngine:
             result = self._lua.execute(lua_code)
 
             if result is None or not hasattr(result, 'execute'):
-                print(f"[BehaviorEngine] Inline input action {name} did not return a table with execute function")
+                print(f"[LuaEngine] Inline input action {name} did not return a table with execute function")
                 return False
 
             self._input_actions[name] = result
             return True
 
         except Exception as e:
-            print(f"[BehaviorEngine] Error loading inline input action {name}: {e}")
+            print(f"[LuaEngine] Error loading inline input action {name}: {e}")
             return False
 
     def execute_input_action(
@@ -723,7 +675,7 @@ class BehaviorEngine:
 
         execute_fn = getattr(action, 'execute', None)
         if not execute_fn:
-            print(f"[BehaviorEngine] Input action {action_name} has no execute function")
+            print(f"[LuaEngine] Input action {action_name} has no execute function")
             return False
 
         try:
@@ -736,7 +688,7 @@ class BehaviorEngine:
             return True
 
         except Exception as e:
-            print(f"[BehaviorEngine] Error executing input action {action_name}: {e}")
+            print(f"[LuaEngine] Error executing input action {action_name}: {e}")
             return False
 
     def load_generator(self, name: str, content_path: Optional[str] = None) -> bool:
@@ -753,7 +705,7 @@ class BehaviorEngine:
         Args:
             name: Generator name
             content_path: ContentFS path. If None, looks in
-                         'ams/behaviors/generators/{name}.lua'
+                         'ams/games/game_engine/lua/generators/{name}.lua'
 
         Returns True if loaded successfully.
         """
@@ -761,10 +713,10 @@ class BehaviorEngine:
             return True  # Already loaded
 
         if content_path is None:
-            content_path = f'ams/behaviors/generators/{name}.lua'
+            content_path = f'ams/games/game_engine/lua/generators/{name}.lua'
 
         if not self._content_fs.exists(content_path):
-            print(f"[BehaviorEngine] Generator not found: {content_path}")
+            print(f"[LuaEngine] Generator not found: {content_path}")
             return False
 
         try:
@@ -776,27 +728,27 @@ class BehaviorEngine:
                 result = getattr(g, name, None)
 
             if result is None:
-                print(f"[BehaviorEngine] Generator {name} did not return a table")
+                print(f"[LuaEngine] Generator {name} did not return a table")
                 return False
 
             self._generators[name] = result
             return True
 
         except Exception as e:
-            print(f"[BehaviorEngine] Error loading generator {name}: {e}")
+            print(f"[LuaEngine] Error loading generator {name}: {e}")
             return False
 
     def load_generators_from_dir(self, content_dir: Optional[str] = None) -> int:
         """Load all generator .lua files from ContentFS directory.
 
         Args:
-            content_dir: ContentFS path to directory (e.g., 'ams/behaviors/generators').
-                        If None, uses default 'ams/behaviors/generators'.
+            content_dir: ContentFS path to directory (e.g., 'ams/games/game_engine/lua/generators').
+                        If None, uses default 'ams/games/game_engine/lua/generators'.
 
         Returns count loaded.
         """
         if content_dir is None:
-            content_dir = 'ams/behaviors/generators'
+            content_dir = 'ams/games/game_engine/lua/generators'
 
         count = 0
         if self._content_fs.exists(content_dir):
@@ -833,7 +785,7 @@ class BehaviorEngine:
 
         generate_fn = getattr(generator, 'generate', None)
         if not generate_fn:
-            print(f"[BehaviorEngine] Generator {name} has no generate function")
+            print(f"[LuaEngine] Generator {name} has no generate function")
             return None
 
         try:
@@ -846,7 +798,7 @@ class BehaviorEngine:
             return result
 
         except Exception as e:
-            print(f"[BehaviorEngine] Error calling generator {name}: {e}")
+            print(f"[LuaEngine] Error calling generator {name}: {e}")
             return None
 
     def create_entity(
@@ -874,9 +826,12 @@ class BehaviorEngine:
         Returns:
             The created Entity (already registered)
         """
+        # Lazy import to avoid circular dependency
+        from ams.games.game_engine.entity import GameEntity
+
         entity_id = f"{entity_type}_{uuid.uuid4().hex[:8]}"
 
-        entity = Entity(
+        entity = GameEntity(
             id=entity_id,
             entity_type=entity_type,
             x=x,
@@ -1005,7 +960,7 @@ class BehaviorEngine:
                 return result
 
         except Exception as e:
-            print(f"[BehaviorEngine] Lua error in expression: {e}")
+            print(f"[LuaEngine] Lua error in expression: {e}")
             print(f"  Expression: {expression[:100]}...")
             return None
 
@@ -1094,7 +1049,7 @@ class BehaviorEngine:
             try:
                 method(entity.id, *args)
             except Exception as e:
-                print(f"[BehaviorEngine] Error in {behavior_name}.{method_name}: {e}")
+                print(f"[LuaEngine] Error in {behavior_name}.{method_name}: {e}")
 
     def _call_scheduled_callback(self, scheduled: ScheduledCallback) -> None:
         """Execute a scheduled callback."""
@@ -1112,7 +1067,7 @@ class BehaviorEngine:
                 try:
                     callback(entity.id)
                 except Exception as e:
-                    print(f"[BehaviorEngine] Error in scheduled {scheduled.callback_name}: {e}")
+                    print(f"[LuaEngine] Error in scheduled {scheduled.callback_name}: {e}")
 
     def schedule_callback(self, delay: float, callback_name: str, entity_id: str) -> None:
         """Schedule a callback to run after delay seconds."""

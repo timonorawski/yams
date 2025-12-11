@@ -9,9 +9,9 @@ from typing import List, Optional
 
 import pygame
 
-from games.common import GameState
-from games.common.base_game import BaseGame
-from games.common.input import InputEvent
+from ams.games import GameState
+from ams.games.base_game import BaseGame
+from ams.games.input import InputEvent
 from games.LoveOMeter import config
 from games.LoveOMeter.target import Target
 from games.LoveOMeter.meter import Meter

@@ -1,6 +1,6 @@
 """
 ManyTargets Input Event - Re-export from common module.
 """
-from games.common.input.input_event import InputEvent
+from ams.games.input.input_event import InputEvent
 
 __all__ = ['InputEvent']

@@ -64,7 +64,7 @@ class BrowserInputAdapter:
         """Lazily import Pydantic-based classes when first needed."""
         if self._InputEvent is None:
             from models import Vector2D, EventType
-            from games.common.input import InputEvent
+            from ams.games.input import InputEvent
             self._InputEvent = InputEvent
             self._Vector2D = Vector2D
             self._EventType = EventType

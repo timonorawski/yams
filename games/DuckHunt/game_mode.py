@@ -10,8 +10,8 @@ from pathlib import Path
 from typing import List, Optional
 import pygame
 
-from games.common import BaseGame, GameState
-from games.common.palette import GamePalette
+from ams.games import BaseGame, GameState
+from ams.games.palette import GamePalette
 
 
 class DuckHuntMode(BaseGame):
@@ -272,7 +272,7 @@ class DuckHuntMode(BaseGame):
         Args:
             pacing: Pacing preset name
         """
-        from games.common.pacing import scale_for_pacing
+        from ams.games.pacing import scale_for_pacing
         from games.DuckHunt.config import TARGET_SPAWN_RATE
 
         # Scale spawn rate based on pacing

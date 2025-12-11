@@ -21,8 +21,8 @@ if _project_root not in sys.path:
 
 import pygame
 
-from games.common import GameState
-from games.common.input import InputEvent
+from ams.games import GameState
+from ams.games.input import InputEvent
 from games.BrickBreaker.game_mode import BrickBreakerMode
 from games.BrickBreaker.config import SCREEN_WIDTH, SCREEN_HEIGHT
 from models import Vector2D

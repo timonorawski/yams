@@ -1,26 +1,23 @@
 """
-Entity - the core object that behaviors operate on.
+GameEntity - concrete entity for the YAML-driven game engine.
 
-An Entity is a game object with:
-- Position and velocity
-- Visual representation (sprite name, color, size)
-- Attached behaviors
-- Custom properties
-
-Entities are mutable - behaviors modify them via the Lua API.
+Extends the Entity ABC with game-specific attributes:
+- Transform (position, velocity, size)
+- Lifecycle (alive, destroy)
+- Visuals (sprite, color, visibility)
+- Game state (health, spawn time, tags)
+- Hierarchy (parent-child relationships)
 """
 
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
+from ams.lua.entity import Entity
+
 
 @dataclass
-class Entity:
-    """A game entity that behaviors can manipulate."""
-
-    # Identity
-    id: str
-    entity_type: str
+class GameEntity(Entity):
+    """A game entity with physics, visuals, and lifecycle."""
 
     # Transform
     x: float = 0.0
@@ -41,15 +38,6 @@ class Entity:
     health: int = 1
     alive: bool = True
     spawn_time: float = 0.0  # Game time when entity was spawned
-
-    # Custom properties (behaviors can read/write)
-    properties: dict[str, Any] = field(default_factory=dict)
-
-    # Attached behavior names
-    behaviors: list[str] = field(default_factory=list)
-
-    # Behavior-specific config (from YAML)
-    behavior_config: dict[str, dict[str, Any]] = field(default_factory=dict)
 
     # Tags for categorization (e.g., ["enemy", "brick"])
     tags: list[str] = field(default_factory=list)

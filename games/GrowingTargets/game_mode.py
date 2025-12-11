@@ -10,9 +10,9 @@ from typing import List, Optional
 import pygame
 
 from models import Vector2D
-from games.common import GameState
-from games.common.base_game import BaseGame
-from games.common.input import InputEvent
+from ams.games import GameState
+from ams.games.base_game import BaseGame
+from ams.games.input import InputEvent
 from games.GrowingTargets import config
 from games.GrowingTargets.target import GrowingTarget, TargetSpawner
 
@@ -117,7 +117,7 @@ class GrowingTargetsMode(BaseGame):
         super().__init__(**kwargs)
 
         # Import shared infrastructure
-        from games.common import get_pacing_preset
+        from ams.games import get_pacing_preset
         from games.GrowingTargets.config import PACING_PRESETS
 
         # Apply pacing preset with overrides

@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Tuple
 
-from games.common.levels import LevelLoader as BaseLevelLoader
+from ams.games.levels import LevelLoader as BaseLevelLoader
 
 from .entities.brick import BrickBehaviors
 

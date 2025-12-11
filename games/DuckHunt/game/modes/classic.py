@@ -104,9 +104,9 @@ class ClassicMode(GameMode):
         if parent_dir not in sys.path:
             sys.path.insert(0, parent_dir)
 
-        from games.common.palette import GamePalette
-        from games.common.quiver import create_quiver
-        from games.common.pacing import scale_for_pacing
+        from ams.games.palette import GamePalette
+        from ams.games.quiver import create_quiver
+        from ams.games.pacing import scale_for_pacing
 
         # Initialize palette
         if color_palette:

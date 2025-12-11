@@ -1,7 +1,7 @@
 """
 BalloonPop Input Sources - Re-export from common module.
 """
-from games.common.input.sources import InputSource, MouseInputSource
+from ams.games.input.sources import InputSource, MouseInputSource
 
 __all__ = [
     'InputSource',

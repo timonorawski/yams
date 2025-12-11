@@ -7,7 +7,7 @@ These enums define the various states and types specific to Duck Hunt gameplay.
 from enum import Enum
 
 # Import common GameState for backward compatibility
-from games.common.game_state import GameState
+from ams.games.game_state import GameState
 
 
 class EventType(str, Enum):

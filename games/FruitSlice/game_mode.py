@@ -10,9 +10,9 @@ from typing import List, Optional
 import pygame
 
 from models import Vector2D
-from games.common import GameState
-from games.common.base_game import BaseGame
-from games.common.input import InputEvent
+from ams.games import GameState
+from ams.games.base_game import BaseGame
+from ams.games.input import InputEvent
 from games.FruitSlice import config
 from games.FruitSlice.target import ArcingTarget, TargetType
 from games.FruitSlice.spawner import TargetSpawner

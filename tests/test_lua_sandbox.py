@@ -12,7 +12,8 @@ import pytest
 from pathlib import Path
 from lupa import LuaError
 
-from ams.behaviors.engine import BehaviorEngine
+from ams.lua.engine import LuaEngine
+from ams.games.game_engine.api import GameLuaAPI
 from ams.content_fs import ContentFS
 
 
@@ -28,8 +29,8 @@ def content_fs():
 
 @pytest.fixture
 def engine(content_fs):
-    """Create a fresh BehaviorEngine for each test."""
-    return BehaviorEngine(content_fs, 800, 600)
+    """Create a fresh LuaEngine with GameLuaAPI for each test."""
+    return LuaEngine(content_fs, 800, 600, api_class=GameLuaAPI)
 
 
 @pytest.fixture
@@ -621,16 +622,16 @@ class TestRuntimeValidation:
     """Test that sandbox validation runs and catches issues."""
 
     def test_engine_validates_on_init(self, content_fs):
-        """BehaviorEngine should validate sandbox on initialization."""
+        """LuaEngine should validate sandbox on initialization."""
         # If validation fails, this would raise RuntimeError
-        engine = BehaviorEngine(content_fs, 800, 600)
+        engine = LuaEngine(content_fs, 800, 600, api_class=GameLuaAPI)
         # If we get here, validation passed
         assert engine is not None
 
     def test_validation_catches_exposed_globals(self, content_fs):
         """Validation should catch if dangerous globals are exposed."""
         # Create engine normally (should pass)
-        engine = BehaviorEngine(content_fs, 800, 600)
+        engine = LuaEngine(content_fs, 800, 600, api_class=GameLuaAPI)
 
         # Manually expose a dangerous global and re-validate
         # This simulates what would happen if sandbox setup was broken
@@ -649,7 +650,7 @@ class TestLuaSafeReturns:
 
     def test_get_entities_of_type_returns_lua_table(self, content_fs):
         """get_entities_of_type returns a 1-indexed Lua table."""
-        engine = BehaviorEngine(content_fs, 800, 600)
+        engine = LuaEngine(content_fs, 800, 600, api_class=GameLuaAPI)
 
         # Create some entities
         engine.create_entity('brick', x=100, y=100, width=50, height=20)
@@ -674,7 +675,7 @@ class TestLuaSafeReturns:
 
     def test_get_entities_by_tag_returns_lua_table(self, content_fs):
         """get_entities_by_tag returns a 1-indexed Lua table."""
-        engine = BehaviorEngine(content_fs, 800, 600)
+        engine = LuaEngine(content_fs, 800, 600, api_class=GameLuaAPI)
 
         # Create entities with tags
         engine.create_entity('enemy', x=100, y=100, tags=['hostile', 'flying'])
@@ -691,7 +692,7 @@ class TestLuaSafeReturns:
 
     def test_get_all_entity_ids_returns_lua_table(self, content_fs):
         """get_all_entity_ids returns a 1-indexed Lua table."""
-        engine = BehaviorEngine(content_fs, 800, 600)
+        engine = LuaEngine(content_fs, 800, 600, api_class=GameLuaAPI)
 
         engine.create_entity('a', x=0, y=0)
         engine.create_entity('b', x=0, y=0)
@@ -707,7 +708,7 @@ class TestLuaSafeReturns:
 
     def test_get_config_returns_lua_table_for_nested_data(self, content_fs):
         """get_config converts nested dicts/lists to Lua tables."""
-        engine = BehaviorEngine(content_fs, 800, 600)
+        engine = LuaEngine(content_fs, 800, 600, api_class=GameLuaAPI)
 
         entity = engine.create_entity(
             'test',
@@ -738,7 +739,7 @@ class TestLuaSafeReturns:
 
     def test_get_prop_returns_lua_table_for_list(self, content_fs):
         """get_prop converts list properties to Lua tables."""
-        engine = BehaviorEngine(content_fs, 800, 600)
+        engine = LuaEngine(content_fs, 800, 600, api_class=GameLuaAPI)
 
         entity = engine.create_entity('test', x=0, y=0)
         entity.properties['items'] = ['sword', 'shield', 'potion']
@@ -757,7 +758,7 @@ class TestLuaSafeReturns:
 
     def test_lua_table_iteration_with_pairs(self, content_fs):
         """Can iterate returned tables with pairs()."""
-        engine = BehaviorEngine(content_fs, 800, 600)
+        engine = LuaEngine(content_fs, 800, 600, api_class=GameLuaAPI)
 
         entity = engine.create_entity('test', x=0, y=0)
         entity.properties['stats'] = {'hp': 100, 'mp': 50, 'str': 10}
@@ -779,7 +780,7 @@ class TestLuaSafeReturnBoundary:
 
     def test_rejects_bytes(self):
         """Cannot return bytes to Lua."""
-        from ams.behaviors.api import _to_lua_value
+        from ams.lua.api import _to_lua_value
         from lupa import LuaRuntime
         lua = LuaRuntime()
 
@@ -788,7 +789,7 @@ class TestLuaSafeReturnBoundary:
 
     def test_rejects_sets(self):
         """Cannot return sets to Lua."""
-        from ams.behaviors.api import _to_lua_value
+        from ams.lua.api import _to_lua_value
         from lupa import LuaRuntime
         lua = LuaRuntime()
 
@@ -797,7 +798,7 @@ class TestLuaSafeReturnBoundary:
 
     def test_rejects_arbitrary_objects(self):
         """Cannot return arbitrary Python objects."""
-        from ams.behaviors.api import _to_lua_value
+        from ams.lua.api import _to_lua_value
         from lupa import LuaRuntime
         lua = LuaRuntime()
 
@@ -809,7 +810,7 @@ class TestLuaSafeReturnBoundary:
 
     def test_rejects_invalid_dict_keys(self):
         """Cannot return dicts with non-primitive keys."""
-        from ams.behaviors.api import _to_lua_value
+        from ams.lua.api import _to_lua_value
         from lupa import LuaRuntime
         lua = LuaRuntime()
 
@@ -818,7 +819,7 @@ class TestLuaSafeReturnBoundary:
 
     def test_handles_deeply_nested_structures(self):
         """Properly converts deeply nested structures."""
-        from ams.behaviors.api import _to_lua_value
+        from ams.lua.api import _to_lua_value
         from lupa import LuaRuntime
         lua = LuaRuntime()
 

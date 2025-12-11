@@ -20,12 +20,12 @@ from typing import Any, Dict, List, Optional, Tuple, TYPE_CHECKING
 
 import pygame
 
-from games.common.game_state import GameState
-from games.common.palette import GamePalette
-from games.common.quiver import QuiverState, create_quiver
+from ams.games.game_state import GameState
+from ams.games.palette import GamePalette
+from ams.games.quiver import QuiverState, create_quiver
 
 if TYPE_CHECKING:
-    from games.common.levels import LevelLoader, LevelGroup
+    from ams.games.levels import LevelLoader, LevelGroup
 
 
 class BaseGame(ABC):
@@ -511,7 +511,7 @@ class BaseGame(ABC):
         if self.LEVELS_DIR is None or not self.LEVELS_DIR.exists():
             return None
 
-        from games.common.levels import SimpleLevelLoader
+        from ams.games.levels import SimpleLevelLoader
         return SimpleLevelLoader(self.LEVELS_DIR)
 
     def _load_level(self, slug: str) -> bool:

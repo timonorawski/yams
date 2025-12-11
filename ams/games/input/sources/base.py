@@ -6,7 +6,7 @@ This is a shared module used by all games.
 from abc import ABC, abstractmethod
 from typing import List
 
-from games.common.input.input_event import InputEvent
+from ams.games.input.input_event import InputEvent
 
 
 class InputSource(ABC):

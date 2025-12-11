@@ -9,8 +9,8 @@ from typing import List
 import pygame
 
 from models import Vector2D, EventType
-from games.common.input.input_event import InputEvent
-from games.common.input.sources.base import InputSource
+from ams.games.input.input_event import InputEvent
+from ams.games.input.sources.base import InputSource
 
 
 class MouseInputSource(InputSource):

@@ -1,9 +1,9 @@
 """
-Common Input Module
+Backward compatibility - re-exports from ams.games.input.
 
-Provides input abstraction shared by all games.
+This module provides backward compatibility for code that imports from games.common.input.
+All functionality has been moved to ams.games.input.
 """
-from games.common.input.input_event import InputEvent
-from games.common.input.input_manager import InputManager
+from ams.games.input import InputEvent, InputManager
 
 __all__ = ['InputEvent', 'InputManager']

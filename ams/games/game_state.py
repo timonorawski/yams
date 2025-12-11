@@ -24,7 +24,7 @@ class GameState(Enum):
         WON: Game ended in success/victory
 
     Usage in game_mode.py:
-        from games.common.game_state import GameState
+        from ams.games.game_state import GameState
 
         class MyGameMode:
             def __init__(self):

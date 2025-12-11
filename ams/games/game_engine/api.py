@@ -1,115 +1,88 @@
 """
-Lua API - the bridge between Lua behaviors and Python engine.
+Game Lua API - game-specific bridge between Lua behaviors and game engine.
 
-This module exposes safe functions to Lua that behaviors can call.
-All game mutations go through this API - behaviors cannot directly
-access Python objects.
-
-The API is designed to be:
-- Sufficient: Core behaviors can be fully implemented
-- Safe: No filesystem, network, or OS access
-- Symmetric: Same API on native and WASM (future)
-- Lua-native returns: All return values are primitives or Lua tables (not Python objects)
+Extends LuaAPIBase with game entity operations:
+- Position, velocity, size access
+- Visual properties (sprite, color)
+- Health and lifecycle
+- Entity spawning and queries
+- Game state (score, time, screen)
+- Parent-child relationships
+- Events (sounds, scheduling)
 """
 
-from functools import wraps
-from typing import Callable, Any, TYPE_CHECKING
-import math
-import random
+from typing import Any, TYPE_CHECKING
+
+from ams.lua.api import LuaAPIBase, lua_safe_return
 
 if TYPE_CHECKING:
-    from .engine import BehaviorEngine
+    from ams.lua.engine import LuaEngine
 
 
-def _to_lua_value(value: Any, lua_runtime) -> Any:
-    """Convert a Python value to a Lua-safe value.
-
-    Safe values:
-    - Primitives: None, bool, int, float, str
-    - Lua tables: Created via lua.table() for lists/dicts
-
-    This ensures Lua code never receives raw Python objects (lists, dicts, etc.)
-    which have different semantics (0-indexed, no ipairs/pairs support, no # operator).
+class GameLuaAPI(LuaAPIBase):
     """
-    if value is None:
-        return None
-    if isinstance(value, (bool, int, float, str)):
-        return value
+    Game-specific API exposed to Lua behaviors.
 
-    if isinstance(value, (list, tuple)):
-        # Convert to 1-indexed Lua table
-        lua_table = lua_runtime.table()
-        for i, item in enumerate(value, start=1):
-            lua_table[i] = _to_lua_value(item, lua_runtime)
-        return lua_table
-
-    if isinstance(value, dict):
-        # Convert to Lua table with string keys
-        lua_table = lua_runtime.table()
-        for k, v in value.items():
-            if not isinstance(k, (str, int, float, bool)):
-                raise TypeError(
-                    f"Dict key must be str/int/float, got {type(k).__name__}"
-                )
-            lua_table[k] = _to_lua_value(v, lua_runtime)
-        return lua_table
-    
-    # bytes - reject, we don't want "b'...'" strings to sneak through
-    if isinstance(value, bytes):
-        raise TypeError("Cannot pass bytes to Lua - decode to str first")
-
-    # sets - reject, not predictable order
-    if isinstance(value, set):
-        # Reject (sets are unordered, might surprise Lua authors)
-        raise TypeError("Cannot convert set to Lua - convert to list first")
-
-    # For other objects, fail loudly - this is a bug in the API implementation
-    # This prevents leaking arbitrary Python objects
-    raise TypeError(
-        f"Cannot convert {type(value).__name__} to Lua-safe value. "
-        f"API methods must return only primitives, lists, or dicts."
-    )
-
-
-def lua_safe_return(method: Callable) -> Callable:
-    """Decorator that converts return values to Lua-safe types.
-
-    Wraps methods on LuaAPI to ensure they only return:
-    - Primitives (None, bool, int, float, str)
-    - Lua-native tables (for lists/dicts)
-
-    This prevents Lua from receiving raw Python objects which have
-    different semantics (0-indexed lists, no ipairs support, etc.).
-    """
-    @wraps(method)
-    def wrapper(self, *args, **kwargs):
-        result = method(self, *args, **kwargs)
-        return _to_lua_value(result, self._lua)
-    return wrapper
-
-
-class LuaAPI:
-    """
-    API exposed to Lua behaviors.
-
-    All methods here are callable from Lua. They operate on entities
-    by ID, not direct reference, to maintain the sandbox boundary.
-
-    Methods that return collections use @lua_safe_return to convert
-    Python lists/dicts to Lua-native tables, ensuring proper 1-indexed
-    iteration with ipairs/pairs and # operator support.
+    Extends LuaAPIBase with GameEntity operations. All methods operate
+    on entities by ID to maintain the sandbox boundary.
     """
 
-    def __init__(self, engine: 'BehaviorEngine'):
-        self._engine = engine
-        self._lua = None  # Set by BehaviorEngine after init
+    def register_api(self, ams_namespace) -> None:
+        """Register game API methods on the ams.* namespace."""
+        # Register base methods first
+        super().register_api(ams_namespace)
 
-    def set_lua_runtime(self, lua) -> None:
-        """Set the Lua runtime reference for converting return values."""
-        self._lua = lua
+        # Entity access - transform
+        ams_namespace.get_x = self.get_x
+        ams_namespace.get_y = self.get_y
+        ams_namespace.set_x = self.set_x
+        ams_namespace.set_y = self.set_y
+        ams_namespace.get_vx = self.get_vx
+        ams_namespace.get_vy = self.get_vy
+        ams_namespace.set_vx = self.set_vx
+        ams_namespace.set_vy = self.set_vy
+        ams_namespace.get_width = self.get_width
+        ams_namespace.get_height = self.get_height
+
+        # Entity access - visual
+        ams_namespace.get_sprite = self.get_sprite
+        ams_namespace.set_sprite = self.set_sprite
+        ams_namespace.get_color = self.get_color
+        ams_namespace.set_color = self.set_color
+
+        # Entity access - state
+        ams_namespace.get_health = self.get_health
+        ams_namespace.set_health = self.set_health
+        ams_namespace.is_alive = self.is_alive
+        ams_namespace.destroy = self.destroy
+
+        # Spawning and queries
+        ams_namespace.spawn = self.spawn
+        ams_namespace.get_entities_of_type = self.get_entities_of_type
+        ams_namespace.get_entities_by_tag = self.get_entities_by_tag
+        ams_namespace.count_entities_by_tag = self.count_entities_by_tag
+        ams_namespace.get_all_entity_ids = self.get_all_entity_ids
+
+        # Game state
+        ams_namespace.get_screen_width = self.get_screen_width
+        ams_namespace.get_screen_height = self.get_screen_height
+        ams_namespace.get_score = self.get_score
+        ams_namespace.add_score = self.add_score
+        ams_namespace.get_time = self.get_time
+
+        # Events
+        ams_namespace.play_sound = self.play_sound
+        ams_namespace.schedule = self.schedule
+
+        # Parent-child relationships
+        ams_namespace.get_parent_id = self.get_parent_id
+        ams_namespace.set_parent = self.set_parent
+        ams_namespace.detach_from_parent = self.detach_from_parent
+        ams_namespace.get_children = self.get_children
+        ams_namespace.has_parent = self.has_parent
 
     # =========================================================================
-    # Entity Access
+    # Entity Access - Transform
     # =========================================================================
 
     def get_x(self, entity_id: str) -> float:
@@ -166,16 +139,9 @@ class LuaAPI:
         entity = self._engine.get_entity(entity_id)
         return entity.height if entity else 0.0
 
-    def get_health(self, entity_id: str) -> int:
-        """Get entity health."""
-        entity = self._engine.get_entity(entity_id)
-        return entity.health if entity else 0
-
-    def set_health(self, entity_id: str, health: int) -> None:
-        """Set entity health."""
-        entity = self._engine.get_entity(entity_id)
-        if entity:
-            entity.health = health
+    # =========================================================================
+    # Entity Access - Visual
+    # =========================================================================
 
     def get_sprite(self, entity_id: str) -> str:
         """Get entity sprite name."""
@@ -199,6 +165,21 @@ class LuaAPI:
         if entity:
             entity.color = color
 
+    # =========================================================================
+    # Entity Access - State
+    # =========================================================================
+
+    def get_health(self, entity_id: str) -> int:
+        """Get entity health."""
+        entity = self._engine.get_entity(entity_id)
+        return entity.health if entity else 0
+
+    def set_health(self, entity_id: str, health: int) -> None:
+        """Set entity health."""
+        entity = self._engine.get_entity(entity_id)
+        if entity:
+            entity.health = health
+
     def is_alive(self, entity_id: str) -> bool:
         """Check if entity is alive."""
         entity = self._engine.get_entity(entity_id)
@@ -211,43 +192,6 @@ class LuaAPI:
             entity.destroy()
 
     # =========================================================================
-    # Properties (custom key-value storage for behaviors)
-    # =========================================================================
-
-    @lua_safe_return
-    def get_prop(self, entity_id: str, key: str) -> Any:
-        """Get custom property from entity.
-
-        Returns Lua-safe values (primitives or Lua tables).
-        """
-        entity = self._engine.get_entity(entity_id)
-        if entity:
-            return entity.properties.get(key)
-        return None
-
-    def set_prop(self, entity_id: str, key: str, value: Any) -> None:
-        """Set custom property on entity."""
-        entity = self._engine.get_entity(entity_id)
-        if entity:
-            entity.properties[key] = value
-
-    # =========================================================================
-    # Behavior Config (read-only, from YAML)
-    # =========================================================================
-
-    @lua_safe_return
-    def get_config(self, entity_id: str, behavior_name: str, key: str, default: Any = None) -> Any:
-        """Get behavior config value from YAML definition.
-
-        Returns Lua-safe values (primitives or Lua tables).
-        Nested dicts/lists from YAML are converted to Lua tables.
-        """
-        entity = self._engine.get_entity(entity_id)
-        if entity and behavior_name in entity.behavior_config:
-            return entity.behavior_config[behavior_name].get(key, default)
-        return default
-
-    # =========================================================================
     # Entity Spawning
     # =========================================================================
 
@@ -255,11 +199,7 @@ class LuaAPI:
               vx: float = 0.0, vy: float = 0.0,
               width: float = 32.0, height: float = 32.0,
               color: str = "white", sprite: str = "") -> str:
-        """
-        Spawn a new entity.
-
-        Returns the new entity's ID.
-        """
+        """Spawn a new entity. Returns the new entity's ID."""
         return self._engine.spawn_entity(
             entity_type=entity_type,
             x=x, y=y,
@@ -340,34 +280,6 @@ class LuaAPI:
         self._engine.schedule_callback(delay, callback_name, entity_id)
 
     # =========================================================================
-    # Math helpers (safe, no side effects)
-    # =========================================================================
-
-    def math_sin(self, x: float) -> float:
-        return math.sin(x)
-
-    def math_cos(self, x: float) -> float:
-        return math.cos(x)
-
-    def math_sqrt(self, x: float) -> float:
-        return math.sqrt(max(0, x))
-
-    def math_atan2(self, y: float, x: float) -> float:
-        return math.atan2(y, x)
-
-    def math_random(self) -> float:
-        """Return random float in [0, 1)."""
-        return random.random()
-
-    def math_random_range(self, min_val: float, max_val: float) -> float:
-        """Return random float in [min, max]."""
-        return random.uniform(min_val, max_val)
-
-    def math_clamp(self, value: float, min_val: float, max_val: float) -> float:
-        """Clamp value to range."""
-        return max(min_val, min(max_val, value))
-
-    # =========================================================================
     # Parent-Child Relationships
     # =========================================================================
 
@@ -434,11 +346,3 @@ class LuaAPI:
         """Check if entity has a parent."""
         entity = self._engine.get_entity(entity_id)
         return bool(entity and entity.parent_id)
-
-    # =========================================================================
-    # Debug
-    # =========================================================================
-
-    def log(self, message: str) -> None:
-        """Log a debug message."""
-        print(f"[Lua] {message}")
