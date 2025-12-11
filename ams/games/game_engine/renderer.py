@@ -1,41 +1,37 @@
 """Renderer for the YAML-driven game engine."""
 
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, List, Optional, Tuple
 
 import pygame
 
 from ams.games.game_engine.entity import GameEntity
-from ams.games.game_engine.config import (
-    GameDefinition,
-    RenderCommand,
-    SoundConfig,
-    SpriteConfig,
-)
+from ams.games.game_engine.config import GameDefinition, RenderCommand
+from ams.games.game_engine.assets import AssetProvider
 
 
 class GameEngineRenderer:
-    """Abstract base for GameEngine rendering.
+    """Renders game entities using YAML render commands.
 
-    Subclasses implement game-specific rendering for entities.
-    Uses render commands from game.yaml when available.
+    Uses render commands from game.yaml when available, with
+    fallback to simple colored rectangles.
     """
 
-    def __init__(self):
+    def __init__(self, assets: Optional[AssetProvider] = None):
+        """Initialize renderer.
+
+        Args:
+            assets: Asset provider for sprites/sounds. Created internally if not provided.
+        """
         self._game_def: Optional[GameDefinition] = None
-        self._sounds: Dict[str, pygame.mixer.Sound] = {}
-        self._sprites: Dict[str, pygame.Surface] = {}  # Loaded sprite surfaces
-        self._sprite_sheets: Dict[str, pygame.Surface] = {}  # Cached full sheets
-        self._assets_dir: Optional[Path] = None
+        self._assets = assets or AssetProvider()
         self._elapsed_time: float = 0.0  # Set by engine each frame
 
     def set_game_definition(self, game_def: GameDefinition,
                             assets_dir: Optional[Path] = None) -> None:
         """Set game definition for render command lookup and load assets."""
         self._game_def = game_def
-        self._assets_dir = assets_dir
-        self._load_sounds()
-        self._load_sprites()
+        self._assets.load_from_definition(game_def, assets_dir)
 
     def render_entity(self, entity: GameEntity, screen: pygame.Surface) -> None:
         """Render an entity using YAML render commands or fallback."""
@@ -201,8 +197,8 @@ class GameEngineRenderer:
         # Resolve template placeholders like {frame} (delegate to entity)
         resolved_name = entity.resolve_sprite_template(sprite_name)
 
-        # Check if sprite is loaded
-        sprite = self._sprites.get(resolved_name)
+        # Get sprite from asset provider
+        sprite = self._assets.get_sprite(resolved_name)
         if sprite is None:
             # Fallback to colored rectangle
             color = self._parse_color(entity.color)
@@ -269,157 +265,7 @@ class GameEngineRenderer:
 
     def play_sound(self, sound_name: str) -> None:
         """Play a sound effect by name (from assets.sounds in game.yaml)."""
-        if sound_name in self._sounds:
-            self._sounds[sound_name].play()
-
-    def _load_sounds(self) -> None:
-        """Load sounds defined in game definition assets."""
-        self._sounds.clear()
-        if not self._game_def:
-            return
-
-        for sound_name, sound_config in self._game_def.assets.sounds.items():
-            self._load_sound(sound_name, sound_config)
-
-    def _load_sound(self, name: str, config: SoundConfig) -> None:
-        """Load a single sound from config (file path or data URI)."""
-        try:
-            if config.data:
-                # Data URI: decode and load from bytes
-                sound = self._load_sound_from_data_uri(config.data)
-                if sound:
-                    self._sounds[name] = sound
-            elif config.file:
-                # File path: load from disk
-                sound_path = Path(config.file)
-                if not sound_path.is_absolute() and self._assets_dir:
-                    sound_path = self._assets_dir / config.file
-
-                if sound_path.exists():
-                    self._sounds[name] = pygame.mixer.Sound(str(sound_path))
-        except Exception as e:
-            print(f"[GameEngineRenderer] Failed to load sound '{name}': {e}")
-
-    def _load_sound_from_data_uri(self, data_uri: str) -> Optional[pygame.mixer.Sound]:
-        """Load a sound from a data URI (data:audio/wav;base64,...)."""
-        import base64
-        import io
-
-        try:
-            # Parse data URI: data:[<mediatype>][;base64],<data>
-            if not data_uri.startswith('data:'):
-                return None
-
-            # Split header and data
-            header, encoded = data_uri.split(',', 1)
-            # Decode base64
-            audio_bytes = base64.b64decode(encoded)
-            # Load from bytes
-            return pygame.mixer.Sound(io.BytesIO(audio_bytes))
-        except Exception as e:
-            print(f"[GameEngineRenderer] Failed to load sound from data URI: {e}")
-            return None
-
-    def _load_sprites(self) -> None:
-        """Load sprites defined in game definition assets."""
-        self._sprites.clear()
-        self._sprite_sheets.clear()
-        if not self._game_def:
-            return
-
-        for sprite_name, sprite_config in self._game_def.assets.sprites.items():
-            self._load_sprite(sprite_name, sprite_config)
-
-    def _load_sprite(self, name: str, config: SpriteConfig) -> None:
-        """Load a single sprite from config (file path or data URI).
-
-        Supports:
-        - File paths or data URIs
-        - Regions within sprite sheets (x, y, width, height specified)
-        - Transparency via color key
-        - Shared sheets via @references (cached by data URI hash)
-        """
-        try:
-            sheet: Optional[pygame.Surface] = None
-
-            if config.data:
-                # Data URI: decode and load from bytes
-                # Use hash of data URI as cache key for deduplication
-                # This allows multiple sprites to share the same embedded sheet
-                import hashlib
-                sheet_key = f"data:{hashlib.md5(config.data.encode()).hexdigest()[:16]}"
-                if sheet_key in self._sprite_sheets:
-                    sheet = self._sprite_sheets[sheet_key]
-                else:
-                    sheet = self._load_image_from_data_uri(config.data)
-                    if sheet:
-                        self._sprite_sheets[sheet_key] = sheet
-            elif config.file:
-                # File path: load from disk
-                sprite_path = Path(config.file)
-                if not sprite_path.is_absolute() and self._assets_dir:
-                    sprite_path = self._assets_dir / config.file
-
-                if not sprite_path.exists():
-                    print(f"[GameEngineRenderer] Sprite file not found: {sprite_path}")
-                    return
-
-                # Load or get cached sheet
-                sheet_key = str(sprite_path)
-                if sheet_key not in self._sprite_sheets:
-                    sheet = pygame.image.load(str(sprite_path)).convert()
-                    self._sprite_sheets[sheet_key] = sheet
-                else:
-                    sheet = self._sprite_sheets[sheet_key]
-
-            if sheet is None:
-                return
-
-            # Extract region or use full image
-            if config.x is not None and config.y is not None:
-                # Extract region from sprite sheet
-                w = config.width or (sheet.get_width() - config.x)
-                h = config.height or (sheet.get_height() - config.y)
-                sprite = sheet.subsurface(pygame.Rect(config.x, config.y, w, h)).copy()
-            else:
-                # Use full image
-                sprite = sheet.copy()
-
-            # Apply transparency color key
-            if config.transparent:
-                sprite.set_colorkey(config.transparent)
-
-            # Apply flip transformations
-            if config.flip_x or config.flip_y:
-                sprite = pygame.transform.flip(sprite, config.flip_x, config.flip_y)
-                # Re-apply colorkey after flip (transform may lose it)
-                if config.transparent:
-                    sprite.set_colorkey(config.transparent)
-
-            self._sprites[name] = sprite
-
-        except Exception as e:
-            print(f"[GameEngineRenderer] Failed to load sprite '{name}': {e}")
-
-    def _load_image_from_data_uri(self, data_uri: str) -> Optional[pygame.Surface]:
-        """Load an image from a data URI (data:image/png;base64,...)."""
-        import base64
-        import io
-
-        try:
-            # Parse data URI: data:[<mediatype>][;base64],<data>
-            if not data_uri.startswith('data:'):
-                return None
-
-            # Split header and data
-            _, encoded = data_uri.split(',', 1)
-            # Decode base64
-            image_bytes = base64.b64decode(encoded)
-            # Load from bytes
-            return pygame.image.load(io.BytesIO(image_bytes)).convert()
-        except Exception as e:
-            print(f"[GameEngineRenderer] Failed to load image from data URI: {e}")
-            return None
+        self._assets.play_sound(sound_name)
 
     def _parse_color(self, color_value) -> Tuple[int, int, int]:
         """Parse color value to RGB tuple.
