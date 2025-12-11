@@ -1,13 +1,13 @@
 """
-Entity - abstract base class for objects that Lua behaviors operate on.
+Entity - abstract base class for objects that Lua scripts operate on.
 
-The Entity ABC defines the minimal contract for Lua behavior attachment:
+The Entity ABC defines the minimal contract for LuaEngine:
 - Identity (id, entity_type)
-- Custom properties for behavior state
-- Behavior attachment and configuration
+- Lifecycle state (alive)
+- Custom properties for script state
 
 Concrete implementations (e.g., GameEntity) add domain-specific attributes
-like position, velocity, health, visuals, etc.
+like position, velocity, visuals, subroutine attachments, etc.
 """
 
 from abc import ABC
@@ -20,18 +20,15 @@ class Entity(ABC):
     """Abstract base for Lua-scriptable entities.
 
     Subclasses must implement domain-specific attributes and methods.
-    This ABC provides only the behavior attachment mechanism.
+    This ABC provides only the minimal contract for LuaEngine.
     """
 
     # Identity
     id: str
     entity_type: str
 
-    # Custom properties (behaviors can read/write arbitrary state)
+    # Lifecycle (needed by LuaEngine for scheduled callbacks)
+    alive: bool = True
+
+    # Custom properties (scripts can read/write arbitrary state)
     properties: dict[str, Any] = field(default_factory=dict)
-
-    # Attached behavior names
-    behaviors: list[str] = field(default_factory=list)
-
-    # Behavior-specific config (from YAML)
-    behavior_config: dict[str, dict[str, Any]] = field(default_factory=dict)

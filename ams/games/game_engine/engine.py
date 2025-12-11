@@ -19,6 +19,7 @@ Usage:
 from abc import abstractmethod
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Type, TYPE_CHECKING
+import uuid
 
 import pygame
 import yaml
@@ -187,23 +188,30 @@ class GameEngine(BaseGame):
         )
 
         # Load core behaviors from ContentFS
-        self._behavior_engine.load_behaviors_from_dir()
+        self._behavior_engine.load_subroutines_from_dir(
+            'behavior', 'ams/games/game_engine/lua/behavior'
+        )
 
         # Load game-specific behaviors from ContentFS
         if self.GAME_SLUG:
-            game_behaviors_path = f'games/{self.GAME_SLUG}/behaviors'
+            game_behaviors_path = f'games/{self.GAME_SLUG}/behavior'
             if self._content_fs.exists(game_behaviors_path):
-                self._behavior_engine.load_behaviors_from_dir(game_behaviors_path)
+                self._behavior_engine.load_subroutines_from_dir('behavior', game_behaviors_path)
 
         # Load game definition
         if self.GAME_DEF_FILE and self.GAME_DEF_FILE.exists():
             self._game_def = self._load_game_definition(self.GAME_DEF_FILE)
 
-        # Register spawn callback so Lua spawns use entity type config
-        self._behavior_engine.set_spawn_callback(self._lua_spawn_callback)
+        # Register spawn handler on API so Lua spawns use entity type config
+        api = self._behavior_engine.api
+        if hasattr(api, 'set_spawn_handler'):
+            api.set_spawn_handler(self._lua_spawn_handler)
 
         # Register destroy callback for orphan handling
         self._behavior_engine.set_destroy_callback(self._on_entity_destroyed)
+
+        # Register self as lifecycle provider for behavior dispatch
+        self._behavior_engine.set_lifecycle_provider(self)
 
         # Create skin and give it access to game definition
         self._skin = self._get_skin(skin)
@@ -504,7 +512,7 @@ class GameEngine(BaseGame):
                 self._inline_behavior_counter += 1
 
                 # Register inline behavior with engine
-                if self._behavior_engine.load_inline_behavior(name, lua_code):
+                if self._behavior_engine.load_inline_subroutine('behavior', name, lua_code):
                     behavior_names.append(name)
                 else:
                     print(f"[GameEngine] Failed to load inline behavior for {entity_type}")
@@ -568,7 +576,7 @@ class GameEngine(BaseGame):
                 name = f"_inline_collision_{type_a}_{type_b}_{self._inline_collision_action_counter}"
                 self._inline_collision_action_counter += 1
 
-                if self._behavior_engine.load_inline_collision_action(name, lua_code):
+                if self._behavior_engine.load_inline_subroutine('collision_action', name, lua_code):
                     return name
                 else:
                     print(f"[GameEngine] Failed to load inline collision action for {type_a}->{type_b}")
@@ -605,7 +613,7 @@ class GameEngine(BaseGame):
                 self._inline_input_action_counter += 1
                 name = f'_inline_input_action_{self._inline_input_action_counter}'
 
-                if self._behavior_engine.load_inline_input_action(name, lua_code):
+                if self._behavior_engine.load_inline_subroutine('input_action', name, lua_code):
                     action_name = name
                 else:
                     print(f"[GameEngine] Failed to load inline input action")
@@ -1116,12 +1124,12 @@ class GameEngine(BaseGame):
                 y = start_y + row * brick_height
                 self.spawn_entity(entity_type, x, y)
 
-    def _lua_spawn_callback(
+    def _lua_spawn_handler(
         self, entity_type: str, x: float, y: float,
         vx: float, vy: float, width: float, height: float,
         color: str, sprite: str
-    ) -> Optional[Entity]:
-        """Callback for LuaEngine.spawn_entity to apply entity type config.
+    ) -> Optional[GameEntity]:
+        """Handler for Lua API spawn calls.
 
         Called when Lua code spawns entities (e.g., shoot behavior spawning projectiles).
         Applies entity type config from game.yaml so spawned entities have behaviors.
@@ -1146,7 +1154,7 @@ class GameEngine(BaseGame):
         y: float,
         properties: Optional[Dict[str, Any]] = None,
         **overrides,
-    ) -> Optional[Entity]:
+    ) -> Optional[GameEntity]:
         """Spawn an entity of a defined type.
 
         Args:
@@ -1156,19 +1164,23 @@ class GameEngine(BaseGame):
             **overrides: Override default type properties
 
         Returns:
-            Created Entity, or None if type not found
+            Created GameEntity, or None if type not found
         """
         # Get type config
         type_config = None
         if self._game_def:
             type_config = self._game_def.entity_types.get(entity_type)
 
+        # Generate unique ID
+        entity_id = f"{entity_type}_{uuid.uuid4().hex[:8]}"
+
         # Use type config or defaults
         if type_config:
             behaviors = overrides.get('behaviors', type_config.behaviors)
             behavior_config = overrides.get('behavior_config', type_config.behavior_config)
 
-            entity = self._behavior_engine.create_entity(
+            entity = GameEntity(
+                id=entity_id,
                 entity_type=entity_type,
                 x=x,
                 y=y,
@@ -1183,16 +1195,22 @@ class GameEngine(BaseGame):
                 behavior_config=behavior_config,
                 properties=properties or {},
                 tags=overrides.get('tags', type_config.tags.copy()),
+                spawn_time=self._behavior_engine.elapsed_time,
             )
         else:
             # Create with overrides only
-            entity = self._behavior_engine.create_entity(
+            entity = GameEntity(
+                id=entity_id,
                 entity_type=entity_type,
                 x=x,
                 y=y,
                 properties=properties or {},
+                spawn_time=self._behavior_engine.elapsed_time,
                 **overrides,
             )
+
+        # Register with LuaEngine (triggers on_entity_spawned via provider)
+        self._behavior_engine.register_entity(entity)
 
         return entity
 
@@ -1314,7 +1332,7 @@ class GameEngine(BaseGame):
         - play_sound: Plays a sound (args: {sound: "name"})
 
         For any other action name, tries to execute a Lua input action script
-        from ams/input_actions/{action_name}.lua
+        from ams/input_action/{action_name}.lua
         """
         # Built-in actions
         if action_name == 'play_sound':
@@ -1819,8 +1837,8 @@ class GameEngine(BaseGame):
         entity.behaviors = new_config.behaviors.copy()
         entity.behavior_config = dict(new_config.behavior_config)
 
-        # Re-register with behavior engine for new behaviors
-        self._behavior_engine.update_entity_behaviors(entity)
+        # Trigger on_spawn for new behaviors
+        self.on_entity_spawned(entity, self._behavior_engine)
 
         return entity
 
@@ -1981,3 +1999,91 @@ class GameEngine(BaseGame):
         self._lives = self._starting_lives
         self._internal_state = GameState.PLAYING
         self._spawn_initial_entities()
+
+    # =========================================================================
+    # LifecycleProvider Protocol Implementation
+    # =========================================================================
+
+    def on_entity_spawned(self, entity: 'Entity', lua_engine: 'LuaEngine') -> None:
+        """Called when an entity is created and registered."""
+        self._dispatch_to_behaviors('on_spawn', entity, lua_engine)
+
+    def on_entity_update(self, entity: 'Entity', lua_engine: 'LuaEngine', dt: float) -> None:
+        """Called each frame for alive entities."""
+        self._dispatch_to_behaviors('on_update', entity, lua_engine, dt)
+
+    def on_entity_destroyed(self, entity: 'Entity', lua_engine: 'LuaEngine') -> None:
+        """Called when an entity is destroyed and about to be removed."""
+        self._dispatch_to_behaviors('on_destroy', entity, lua_engine)
+
+    def dispatch_lifecycle(
+        self, hook_name: str, entity: 'Entity', lua_engine: 'LuaEngine', *args
+    ) -> None:
+        """Dispatch a generic lifecycle hook to entity's attached behaviors.
+
+        Used for hooks like on_hit that aren't part of the core lifecycle.
+
+        Args:
+            hook_name: Lifecycle hook (e.g., 'on_hit')
+            entity: The entity receiving the event
+            lua_engine: LuaEngine for subroutine lookup
+            *args: Additional arguments passed to the hook
+        """
+        self._dispatch_to_behaviors(hook_name, entity, lua_engine, *args)
+
+    def _dispatch_to_behaviors(
+        self, method_name: str, entity: 'Entity', lua_engine: 'LuaEngine', *args
+    ) -> None:
+        """Internal helper to dispatch a method to entity's behaviors.
+
+        Args:
+            method_name: Method name to call on behaviors
+            entity: The entity receiving the event
+            lua_engine: LuaEngine for subroutine lookup
+            *args: Additional arguments
+        """
+        # GameEntity has behaviors, Entity ABC does not
+        if not hasattr(entity, 'behaviors'):
+            return
+
+        for behavior_name in entity.behaviors:
+            behavior = lua_engine.get_subroutine('behavior', behavior_name)
+            if behavior is None:
+                continue
+
+            method = getattr(behavior, method_name, None)
+            if method is None:
+                continue
+
+            try:
+                method(entity.id, *args)
+            except Exception as e:
+                print(f"[GameEngine] Error in {behavior_name}.{method_name}: {e}")
+
+    def dispatch_scheduled(
+        self, callback_name: str, entity: 'Entity', lua_engine: 'LuaEngine'
+    ) -> None:
+        """Dispatch a scheduled callback to entity's attached behaviors.
+
+        Called by LuaEngine when a scheduled callback timer fires.
+
+        Args:
+            callback_name: Name of the callback method to invoke
+            entity: The entity that scheduled the callback
+            lua_engine: LuaEngine for subroutine lookup
+        """
+        # GameEntity has behaviors, Entity ABC does not
+        if not hasattr(entity, 'behaviors'):
+            return
+
+        for behavior_name in entity.behaviors:
+            behavior = lua_engine.get_subroutine('behavior', behavior_name)
+            if behavior is None:
+                continue
+
+            callback = getattr(behavior, callback_name, None)
+            if callback:
+                try:
+                    callback(entity.id)
+                except Exception as e:
+                    print(f"[GameEngine] Error in scheduled {callback_name}: {e}")

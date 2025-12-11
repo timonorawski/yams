@@ -11,7 +11,7 @@ Extends LuaAPIBase with game entity operations:
 - Events (sounds, scheduling)
 """
 
-from typing import Any, TYPE_CHECKING
+from typing import Any, Callable, Optional, TYPE_CHECKING
 
 from ams.lua.api import LuaAPIBase, lua_safe_return
 
@@ -25,7 +25,17 @@ class GameLuaAPI(LuaAPIBase):
 
     Extends LuaAPIBase with GameEntity operations. All methods operate
     on entities by ID to maintain the sandbox boundary.
+
+    The spawn_handler is set by GameEngine to route spawning to the game engine.
     """
+
+    def __init__(self, engine: 'LuaEngine'):
+        super().__init__(engine)
+        self._spawn_handler: Optional[Callable] = None
+
+    def set_spawn_handler(self, handler: Callable) -> None:
+        """Set the spawn handler (called by GameEngine during setup)."""
+        self._spawn_handler = handler
 
     def register_api(self, ams_namespace) -> None:
         """Register game API methods on the ams.* namespace."""
@@ -198,15 +208,20 @@ class GameLuaAPI(LuaAPIBase):
     def spawn(self, entity_type: str, x: float, y: float,
               vx: float = 0.0, vy: float = 0.0,
               width: float = 32.0, height: float = 32.0,
-              color: str = "white", sprite: str = "") -> str:
+              color: str = "white", sprite: str = "") -> Optional[str]:
         """Spawn a new entity. Returns the new entity's ID."""
-        return self._engine.spawn_entity(
+        if not self._spawn_handler:
+            print("[GameLuaAPI] No spawn handler registered")
+            return None
+
+        entity = self._spawn_handler(
             entity_type=entity_type,
             x=x, y=y,
             vx=vx, vy=vy,
             width=width, height=height,
             color=color, sprite=sprite
         )
+        return entity.id if entity else None
 
     # =========================================================================
     # Entity Queries

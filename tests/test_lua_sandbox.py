@@ -9,11 +9,13 @@ Run with: pytest tests/test_lua_sandbox.py -v
 """
 
 import pytest
+import uuid
 from pathlib import Path
 from lupa import LuaError
 
 from ams.lua.engine import LuaEngine
 from ams.games.game_engine.api import GameLuaAPI
+from ams.games.game_engine.entity import GameEntity
 from ams.content_fs import ContentFS
 
 
@@ -27,10 +29,69 @@ def content_fs():
     return ContentFS(_PROJECT_ROOT, add_user_layer=False)
 
 
+def create_test_entity(
+    engine: LuaEngine,
+    entity_type: str = 'test',
+    x: float = 0.0,
+    y: float = 0.0,
+    **kwargs
+) -> GameEntity:
+    """Helper to create and register a GameEntity for tests."""
+    entity_id = f"{entity_type}_{uuid.uuid4().hex[:8]}"
+    entity = GameEntity(
+        id=entity_id,
+        entity_type=entity_type,
+        x=x,
+        y=y,
+        spawn_time=engine.elapsed_time,
+        **kwargs
+    )
+    engine.register_entity(entity)
+    return entity
+
+
+class TestLifecycleProvider:
+    """Simple lifecycle provider for tests."""
+
+    def on_entity_spawned(self, entity, lua_engine):
+        """Called when an entity is created and registered."""
+        self._dispatch_to_behaviors('on_spawn', entity, lua_engine)
+
+    def on_entity_update(self, entity, lua_engine, dt):
+        """Called each frame for alive entities."""
+        self._dispatch_to_behaviors('on_update', entity, lua_engine, dt)
+
+    def on_entity_destroyed(self, entity, lua_engine):
+        """Called when an entity is destroyed."""
+        self._dispatch_to_behaviors('on_destroy', entity, lua_engine)
+
+    def dispatch_lifecycle(self, hook_name, entity, lua_engine, *args):
+        """Dispatch a generic lifecycle hook (on_hit, etc.) to entity behaviors."""
+        self._dispatch_to_behaviors(hook_name, entity, lua_engine, *args)
+
+    def dispatch_scheduled(self, callback_name, entity, lua_engine):
+        """Dispatch scheduled callback to entity's behaviors."""
+        self._dispatch_to_behaviors(callback_name, entity, lua_engine)
+
+    def _dispatch_to_behaviors(self, method_name, entity, lua_engine, *args):
+        """Internal helper to dispatch to behaviors."""
+        if not hasattr(entity, 'behaviors'):
+            return
+        for behavior_name in entity.behaviors:
+            behavior = lua_engine.get_subroutine('behavior', behavior_name)
+            if behavior is None:
+                continue
+            method = getattr(behavior, method_name, None)
+            if method:
+                method(entity.id, *args)
+
+
 @pytest.fixture
 def engine(content_fs):
     """Create a fresh LuaEngine with GameLuaAPI for each test."""
-    return LuaEngine(content_fs, 800, 600, api_class=GameLuaAPI)
+    eng = LuaEngine(content_fs, 800, 600, api_class=GameLuaAPI)
+    eng.set_lifecycle_provider(TestLifecycleProvider())
+    return eng
 
 
 @pytest.fixture
@@ -317,7 +378,7 @@ class TestAmsApiAvailable:
     def test_ams_entity_operations(self, engine, lua):
         """Entity operations should work through ams API."""
         # Create an entity
-        entity = engine.create_entity("test", x=100, y=200, behaviors=[])
+        entity = create_test_entity(engine,"test", x=100, y=200, behaviors=[])
 
         # Access it via Lua
         x = lua.eval(f'ams.get_x("{entity.id}")')
@@ -346,8 +407,8 @@ class TestBehaviorExecution:
         end
         return behavior
         """
-        engine.load_inline_behavior("test_move", code)
-        entity = engine.create_entity("test", x=0, y=0, behaviors=["test_move"])
+        engine.load_inline_subroutine("behavior", "test_move", code)
+        entity = create_test_entity(engine,"test", x=0, y=0, behaviors=["test_move"])
 
         assert entity.properties.get("spawned") is True
 
@@ -369,8 +430,8 @@ class TestBehaviorExecution:
         end
         return behavior
         """
-        engine.load_inline_behavior("escape_attempt", code)
-        entity = engine.create_entity("test", x=0, y=0, behaviors=["escape_attempt"])
+        engine.load_inline_subroutine("behavior", "escape_attempt", code)
+        entity = create_test_entity(engine,"test", x=0, y=0, behaviors=["escape_attempt"])
 
         # Should not raise, behavior continues after failed escape
         engine.update(0.016)
@@ -653,9 +714,9 @@ class TestLuaSafeReturns:
         engine = LuaEngine(content_fs, 800, 600, api_class=GameLuaAPI)
 
         # Create some entities
-        engine.create_entity('brick', x=100, y=100, width=50, height=20)
-        engine.create_entity('brick', x=200, y=100, width=50, height=20)
-        engine.create_entity('ball', x=300, y=300, width=10, height=10)
+        create_test_entity(engine,'brick', x=100, y=100, width=50, height=20)
+        create_test_entity(engine,'brick', x=200, y=100, width=50, height=20)
+        create_test_entity(engine,'ball', x=300, y=300, width=10, height=10)
 
         # Get entities from Lua
         engine._lua.execute("""
@@ -678,9 +739,9 @@ class TestLuaSafeReturns:
         engine = LuaEngine(content_fs, 800, 600, api_class=GameLuaAPI)
 
         # Create entities with tags
-        engine.create_entity('enemy', x=100, y=100, tags=['hostile', 'flying'])
-        engine.create_entity('enemy', x=200, y=100, tags=['hostile'])
-        engine.create_entity('player', x=300, y=300, tags=['friendly'])
+        create_test_entity(engine,'enemy', x=100, y=100, tags=['hostile', 'flying'])
+        create_test_entity(engine,'enemy', x=200, y=100, tags=['hostile'])
+        create_test_entity(engine,'player', x=300, y=300, tags=['friendly'])
 
         engine._lua.execute("""
             _hostiles = ams.get_entities_by_tag("hostile")
@@ -694,9 +755,9 @@ class TestLuaSafeReturns:
         """get_all_entity_ids returns a 1-indexed Lua table."""
         engine = LuaEngine(content_fs, 800, 600, api_class=GameLuaAPI)
 
-        engine.create_entity('a', x=0, y=0)
-        engine.create_entity('b', x=0, y=0)
-        engine.create_entity('c', x=0, y=0)
+        create_test_entity(engine,'a', x=0, y=0)
+        create_test_entity(engine,'b', x=0, y=0)
+        create_test_entity(engine,'c', x=0, y=0)
 
         engine._lua.execute("""
             _all = ams.get_all_entity_ids()
@@ -710,7 +771,7 @@ class TestLuaSafeReturns:
         """get_config converts nested dicts/lists to Lua tables."""
         engine = LuaEngine(content_fs, 800, 600, api_class=GameLuaAPI)
 
-        entity = engine.create_entity(
+        entity = create_test_entity(engine,
             'test',
             x=0, y=0,
             behaviors=[],
@@ -741,7 +802,7 @@ class TestLuaSafeReturns:
         """get_prop converts list properties to Lua tables."""
         engine = LuaEngine(content_fs, 800, 600, api_class=GameLuaAPI)
 
-        entity = engine.create_entity('test', x=0, y=0)
+        entity = create_test_entity(engine,'test', x=0, y=0)
         entity.properties['items'] = ['sword', 'shield', 'potion']
 
         engine._lua.execute(f"""
@@ -760,7 +821,7 @@ class TestLuaSafeReturns:
         """Can iterate returned tables with pairs()."""
         engine = LuaEngine(content_fs, 800, 600, api_class=GameLuaAPI)
 
-        entity = engine.create_entity('test', x=0, y=0)
+        entity = create_test_entity(engine,'test', x=0, y=0)
         entity.properties['stats'] = {'hp': 100, 'mp': 50, 'str': 10}
 
         engine._lua.execute(f"""

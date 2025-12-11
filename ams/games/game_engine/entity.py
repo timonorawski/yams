@@ -3,16 +3,17 @@ GameEntity - concrete entity for the YAML-driven game engine.
 
 Extends the Entity ABC with game-specific attributes:
 - Transform (position, velocity, size)
-- Lifecycle (alive, destroy)
+- Lifecycle (destroy method)
 - Visuals (sprite, color, visibility)
 - Game state (health, spawn time, tags)
 - Hierarchy (parent-child relationships)
+- Subroutine attachments (behaviors with config)
 """
 
 import math
 import re
 from dataclasses import dataclass, field
-from typing import Any, Optional, TYPE_CHECKING
+from typing import Any, Callable, Optional, TYPE_CHECKING
 
 from ams.lua.entity import Entity
 
@@ -41,16 +42,27 @@ class GameEntity(Entity):
 
     # State
     health: int = 1
-    alive: bool = True
     spawn_time: float = 0.0  # Game time when entity was spawned
 
     # Tags for categorization (e.g., ["enemy", "brick"])
     tags: list[str] = field(default_factory=list)
 
+    # Attached behavior subroutine names
+    behaviors: list[str] = field(default_factory=list)
+
+    # Behavior-specific config (from YAML)
+    behavior_config: dict[str, dict[str, Any]] = field(default_factory=dict)
+
     # Parent-child relationships (for rope chains, attached objects)
     parent_id: Optional[str] = None  # Entity ID this is attached to
     parent_offset: tuple[float, float] = (0.0, 0.0)  # Offset from parent position
     children: list[str] = field(default_factory=list)  # Child entity IDs
+
+    # Lifecycle dispatch callback (set by engine)
+    # Signature: (entity, hook_name, *args) -> None
+    _lifecycle_dispatch: Optional[Callable[['GameEntity', str], None]] = field(
+        default=None, repr=False
+    )
 
     def get_rect(self) -> tuple[float, float, float, float]:
         """Return (x, y, width, height) for collision detection."""
@@ -65,8 +77,15 @@ class GameEntity(Entity):
         self.x = cx - self.width / 2
         self.y = cy - self.height / 2
 
+    def spawn(self) -> None:
+        """Called when entity is added to the world. Triggers on_spawn hook."""
+        if self._lifecycle_dispatch:
+            self._lifecycle_dispatch(self, 'on_spawn')
+
     def destroy(self) -> None:
-        """Mark entity for removal."""
+        """Mark entity for removal. Triggers on_destroy hook."""
+        if self._lifecycle_dispatch:
+            self._lifecycle_dispatch(self, 'on_destroy')
         self.alive = False
 
     def get_property(self, name: str, current_time: float = 0.0) -> Any:

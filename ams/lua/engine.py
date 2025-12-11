@@ -3,23 +3,21 @@ Lua Engine - Core Lua sandbox and runtime for game scripting.
 
 The engine:
 1. Initializes the Lua runtime with sandbox protections
-2. Loads behavior scripts (single-entity) and collision actions (two-entity)
-3. Loads generator scripts for dynamic property values
-4. Attaches behaviors to entities
-5. Calls behavior lifecycle hooks (on_update, on_hit, on_spawn, on_destroy)
-6. Dispatches collision actions when entities collide
-7. Manages entity spawning and destruction
+2. Loads Lua subroutines of various types (behavior, collision_action, etc.)
+3. Stores and manages entity lifecycle (creation delegated to game engine)
+4. Delegates lifecycle events to a LifecycleProvider (e.g., GameEngine)
+5. Executes collision actions, input actions, and generators
 
-Directory structure:
-- ams/games/game_engine/lua/behaviors/         - Entity behaviors (single entity)
-- ams/games/game_engine/lua/collision_actions/ - Collision actions (two entities)
-- ams/games/game_engine/lua/generators/        - Property generators (return computed values)
-- ams/input_actions/                           - Input actions (triggered by user input)
+Subroutine types are not hardcoded - they're discovered dynamically from ContentFS
+directory names. Common types include:
+- behavior: Single-entity scripts with lifecycle hooks (on_update, on_spawn, etc.)
+- collision_action: Two-entity interaction handlers with execute(a_id, b_id, modifier)
+- generator: Property value generators with generate(args)
+- input_action: User input handlers with execute(x, y, args)
 """
 
 from collections import defaultdict
-from typing import Any, Callable, Optional, TYPE_CHECKING
-import uuid
+from typing import Any, Callable, Optional, Protocol, TYPE_CHECKING
 
 from lupa import LuaRuntime
 
@@ -28,6 +26,38 @@ from .api import LuaAPIBase
 
 if TYPE_CHECKING:
     from ams.content_fs import ContentFS
+
+
+class LifecycleProvider(Protocol):
+    """Protocol for dispatching lifecycle events to entity subroutines.
+
+    GameEngine implements this to handle behavior-specific lifecycle dispatch.
+    LuaEngine remains generic and delegates lifecycle calls to the provider.
+    """
+
+    def on_entity_spawned(self, entity: Entity, lua_engine: 'LuaEngine') -> None:
+        """Called when an entity is created and registered."""
+        ...
+
+    def on_entity_update(self, entity: Entity, lua_engine: 'LuaEngine', dt: float) -> None:
+        """Called each frame for alive entities."""
+        ...
+
+    def on_entity_destroyed(self, entity: Entity, lua_engine: 'LuaEngine') -> None:
+        """Called when an entity is destroyed and about to be removed."""
+        ...
+
+    def dispatch_lifecycle(
+        self, hook_name: str, entity: Entity, lua_engine: 'LuaEngine', *args
+    ) -> None:
+        """Dispatch a generic lifecycle hook (on_hit, etc.) to entity subroutines."""
+        ...
+
+    def dispatch_scheduled(
+        self, callback_name: str, entity: Entity, lua_engine: 'LuaEngine'
+    ) -> None:
+        """Dispatch a scheduled callback to entity's attached subroutines."""
+        ...
 
 
 def _lua_attribute_filter(obj, attr_name, is_setting):
@@ -74,20 +104,28 @@ class LuaEngine:
     """
     Core Lua sandbox engine for game scripting.
 
-    Manages Lua behaviors and entity lifecycle with sandboxed Lua runtime.
+    Manages Lua subroutines and entity lifecycle with sandboxed Lua runtime.
+    Entity creation is delegated to the game engine via register_entity().
 
     Usage:
         from ams.content_fs import ContentFS
 
         content_fs = ContentFS(Path('/path/to/repo'))
         engine = LuaEngine(content_fs, screen_width=800, screen_height=600)
-        engine.load_behaviors_from_dir()  # Loads from ams/games/game_engine/lua/behaviors/
 
-        entity = engine.create_entity('brick', behaviors=['descend'],
-                                       behavior_config={'descend': {'speed': 50}})
+        # Set lifecycle provider (GameEngine implements this)
+        engine.set_lifecycle_provider(game_engine)
+
+        # Load subroutines by type and directory
+        engine.load_subroutines_from_dir('behavior', 'ams/games/game_engine/lua/behavior')
+        engine.load_subroutines_from_dir('collision_action', 'ams/games/game_engine/lua/collision_action')
+
+        # Entity creation is done by GameEngine, then registered here
+        entity = GameEntity(id='brick_001', entity_type='brick', ...)
+        engine.register_entity(entity)  # Triggers on_entity_spawned
 
         # In game loop:
-        engine.update(dt)
+        engine.update(dt)  # Calls on_entity_update/on_entity_destroyed via provider
         for entity in engine.get_alive_entities():
             render(entity)
     """
@@ -110,7 +148,7 @@ class LuaEngine:
 
         # Loaded Lua subroutines by type (type -> name -> lua function table)
         # Types are discovered dynamically from ContentFS folder names
-        # e.g., 'behaviors', 'collision_actions', 'generators', 'input_actions'
+        # e.g., 'behavior', 'collision_action', 'generator', 'input_action'
         self._subroutines: defaultdict[str, dict[str, Any]] = defaultdict(dict)
 
         # Pending entity spawns/destroys (processed end of frame)
@@ -123,14 +161,14 @@ class LuaEngine:
         # Sound queue (processed by game layer)
         self._sound_queue: list[str] = []
 
-        # Spawn callback - allows GameEngine to inject entity type config
-        # Signature: (entity_type, x, y, vx, vy, width, height, color, sprite) -> Entity
-        self._spawn_callback: Optional[Callable] = None
-
         # Destroy callback - notifies GameEngine when entity is destroyed
         # Signature: (entity) -> None
         # Called BEFORE entity is removed from dict, allowing orphan handling
         self._destroy_callback: Optional[Callable] = None
+
+        # Lifecycle provider - dispatches lifecycle events to entity subroutines
+        # GameEngine implements this to handle behavior-specific dispatch
+        self._lifecycle_provider: Optional[LifecycleProvider] = None
 
         # Initialize Lua with sandbox protections:
         # - register_eval=False: don't expose python.eval()
@@ -152,9 +190,10 @@ class LuaEngine:
         self._api.set_lua_runtime(self._lua)  # Enable Lua-safe return value conversion
         self._setup_lua_environment()
 
-    def set_spawn_callback(self, callback: Callable) -> None:
-        """Set callback for entity spawning (used by GameEngine to apply type config)."""
-        self._spawn_callback = callback
+    @property
+    def api(self) -> LuaAPIBase:
+        """Get the Lua API instance for configuration."""
+        return self._api
 
     def set_destroy_callback(self, callback: Callable) -> None:
         """Set callback for entity destruction (used by GameEngine for orphan handling).
@@ -163,6 +202,14 @@ class LuaEngine:
         allowing orphan handling and other cleanup.
         """
         self._destroy_callback = callback
+
+    def set_lifecycle_provider(self, provider: LifecycleProvider) -> None:
+        """Set the lifecycle provider for dispatching lifecycle events.
+
+        The provider handles dispatching lifecycle methods (on_update, on_spawn, etc.)
+        to entity-attached subroutines. GameEngine implements this protocol.
+        """
+        self._lifecycle_provider = provider
 
     def _validate_sandbox(self) -> None:
         """Validate that the Lua sandbox is properly locked down.
@@ -296,222 +343,115 @@ class LuaEngine:
         # Validate sandbox is properly locked down
         self._validate_sandbox()
 
-    def load_behavior(self, name: str, content_path: Optional[str] = None) -> bool:
-        """
-        Load a behavior script from ContentFS.
+    # =========================================================================
+    # Generic Subroutine Loading
+    # =========================================================================
+
+    def load_subroutine(self, sub_type: str, name: str, content_path: str) -> bool:
+        """Load a Lua subroutine from ContentFS.
 
         Args:
-            name: Behavior name (used as key and for default path lookup)
-            content_path: ContentFS path to .lua file. If None, looks in
-                         'ams/games/game_engine/lua/behaviors/{name}.lua'
-
-        Returns True if loaded successfully.
-        """
-        if name in self._subroutines['behaviors']:
-            return True  # Already loaded
-
-        if content_path is None:
-            content_path = f'ams/games/game_engine/lua/behaviors/{name}.lua'
-
-        if not self._content_fs.exists(content_path):
-            print(f"[LuaEngine] Behavior not found: {content_path}")
-            return False
-
-        try:
-            code = self._content_fs.readtext(content_path)
-            # Execute the Lua file - it should return a table with on_update, etc.
-            result = self._lua.execute(code)
-
-            # The behavior script should define a table with lifecycle methods
-            # Convention: the script returns the behavior table
-            if result is None:
-                # Alternative: script defines global with behavior name
-                g = self._lua.globals()
-                result = getattr(g, name, None)
-
-            if result is None:
-                print(f"[LuaEngine] Behavior {name} did not return a table")
-                return False
-
-            self._subroutines['behaviors'][name] = result
-            return True
-
-        except Exception as e:
-            print(f"[LuaEngine] Error loading {name}: {e}")
-            return False
-
-    def load_inline_behavior(self, name: str, lua_code: str) -> bool:
-        """
-        Load an inline Lua behavior from a code string.
-
-        The code should define a behavior table with lifecycle methods
-        (on_spawn, on_update, on_hit, on_destroy) and return it.
-
-        Example inline behavior in YAML:
-            behaviors:
-              - lua: |
-                  local behavior = {}
-                  function behavior.on_update(entity_id, dt)
-                      local x = ams.get_x(entity_id) + 10 * dt
-                      ams.set_x(entity_id, x)
-                  end
-                  return behavior
-
-        Args:
-            name: Unique name for this inline behavior
-            lua_code: Lua source code defining the behavior table
+            sub_type: Subroutine type (e.g., 'behavior', 'collision_action')
+            name: Subroutine name (used as key)
+            content_path: ContentFS path to .lua file
 
         Returns:
             True if loaded successfully
         """
-        if name in self._subroutines['behaviors']:
+        if name in self._subroutines[sub_type]:
             return True  # Already loaded
 
+        if not self._content_fs.exists(content_path):
+            print(f"[LuaEngine] Subroutine not found: {content_path}")
+            return False
+
         try:
-            # Execute the Lua code - it should return a table
-            result = self._lua.execute(lua_code)
+            code = self._content_fs.readtext(content_path)
+            result = self._lua.execute(code)
+
+            # Convention: script returns a table, or defines global with same name
+            if result is None:
+                g = self._lua.globals()
+                result = getattr(g, name, None)
 
             if result is None:
-                print(f"[LuaEngine] Inline behavior {name} did not return a table")
+                print(f"[LuaEngine] Subroutine {name} did not return a table")
                 return False
 
-            self._subroutines['behaviors'][name] = result
+            self._subroutines[sub_type][name] = result
             return True
 
         except Exception as e:
-            print(f"[LuaEngine] Error loading inline behavior {name}: {e}")
+            print(f"[LuaEngine] Error loading {sub_type}/{name}: {e}")
             return False
 
-    def load_behaviors_from_dir(self, content_dir: Optional[str] = None) -> int:
-        """Load all .lua files from ContentFS directory.
+    def load_inline_subroutine(self, sub_type: str, name: str, lua_code: str) -> bool:
+        """Load an inline Lua subroutine from a code string.
 
         Args:
-            content_dir: ContentFS path to directory (e.g., 'ams/games/game_engine/lua/behaviors').
-                        If None, uses default 'ams/games/game_engine/lua/behaviors'.
+            sub_type: Subroutine type (e.g., 'behavior', 'collision_action')
+            name: Unique name for this subroutine
+            lua_code: Lua source code (should return a table)
 
-        Returns count loaded.
+        Returns:
+            True if loaded successfully
         """
-        if content_dir is None:
-            content_dir = 'ams/games/game_engine/lua/behaviors'
+        if name in self._subroutines[sub_type]:
+            return True  # Already loaded
 
+        try:
+            result = self._lua.execute(lua_code)
+
+            if result is None:
+                print(f"[LuaEngine] Inline {sub_type}/{name} did not return a table")
+                return False
+
+            self._subroutines[sub_type][name] = result
+            return True
+
+        except Exception as e:
+            print(f"[LuaEngine] Error loading inline {sub_type}/{name}: {e}")
+            return False
+
+    def load_subroutines_from_dir(self, sub_type: str, content_dir: str) -> int:
+        """Load all .lua files from a ContentFS directory.
+
+        Args:
+            sub_type: Subroutine type (e.g., 'behavior', 'collision_action')
+            content_dir: ContentFS path to directory
+
+        Returns:
+            Count of subroutines loaded
+        """
         count = 0
         if self._content_fs.exists(content_dir):
             for item in self._content_fs.listdir(content_dir):
                 if item.endswith('.lua'):
                     name = item[:-4]  # Remove .lua extension
                     content_path = f'{content_dir}/{item}'
-                    if self.load_behavior(name, content_path):
+                    if self.load_subroutine(sub_type, name, content_path):
                         count += 1
         return count
 
-    def load_collision_action(self, name: str, content_path: Optional[str] = None) -> bool:
-        """
-        Load a collision action script from ContentFS.
+    def get_subroutine(self, sub_type: str, name: str) -> Optional[Any]:
+        """Get a loaded subroutine by type and name."""
+        return self._subroutines[sub_type].get(name)
 
-        Collision actions handle two-entity interactions (collisions).
-        They expose an `execute(entity_a_id, entity_b_id, modifier)` function.
+    def has_subroutine(self, sub_type: str, name: str) -> bool:
+        """Check if a subroutine is loaded."""
+        return name in self._subroutines[sub_type]
 
-        Args:
-            name: Action name
-            content_path: ContentFS path. If None, looks in
-                         'ams/games/game_engine/lua/collision_actions/{name}.lua'
-
-        Returns True if loaded successfully.
-        """
-        if name in self._subroutines['collision_actions']:
-            return True  # Already loaded
-
-        if content_path is None:
-            content_path = f'ams/games/game_engine/lua/collision_actions/{name}.lua'
-
-        if not self._content_fs.exists(content_path):
-            print(f"[LuaEngine] Collision action not found: {content_path}")
-            return False
-
-        try:
-            code = self._content_fs.readtext(content_path)
-            result = self._lua.execute(code)
-
-            if result is None:
-                g = self._lua.globals()
-                result = getattr(g, name, None)
-
-            if result is None:
-                print(f"[LuaEngine] Collision action {name} did not return a table")
-                return False
-
-            self._subroutines['collision_actions'][name] = result
-            return True
-
-        except Exception as e:
-            print(f"[LuaEngine] Error loading collision action {name}: {e}")
-            return False
-
-    def load_collision_actions_from_dir(self, content_dir: Optional[str] = None) -> int:
-        """Load all collision action .lua files from ContentFS directory."""
-        if content_dir is None:
-            content_dir = 'ams/games/game_engine/lua/collision_actions'
-
-        count = 0
-        if self._content_fs.exists(content_dir):
-            for item in self._content_fs.listdir(content_dir):
-                if item.endswith('.lua'):
-                    name = item[:-4]
-                    content_path = f'{content_dir}/{item}'
-                    if self.load_collision_action(name, content_path):
-                        count += 1
-        return count
-
-    def load_inline_collision_action(self, name: str, lua_code: str) -> bool:
-        """
-        Load an inline collision action from a Lua code string.
-
-        The code should define a table with an `execute(entity_a_id, entity_b_id, modifier)`
-        function and return it.
-
-        Example inline collision action in YAML:
-            collision_behaviors:
-              ball:
-                brick:
-                  action:
-                    lua: |
-                      local action = {}
-                      function action.execute(a_id, b_id, modifier)
-                          ams.destroy(b_id)
-                          ams.add_score(100)
-                      end
-                      return action
-
-        Args:
-            name: Unique name for this inline collision action
-            lua_code: Lua source code defining the action table
-
-        Returns:
-            True if loaded successfully
-        """
-        if name in self._subroutines['collision_actions']:
-            return True  # Already loaded
-
-        try:
-            result = self._lua.execute(lua_code)
-
-            if result is None:
-                print(f"[LuaEngine] Inline collision action {name} did not return a table")
-                return False
-
-            self._subroutines['collision_actions'][name] = result
-            return True
-
-        except Exception as e:
-            print(f"[LuaEngine] Error loading inline collision action {name}: {e}")
-            return False
+    # =========================================================================
+    # Subroutine Execution (collision actions, input actions, generators)
+    # =========================================================================
 
     def execute_collision_action(
         self,
         action_name: str,
         entity_a: Entity,
         entity_b: Entity,
-        modifier: Optional[dict[str, Any]] = None
+        modifier: Optional[dict[str, Any]] = None,
+        default_path: str = 'ams/games/game_engine/lua/collision_action'
     ) -> bool:
         """
         Execute a collision action between two entities.
@@ -521,16 +461,18 @@ class LuaEngine:
             entity_a: First entity in collision (the one whose collision rule triggered)
             entity_b: Second entity in collision
             modifier: Optional config dict passed to the action
+            default_path: Default ContentFS directory to look for actions
 
         Returns:
             True if action executed successfully
         """
         # Load action if not already loaded
-        if action_name not in self._subroutines['collision_actions']:
-            if not self.load_collision_action(action_name):
+        if not self.has_subroutine('collision_action', action_name):
+            content_path = f'{default_path}/{action_name}.lua'
+            if not self.load_subroutine('collision_action', action_name, content_path):
                 return False
 
-        action = self._subroutines['collision_actions'].get(action_name)
+        action = self.get_subroutine('collision_action', action_name)
         if not action:
             return False
 
@@ -552,99 +494,13 @@ class LuaEngine:
             print(f"[LuaEngine] Error executing collision action {action_name}: {e}")
             return False
 
-    # =========================================================================
-    # Input Actions
-    # =========================================================================
-
-    def load_input_action(self, name: str, content_path: Optional[str] = None) -> bool:
-        """
-        Load an input action script from ContentFS.
-
-        Input actions are triggered by user input (clicks, touches, etc.).
-        They expose an `execute(x, y, args)` function that receives:
-        - x, y: Input position in screen coordinates
-        - args: Lua table of action arguments from YAML config
-
-        Args:
-            name: Action name
-            content_path: ContentFS path. If None, looks in
-                         'ams/input_actions/{name}.lua'
-
-        Returns True if loaded successfully.
-        """
-        if name in self._subroutines['input_actions']:
-            return True  # Already loaded
-
-        if content_path is None:
-            content_path = f'ams/input_actions/{name}.lua'
-
-        if not self._content_fs.exists(content_path):
-            print(f"[LuaEngine] Input action file not found: {content_path}")
-            return False
-
-        try:
-            lua_code = self._content_fs.readtext(content_path)
-            result = self._lua.execute(lua_code)
-
-            if result is None or not hasattr(result, 'execute'):
-                print(f"[LuaEngine] Input action {name} did not return a table with execute function")
-                return False
-
-            self._subroutines['input_actions'][name] = result
-            return True
-
-        except Exception as e:
-            print(f"[LuaEngine] Error loading input action {name}: {e}")
-            return False
-
-    def load_inline_input_action(self, name: str, lua_code: str) -> bool:
-        """
-        Load an inline input action from a Lua code string.
-
-        The code should define a table with an `execute(x, y, args)` function
-        and return it.
-
-        Example inline input action in YAML:
-            global_on_input:
-              action:
-                lua: |
-                  local action = {}
-                  function action.execute(x, y, args)
-                      ams.play_sound("shot")
-                      -- Custom logic here
-                  end
-                  return action
-
-        Args:
-            name: Unique name for this inline input action
-            lua_code: Lua source code defining the action table
-
-        Returns:
-            True if loaded successfully
-        """
-        if name in self._subroutines['input_actions']:
-            return True  # Already loaded
-
-        try:
-            result = self._lua.execute(lua_code)
-
-            if result is None or not hasattr(result, 'execute'):
-                print(f"[LuaEngine] Inline input action {name} did not return a table with execute function")
-                return False
-
-            self._subroutines['input_actions'][name] = result
-            return True
-
-        except Exception as e:
-            print(f"[LuaEngine] Error loading inline input action {name}: {e}")
-            return False
-
     def execute_input_action(
         self,
         action_name: str,
         x: float,
         y: float,
-        args: Optional[dict[str, Any]] = None
+        args: Optional[dict[str, Any]] = None,
+        default_path: str = 'ams/input_action'
     ) -> bool:
         """
         Execute an input action.
@@ -654,16 +510,18 @@ class LuaEngine:
             x: Input x position in screen coordinates
             y: Input y position in screen coordinates
             args: Optional arguments dict passed to the action
+            default_path: Default ContentFS directory to look for actions
 
         Returns:
             True if action executed successfully
         """
         # Load action if not already loaded
-        if action_name not in self._subroutines['input_actions']:
-            if not self.load_input_action(action_name):
+        if not self.has_subroutine('input_action', action_name):
+            content_path = f'{default_path}/{action_name}.lua'
+            if not self.load_subroutine('input_action', action_name, content_path):
                 return False
 
-        action = self._subroutines['input_actions'].get(action_name)
+        action = self.get_subroutine('input_action', action_name)
         if not action:
             return False
 
@@ -685,82 +543,19 @@ class LuaEngine:
             print(f"[LuaEngine] Error executing input action {action_name}: {e}")
             return False
 
-    def load_generator(self, name: str, content_path: Optional[str] = None) -> bool:
-        """
-        Load a property generator script from ContentFS.
-
-        Property generators compute dynamic property values. They expose a
-        `generate(args)` function that takes a Lua table of arguments and
-        returns a computed value.
-
-        Use case: Complex property calculations like grid positions, color
-        interpolation, pattern generation, etc.
-
-        Args:
-            name: Generator name
-            content_path: ContentFS path. If None, looks in
-                         'ams/games/game_engine/lua/generators/{name}.lua'
-
-        Returns True if loaded successfully.
-        """
-        if name in self._subroutines['generators']:
-            return True  # Already loaded
-
-        if content_path is None:
-            content_path = f'ams/games/game_engine/lua/generators/{name}.lua'
-
-        if not self._content_fs.exists(content_path):
-            print(f"[LuaEngine] Generator not found: {content_path}")
-            return False
-
-        try:
-            code = self._content_fs.readtext(content_path)
-            result = self._lua.execute(code)
-
-            if result is None:
-                g = self._lua.globals()
-                result = getattr(g, name, None)
-
-            if result is None:
-                print(f"[LuaEngine] Generator {name} did not return a table")
-                return False
-
-            self._subroutines['generators'][name] = result
-            return True
-
-        except Exception as e:
-            print(f"[LuaEngine] Error loading generator {name}: {e}")
-            return False
-
-    def load_generators_from_dir(self, content_dir: Optional[str] = None) -> int:
-        """Load all generator .lua files from ContentFS directory.
-
-        Args:
-            content_dir: ContentFS path to directory (e.g., 'ams/games/game_engine/lua/generators').
-                        If None, uses default 'ams/games/game_engine/lua/generators'.
-
-        Returns count loaded.
-        """
-        if content_dir is None:
-            content_dir = 'ams/games/game_engine/lua/generators'
-
-        count = 0
-        if self._content_fs.exists(content_dir):
-            for item in self._content_fs.listdir(content_dir):
-                if item.endswith('.lua'):
-                    name = item[:-4]  # Remove .lua extension
-                    content_path = f'{content_dir}/{item}'
-                    if self.load_generator(name, content_path):
-                        count += 1
-        return count
-
-    def call_generator(self, name: str, args: Optional[dict[str, Any]] = None) -> Any:
+    def call_generator(
+        self,
+        name: str,
+        args: Optional[dict[str, Any]] = None,
+        default_path: str = 'ams/games/game_engine/lua/generator'
+    ) -> Any:
         """
         Call a property generator to compute a value.
 
         Args:
             name: Name of the generator (must be loaded or loadable)
             args: Arguments to pass to the generator (converted to Lua table)
+            default_path: Default ContentFS directory to look for generators
 
         Returns:
             The computed value from the generator
@@ -769,11 +564,12 @@ class LuaEngine:
             property: {call: "grid_position", args: {row: 1, col: 5}}
         """
         # Load generator if not already loaded
-        if name not in self._subroutines['generators']:
-            if not self.load_generator(name):
+        if not self.has_subroutine('generator', name):
+            content_path = f'{default_path}/{name}.lua'
+            if not self.load_subroutine('generator', name, content_path):
                 return None
 
-        generator = self._subroutines['generators'].get(name)
+        generator = self.get_subroutine('generator', name)
         if not generator:
             return None
 
@@ -795,91 +591,20 @@ class LuaEngine:
             print(f"[LuaEngine] Error calling generator {name}: {e}")
             return None
 
-    def create_entity(
-        self,
-        entity_type: str,
-        x: float = 0.0,
-        y: float = 0.0,
-        width: float = 32.0,
-        height: float = 32.0,
-        behaviors: Optional[list[str]] = None,
-        behavior_config: Optional[dict[str, dict[str, Any]]] = None,
-        **kwargs
-    ) -> Entity:
-        """
-        Create a new entity with behaviors attached.
+    def register_entity(self, entity: Entity) -> None:
+        """Register an entity created by the game engine.
+
+        The game engine is responsible for creating entities with the appropriate
+        concrete type. LuaEngine only stores and manages lifecycle.
 
         Args:
-            entity_type: Type identifier (e.g., 'brick', 'ball', 'projectile')
-            x, y: Initial position
-            width, height: Size
-            behaviors: List of behavior names to attach
-            behavior_config: Per-behavior config from YAML
-            **kwargs: Additional Entity fields (vx, vy, color, sprite, health, etc.)
-
-        Returns:
-            The created Entity (already registered)
+            entity: Entity to register (must have unique id)
         """
-        # Lazy import to avoid circular dependency
-        from ams.games.game_engine.entity import GameEntity
+        self.entities[entity.id] = entity
 
-        entity_id = f"{entity_type}_{uuid.uuid4().hex[:8]}"
-
-        entity = GameEntity(
-            id=entity_id,
-            entity_type=entity_type,
-            x=x,
-            y=y,
-            width=width,
-            height=height,
-            behaviors=behaviors or [],
-            behavior_config=behavior_config or {},
-            spawn_time=self.elapsed_time,
-            **kwargs
-        )
-
-        # Ensure behaviors are loaded
-        for behavior_name in entity.behaviors:
-            self.load_behavior(behavior_name)
-
-        self.entities[entity_id] = entity
-
-        # Call on_spawn for each behavior
-        self._call_lifecycle('on_spawn', entity)
-
-        return entity
-
-    def spawn_entity(self, entity_type: str, x: float, y: float,
-                     vx: float = 0.0, vy: float = 0.0,
-                     width: float = 32.0, height: float = 32.0,
-                     color: str = "white", sprite: str = "",
-                     behaviors: Optional[list[str]] = None,
-                     behavior_config: Optional[dict[str, dict[str, Any]]] = None) -> str:
-        """
-        Spawn entity (called from Lua API).
-
-        If a spawn callback is registered (by GameEngine), uses that to apply
-        entity type config from game.yaml. Otherwise creates directly.
-
-        Returns entity ID.
-        """
-        # Use spawn callback if available (applies entity type config)
-        if self._spawn_callback:
-            entity = self._spawn_callback(entity_type, x, y, vx, vy, width, height, color, sprite)
-            if entity:
-                return entity.id
-            # Fallback to direct create if callback returns None
-
-        entity = self.create_entity(
-            entity_type=entity_type,
-            x=x, y=y,
-            vx=vx, vy=vy,
-            width=width, height=height,
-            color=color, sprite=sprite,
-            behaviors=behaviors,
-            behavior_config=behavior_config
-        )
-        return entity.id
+        # Notify lifecycle provider of spawn
+        if self._lifecycle_provider:
+            self._lifecycle_provider.on_entity_spawned(entity, self)
 
     def get_entity(self, entity_id: str) -> Optional[Entity]:
         """Get entity by ID."""
@@ -888,25 +613,6 @@ class LuaEngine:
     def get_alive_entities(self) -> list[Entity]:
         """Get all alive entities."""
         return [e for e in self.entities.values() if e.alive]
-
-    def update_entity_behaviors(self, entity: Entity) -> None:
-        """Re-register an entity's behaviors after transform.
-
-        Called when an entity's type changes to ensure new behaviors
-        are properly loaded and on_spawn is called.
-
-        Args:
-            entity: The entity whose behaviors have changed
-        """
-        # Ensure all new behaviors are loaded
-        for behavior_name in entity.behaviors:
-            self.load_behavior(behavior_name)
-
-        # Clear any old behavior state from properties
-        # (behaviors should init fresh via on_spawn)
-
-        # Call on_spawn for new behaviors
-        self._call_lifecycle('on_spawn', entity)
 
     def evaluate_expression(self, expression: str) -> Any:
         """Evaluate a Lua expression or block and return the result.
@@ -982,9 +688,10 @@ class LuaEngine:
                 self._scheduled.remove(scheduled)
 
         # Call on_update for each entity's behaviors
-        for entity in list(self.entities.values()):
-            if entity.alive:
-                self._call_lifecycle('on_update', entity, dt)
+        if self._lifecycle_provider:
+            for entity in list(self.entities.values()):
+                if entity.alive:
+                    self._lifecycle_provider.on_entity_update(entity, self, dt)
 
         # Remove dead entities
         dead_ids = [eid for eid, e in self.entities.items() if not e.alive]
@@ -996,7 +703,8 @@ class LuaEngine:
                     self._destroy_callback(entity)
                 # Now remove from dict and call on_destroy
                 self.entities.pop(eid)
-                self._call_lifecycle('on_destroy', entity)
+                if self._lifecycle_provider:
+                    self._lifecycle_provider.on_entity_destroyed(entity, self)
 
     def notify_hit(self, entity: Entity, other: Optional[Entity] = None,
                    hit_x: float = 0.0, hit_y: float = 0.0) -> None:
@@ -1030,38 +738,18 @@ class LuaEngine:
                                  other.id, other_type, other_base_type)
 
     def _call_lifecycle(self, method_name: str, entity: Entity, *args) -> None:
-        """Call a lifecycle method on all of an entity's behaviors."""
-        for behavior_name in entity.behaviors:
-            behavior = self._subroutines['behaviors'].get(behavior_name)
-            if behavior is None:
-                continue
-
-            method = getattr(behavior, method_name, None)
-            if method is None:
-                continue
-
-            try:
-                method(entity.id, *args)
-            except Exception as e:
-                print(f"[LuaEngine] Error in {behavior_name}.{method_name}: {e}")
+        """Call a lifecycle method via the lifecycle provider."""
+        if self._lifecycle_provider:
+            self._lifecycle_provider.dispatch_lifecycle(method_name, entity, self, *args)
 
     def _call_scheduled_callback(self, scheduled: ScheduledCallback) -> None:
-        """Execute a scheduled callback."""
+        """Execute a scheduled callback via the lifecycle provider."""
         entity = self.entities.get(scheduled.entity_id)
         if entity is None or not entity.alive:
             return
 
-        for behavior_name in entity.behaviors:
-            behavior = self._subroutines['behaviors'].get(behavior_name)
-            if behavior is None:
-                continue
-
-            callback = getattr(behavior, scheduled.callback_name, None)
-            if callback:
-                try:
-                    callback(entity.id)
-                except Exception as e:
-                    print(f"[LuaEngine] Error in scheduled {scheduled.callback_name}: {e}")
+        if self._lifecycle_provider:
+            self._lifecycle_provider.dispatch_scheduled(scheduled.callback_name, entity, self)
 
     def schedule_callback(self, delay: float, callback_name: str, entity_id: str) -> None:
         """Schedule a callback to run after delay seconds."""
@@ -1080,8 +768,9 @@ class LuaEngine:
     def clear(self) -> None:
         """Remove all entities and reset state."""
         # Call on_destroy for all
-        for entity in self.entities.values():
-            self._call_lifecycle('on_destroy', entity)
+        if self._lifecycle_provider:
+            for entity in self.entities.values():
+                self._lifecycle_provider.on_entity_destroyed(entity, self)
 
         self.entities.clear()
         self._scheduled.clear()
