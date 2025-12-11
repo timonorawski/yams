@@ -1,0 +1,23 @@
+# yaml-language-server: $schema=../../../schemas/level.schema.json
+name: "Tutorial 2: Swing Timing"
+author: "AMS Team"
+difficulty: 1
+description: "Wait for the right moment in the swing"
+
+arrow_budget: 5
+
+stars:
+  one_star:
+    complete: true
+  two_star:
+    complete: true
+    shots: 3
+  three_star:
+    complete: true
+    shots: 1
+    stars: 1
+
+layout:
+  level_name: swing_timing
+
+entities: []

@@ -97,12 +97,16 @@ class GameRegistry:
             if item.name.lower() in skip_dirs:
                 continue
 
-            # Need either game_mode.py or game_info.py
+            # Need either game_mode.py, game_info.py, or game.yaml
             has_game_mode = (item / 'game_mode.py').exists()
             has_game_info = (item / 'game_info.py').exists()
+            has_game_yaml = (item / 'game.yaml').exists()
 
             if has_game_mode or has_game_info:
                 self._register_game(item)
+            elif has_game_yaml:
+                # YAML-only game - use GameEngine.from_yaml factory
+                self._register_yaml_game(item)
 
     def _register_game(self, game_dir: Path) -> None:
         """
@@ -167,6 +171,52 @@ class GameRegistry:
         except Exception as e:
             # Skip games that fail to load
             print(f"Warning: Failed to load game from {game_dir}: {e}")
+
+    def _register_yaml_game(self, game_dir: Path) -> None:
+        """
+        Register a YAML-only game (no Python boilerplate required).
+
+        Uses GameEngine.from_yaml() factory to create a dynamic game class
+        from the game.yaml definition.
+
+        Args:
+            game_dir: Path to game directory containing game.yaml
+        """
+        slug = game_dir.name.lower()
+        yaml_path = game_dir / 'game.yaml'
+
+        try:
+            # Use GameEngine factory to create class from YAML
+            from games.common import GameEngine
+            game_class = GameEngine.from_yaml(yaml_path)
+
+            # Extract metadata from class (set by factory)
+            name = getattr(game_class, 'NAME', game_dir.name)
+            description = getattr(game_class, 'DESCRIPTION', '')
+            version = getattr(game_class, 'VERSION', '1.0.0')
+            author = getattr(game_class, 'AUTHOR', 'Unknown')
+            arguments = getattr(game_class, 'ARGUMENTS', [])
+
+            self._game_classes[slug] = game_class
+
+            # Check for config files
+            has_config = (game_dir / '.env').exists() or (game_dir / 'config.py').exists()
+            config_file = '.env' if (game_dir / '.env').exists() else None
+
+            self._games[slug] = GameInfo(
+                name=name,
+                slug=slug,
+                description=description,
+                version=version,
+                author=author,
+                module_path=f"games.{game_dir.name}",  # Virtual module path
+                arguments=arguments,
+                has_config=has_config,
+                config_file=config_file,
+            )
+
+        except Exception as e:
+            print(f"Warning: Failed to load YAML game from {game_dir}: {e}")
 
     def _find_game_class(self, game_dir: Path, module_path: str) -> Optional[Type['BaseGame']]:
         """

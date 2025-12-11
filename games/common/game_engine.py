@@ -20,7 +20,7 @@ from abc import abstractmethod
 from dataclasses import dataclass, field
 import json
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Protocol, Tuple, runtime_checkable
+from typing import Any, Dict, List, Optional, Protocol, Tuple, Type, runtime_checkable
 
 import pygame
 import yaml
@@ -191,6 +191,7 @@ class EntityTypeConfig:
 
     # Lifecycle transforms
     on_destroy: Optional['TransformConfig'] = None  # Transform on destroy (explosions, death effects)
+    on_parent_destroy: Optional['TransformConfig'] = None  # Transform when parent entity is destroyed
     on_update: List['OnUpdateTransform'] = field(default_factory=list)  # Conditional transforms
 
 
@@ -730,15 +731,27 @@ class GameEngineSkin:
         else:
             screen.blit(sprite, (x, y))
 
-    def _resolve_color(self, entity: Entity, color_ref: str) -> Tuple[int, int, int]:
-        """Resolve color reference (e.g., $color) to RGB."""
-        if color_ref.startswith('$'):
+    def _resolve_color(self, entity: Entity, color_ref) -> Tuple[int, int, int]:
+        """Resolve color reference (e.g., $color) or direct color to RGB.
+
+        Args:
+            entity: Entity for property lookups
+            color_ref: Color name string, RGB tuple/list, or $property reference
+        """
+        # Direct RGB tuple/list - parse immediately
+        if isinstance(color_ref, (list, tuple)):
+            return self._parse_color(color_ref)
+
+        # Property reference (e.g., $color)
+        if isinstance(color_ref, str) and color_ref.startswith('$'):
             prop_name = color_ref[1:]
             if prop_name == 'color':
                 return self._parse_color(entity.color)
             # Could also look up entity.properties[prop_name]
             prop_val = entity.properties.get(prop_name, entity.color)
-            return self._parse_color(str(prop_val))
+            return self._parse_color(prop_val)
+
+        # Color name string
         return self._parse_color(color_ref)
 
     def render_hud(self, screen: pygame.Surface, score: int, lives: int,
@@ -918,8 +931,20 @@ class GameEngineSkin:
             print(f"[GameEngineSkin] Failed to load image from data URI: {e}")
             return None
 
-    def _parse_color(self, color_str: str) -> Tuple[int, int, int]:
-        """Parse color string to RGB tuple."""
+    def _parse_color(self, color_value) -> Tuple[int, int, int]:
+        """Parse color value to RGB tuple.
+
+        Accepts:
+        - RGB tuple/list: [255, 215, 0] or (255, 215, 0)
+        - Color name string: 'red', 'blue', etc.
+        """
+        # Already a tuple or list of RGB values
+        if isinstance(color_value, (list, tuple)):
+            if len(color_value) >= 3:
+                return (int(color_value[0]), int(color_value[1]), int(color_value[2]))
+            return (255, 255, 255)
+
+        # Color name string
         colors = {
             'white': (255, 255, 255),
             'black': (0, 0, 0),
@@ -933,7 +958,9 @@ class GameEngineSkin:
             'gray': (128, 128, 128),
             'silver': (192, 192, 192),
         }
-        return colors.get(color_str.lower(), (255, 255, 255))
+        if isinstance(color_value, str):
+            return colors.get(color_value.lower(), (255, 255, 255))
+        return (255, 255, 255)
 
 
 class GameEngine(BaseGame):
@@ -959,6 +986,64 @@ class GameEngine(BaseGame):
 
     # Custom behaviors directory (override to add game-specific behaviors)
     BEHAVIORS_DIR: Optional[Path] = None
+
+    @classmethod
+    def from_yaml(cls, yaml_path: Path) -> Type['GameEngine']:
+        """Create a GameEngine subclass from a YAML game definition.
+
+        This factory method eliminates the need for boilerplate Python files
+        for YAML-only games. It reads metadata from the YAML and dynamically
+        creates a properly configured GameEngine subclass.
+
+        Args:
+            yaml_path: Path to the game.yaml file
+
+        Returns:
+            A new GameEngine subclass configured for this game
+
+        Example:
+            # Instead of creating game_mode.py with boilerplate:
+            MyGame = GameEngine.from_yaml(Path('games/MyGame/game.yaml'))
+            game = MyGame()
+        """
+        # Load YAML to extract metadata
+        with open(yaml_path) as f:
+            game_data = yaml.safe_load(f)
+
+        # Extract metadata with defaults
+        name = game_data.get('name', yaml_path.parent.name)
+        description = game_data.get('description', f'YAML-driven game: {name}')
+        version = game_data.get('version', '1.0.0')
+        author = game_data.get('author', 'Unknown')
+
+        # Create class name from game name (e.g., "Duck Hunt NG" -> "DuckHuntNGMode")
+        class_name = ''.join(word.capitalize() for word in name.split()) + 'Mode'
+        class_name = ''.join(c for c in class_name if c.isalnum())
+
+        # Define the dynamic subclass
+        game_def_file = yaml_path
+        levels_dir = yaml_path.parent / 'levels'
+
+        class YAMLGameMode(cls):
+            NAME = name
+            DESCRIPTION = description
+            VERSION = version
+            AUTHOR = author
+            GAME_DEF_FILE = game_def_file
+            LEVELS_DIR = levels_dir
+
+            def __init__(self, **kwargs):
+                kwargs.pop('skin', None)
+                super().__init__(skin='default', **kwargs)
+
+            def _get_skin(self, skin_name: str) -> 'GameEngineSkin':
+                return GameEngineSkin()
+
+        # Set the class name for better debugging/repr
+        YAMLGameMode.__name__ = class_name
+        YAMLGameMode.__qualname__ = class_name
+
+        return YAMLGameMode
 
     def __init__(
         self,
@@ -1011,6 +1096,9 @@ class GameEngine(BaseGame):
 
         # Register spawn callback so Lua spawns use entity type config
         self._behavior_engine.set_spawn_callback(self._lua_spawn_callback)
+
+        # Register destroy callback for orphan handling
+        self._behavior_engine.set_destroy_callback(self._on_entity_destroyed)
 
         # Create skin and give it access to game definition
         self._skin = self._get_skin(skin)
@@ -1102,9 +1190,12 @@ class GameEngine(BaseGame):
 
             # Parse lifecycle transforms
             on_destroy = None
+            on_parent_destroy = None
             on_update = []
             if 'on_destroy' in type_data:
                 on_destroy = self._parse_transform_config(type_data['on_destroy'])
+            if 'on_parent_destroy' in type_data:
+                on_parent_destroy = self._parse_transform_config(type_data['on_parent_destroy'])
             if 'on_update' in type_data:
                 for update_data in type_data['on_update']:
                     on_update.append(self._parse_on_update_transform(update_data))
@@ -1127,6 +1218,7 @@ class GameEngine(BaseGame):
                 render_as=type_data.get('render_as', []),
                 render=render_commands,
                 on_destroy=on_destroy,
+                on_parent_destroy=on_parent_destroy,
                 on_update=on_update,
             )
 
@@ -1686,6 +1778,8 @@ class GameEngine(BaseGame):
                     # Inherit lifecycle transforms if not overridden
                     if not config.on_destroy and base.on_destroy:
                         config.on_destroy = base.on_destroy
+                    if not config.on_parent_destroy and base.on_parent_destroy:
+                        config.on_parent_destroy = base.on_parent_destroy
                     if not config.on_update and base.on_update:
                         config.on_update = base.on_update.copy()
 
@@ -1734,46 +1828,83 @@ class GameEngine(BaseGame):
     def _apply_level_config(self, level_data: Any) -> None:
         """Apply level configuration - spawn entities from level data.
 
-        Works with any level data conforming to GameEngineLevelData protocol:
-        - name: str
-        - lives: int
-        - player_x, player_y: float
-        - entities: List[EntityPlacement]
+        Supports multiple level formats:
+        1. GameEngineLevelData protocol (entities list)
+        2. Raw dict with ASCII layout (layout + layout_key)
+        3. Raw dict with entities list
 
         Args:
-            level_data: Parsed level data (should conform to GameEngineLevelData)
+            level_data: Parsed level data (protocol, dict, or dataclass)
         """
         # Clear existing entities
         self._behavior_engine.clear()
 
+        # Handle both dict and protocol-style access
+        def get_attr(obj: Any, key: str, default: Any = None) -> Any:
+            if isinstance(obj, dict):
+                return obj.get(key, default)
+            return getattr(obj, key, default)
+
         # Set level name for HUD
-        self._level_name = getattr(level_data, 'name', 'Level')
+        self._level_name = get_attr(level_data, 'name', 'Level')
 
         # Apply lives from level
-        lives = getattr(level_data, 'lives', self._starting_lives)
+        lives = get_attr(level_data, 'lives', self._starting_lives)
         self._lives = lives
         self._starting_lives = lives
 
         # Spawn player entity at level-specified position
         if self._game_def and self._game_def.player_type:
-            player_x = getattr(level_data, 'player_x', self._game_def.player_spawn[0])
-            player_y = getattr(level_data, 'player_y', self._game_def.player_spawn[1])
+            # Check for paddle config (BrickBreaker style) or player_x/y
+            paddle = get_attr(level_data, 'paddle', {})
+            if paddle:
+                player_x = paddle.get('x', self._game_def.player_spawn[0])
+                player_y = paddle.get('y', self._game_def.player_spawn[1])
+            else:
+                player_x = get_attr(level_data, 'player_x', self._game_def.player_spawn[0])
+                player_y = get_attr(level_data, 'player_y', self._game_def.player_spawn[1])
+
+            # Get layout properties to pass during spawn (for level_setup behaviors)
+            layout_props = get_attr(level_data, 'layout', {})
+            initial_props = layout_props if isinstance(layout_props, dict) else {}
+
             player = self.spawn_entity(
                 self._game_def.player_type,
                 x=player_x,
                 y=player_y,
+                properties=initial_props,
             )
             if player:
                 self._player_id = player.id
 
-        # Spawn entities from level
-        entities = getattr(level_data, 'entities', [])
-        for placement in entities:
-            self.spawn_entity(
-                placement.entity_type,
-                x=placement.x,
-                y=placement.y,
-            )
+        # Try ASCII layout first (layout + layout_key)
+        layout_str = get_attr(level_data, 'layout')
+        layout_key = get_attr(level_data, 'layout_key', {})
+        if layout_str and layout_key:
+            # Get grid config from level data
+            grid = get_attr(level_data, 'grid', {})
+            layout_config = {
+                'grid': grid,
+                'layout': layout_str,
+                'layout_key': layout_key,
+            }
+            self._spawn_ascii_layout(layout_config, layout_str, layout_key)
+        else:
+            # Fall back to entities list
+            entities = get_attr(level_data, 'entities', [])
+            for placement in entities:
+                if isinstance(placement, dict):
+                    self.spawn_entity(
+                        placement.get('entity_type', placement.get('type', '')),
+                        x=placement.get('x', 0),
+                        y=placement.get('y', 0),
+                    )
+                else:
+                    self.spawn_entity(
+                        placement.entity_type,
+                        x=placement.x,
+                        y=placement.y,
+                    )
 
         # Reset game state
         self._internal_state = GameState.PLAYING
@@ -1785,29 +1916,100 @@ class GameEngine(BaseGame):
 
         layout = self._game_def.default_layout
 
-        # Parse brick_grid if present
+        # ASCII layout support - parse layout string with layout_key mapping
+        layout_str = layout.get('layout')
+        layout_key = layout.get('layout_key', {})
+        if layout_str and layout_key:
+            self._spawn_ascii_layout(layout, layout_str, layout_key)
+            return
+
+        # Legacy brick_grid support (simple row-based grid)
         brick_grid = layout.get('brick_grid')
         if brick_grid:
-            start_x = brick_grid.get('start_x', 65)
-            start_y = brick_grid.get('start_y', 60)
-            cols = brick_grid.get('cols', 10)
-            rows = brick_grid.get('rows', 5)
-            row_types = brick_grid.get('row_types', ['brick'])
+            self._spawn_brick_grid(brick_grid)
 
-            # Get brick dimensions from first row type
-            first_type = row_types[0] if row_types else 'brick'
-            type_config = self._game_def.entity_types.get(first_type)
-            brick_width = type_config.width if type_config else 70
-            brick_height = type_config.height if type_config else 25
+    def _spawn_ascii_layout(
+        self,
+        layout_config: Dict[str, Any],
+        layout_str: str,
+        layout_key: Dict[str, str],
+    ) -> None:
+        """Spawn entities from ASCII art layout.
 
-            # Spawn grid
-            for row in range(rows):
-                # Get entity type for this row (cycle through row_types)
-                entity_type = row_types[row % len(row_types)] if row_types else 'brick'
-                for col in range(cols):
-                    x = start_x + col * brick_width
-                    y = start_y + row * brick_height
-                    self.spawn_entity(entity_type, x, y)
+        Enables rapid level design using visual character layouts:
+
+        default_layout:
+          grid:
+            cell_width: 70
+            cell_height: 25
+            start_x: 65
+            start_y: 60
+          layout: |
+            ..SSSSSS..
+            MMMMMMMMMM
+            IIIIIIIIII
+          layout_key:
+            I: invader
+            M: invader_moving
+            S: shooter
+            ".": empty
+
+        Args:
+            layout_config: Full layout config (contains grid settings)
+            layout_str: Multi-line ASCII string
+            layout_key: Mapping of characters to entity types
+        """
+        # Get grid configuration
+        grid = layout_config.get('grid', {})
+        start_x = grid.get('start_x', 65)
+        start_y = grid.get('start_y', 60)
+        cell_width = grid.get('cell_width', grid.get('brick_width', 70))
+        cell_height = grid.get('cell_height', grid.get('brick_height', 25))
+
+        # Parse ASCII lines
+        lines = layout_str.strip().split('\n')
+
+        for row, line in enumerate(lines):
+            for col, char in enumerate(line):
+                # Look up entity type for this character
+                entity_type = layout_key.get(char)
+
+                # Skip empty/unmapped characters
+                if not entity_type or entity_type == 'empty' or entity_type == '':
+                    continue
+
+                # Calculate position
+                x = start_x + col * cell_width
+                y = start_y + row * cell_height
+
+                self.spawn_entity(entity_type, x, y)
+
+    def _spawn_brick_grid(self, brick_grid: Dict[str, Any]) -> None:
+        """Spawn a simple row-based brick grid (legacy support).
+
+        Args:
+            brick_grid: Grid configuration with row_types
+        """
+        start_x = brick_grid.get('start_x', 65)
+        start_y = brick_grid.get('start_y', 60)
+        cols = brick_grid.get('cols', 10)
+        rows = brick_grid.get('rows', 5)
+        row_types = brick_grid.get('row_types', ['brick'])
+
+        # Get brick dimensions from first row type
+        first_type = row_types[0] if row_types else 'brick'
+        type_config = self._game_def.entity_types.get(first_type) if self._game_def else None
+        brick_width = type_config.width if type_config else 70
+        brick_height = type_config.height if type_config else 25
+
+        # Spawn grid
+        for row in range(rows):
+            # Get entity type for this row (cycle through row_types)
+            entity_type = row_types[row % len(row_types)] if row_types else 'brick'
+            for col in range(cols):
+                x = start_x + col * brick_width
+                y = start_y + row * brick_height
+                self.spawn_entity(entity_type, x, y)
 
     def _lua_spawn_callback(
         self, entity_type: str, x: float, y: float,
@@ -2044,8 +2246,8 @@ class GameEngine(BaseGame):
         # Check collisions
         self._check_collisions()
 
-        # Handle destroyed entities
-        self._handle_destroyed_entities()
+        # Note: destroyed entities are handled via callback from BehaviorEngine
+        # (see _on_entity_destroyed, registered via set_destroy_callback)
 
         # Update skin
         self._skin.update(dt)
@@ -2109,10 +2311,20 @@ class GameEngine(BaseGame):
     def _check_collisions(self) -> None:
         """Check collisions based on rules defined in game.yaml.
 
+        Supports both collision formats:
+        - collisions: [[type_a, type_b], ...] - explicit pairs (legacy)
+        - collision_behaviors: {type_a: {type_b: action}} - nested dict (new)
+
         For each collision rule, finds all entity pairs that match and
-        calls on_hit on both entities' behaviors.
+        dispatches to collision actions or on_hit behaviors.
         """
-        if not self._game_def or not self._game_def.collisions:
+        if not self._game_def:
+            return
+
+        # Need either collisions or collision_behaviors defined
+        has_collisions = bool(self._game_def.collisions)
+        has_collision_behaviors = bool(self._game_def.collision_behaviors)
+        if not has_collisions and not has_collision_behaviors:
             return
 
         alive_entities = self._behavior_engine.get_alive_entities()
@@ -2120,10 +2332,23 @@ class GameEngine(BaseGame):
         # Track collisions already processed this frame to avoid duplicates
         processed: set[str] = set()
 
+        # Collect all type pairs to check from both systems
+        type_pairs: set[tuple[str, str]] = set()
+
+        # From legacy collisions
         for rule in self._game_def.collisions:
+            type_pairs.add((rule.type_a, rule.type_b))
+
+        # From collision_behaviors
+        for type_a, targets in self._game_def.collision_behaviors.items():
+            for type_b in targets.keys():
+                type_pairs.add((type_a, type_b))
+
+        # Check all type pairs
+        for type_a, type_b in type_pairs:
             # Find entities matching each side of the rule
-            entities_a = self._get_entities_matching_type(rule.type_a, alive_entities)
-            entities_b = self._get_entities_matching_type(rule.type_b, alive_entities)
+            entities_a = self._get_entities_matching_type(type_a, alive_entities)
+            entities_b = self._get_entities_matching_type(type_b, alive_entities)
 
             # Check all pairs for collision
             for entity_a in entities_a:
@@ -2256,7 +2481,7 @@ class GameEngine(BaseGame):
     def _on_entity_destroyed(self, entity: Entity) -> None:
         """Handle entity destruction.
 
-        Applies on_destroy transforms and scoring.
+        Applies on_destroy transforms, scoring, and orphan handling.
         """
         if not self._game_def:
             return
@@ -2272,6 +2497,48 @@ class GameEngine(BaseGame):
         if type_config.on_destroy:
             # Spawn children at entity's position
             self._spawn_children(entity, type_config.on_destroy.children)
+
+        # Handle orphaned children (parent-child relationship)
+        self._handle_orphaned_children(entity)
+
+    def _handle_orphaned_children(self, parent: Entity) -> None:
+        """Handle children of a destroyed parent entity.
+
+        When a parent is destroyed, triggers on_parent_destroy transform
+        for each child AND recursively for all descendants.
+        (e.g., cutting a rope segment orphans everything below it).
+        """
+        if not parent.children:
+            return
+
+        # Collect all descendants first (breadth-first)
+        descendants_to_orphan: list[Entity] = []
+        queue = list(parent.children)
+
+        while queue:
+            child_id = queue.pop(0)
+            child = self._behavior_engine.get_entity(child_id)
+            if not child or not child.alive:
+                continue
+            descendants_to_orphan.append(child)
+            # Add this child's children to the queue (recursive)
+            queue.extend(child.children)
+
+        # Now orphan all descendants
+        for child in descendants_to_orphan:
+            # Clear parent reference
+            child.parent_id = None
+            child.parent_offset = (0.0, 0.0)
+            child.properties.pop("_parent_id", None)
+            child.properties.pop("_parent_offset_x", None)
+            child.properties.pop("_parent_offset_y", None)
+            child.children.clear()  # Clear children list too
+
+            # Apply on_parent_destroy transform if defined
+            if self._game_def:
+                child_config = self._game_def.entity_types.get(child.entity_type)
+                if child_config and child_config.on_parent_destroy:
+                    self.apply_transform(child, child_config.on_parent_destroy)
 
     def _check_win_conditions(self) -> None:
         """Check if player has won based on game definition.

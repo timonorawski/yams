@@ -125,6 +125,11 @@ class BehaviorEngine:
         # Signature: (entity_type, x, y, vx, vy, width, height, color, sprite) -> Entity
         self._spawn_callback: Optional[Callable] = None
 
+        # Destroy callback - notifies GameEngine when entity is destroyed
+        # Signature: (entity) -> None
+        # Called BEFORE entity is removed from dict, allowing orphan handling
+        self._destroy_callback: Optional[Callable] = None
+
         # Initialize Lua with sandbox protections:
         # - register_eval=False: don't expose python.eval()
         # - register_builtins=False: don't expose python.builtins.*
@@ -145,6 +150,14 @@ class BehaviorEngine:
     def set_spawn_callback(self, callback: Callable) -> None:
         """Set callback for entity spawning (used by GameEngine to apply type config)."""
         self._spawn_callback = callback
+
+    def set_destroy_callback(self, callback: Callable) -> None:
+        """Set callback for entity destruction (used by GameEngine for orphan handling).
+
+        The callback is called BEFORE the entity is removed from the dict,
+        allowing orphan handling and other cleanup.
+        """
+        self._destroy_callback = callback
 
     def _validate_sandbox(self) -> None:
         """Validate that the Lua sandbox is properly locked down.
@@ -319,6 +332,13 @@ class BehaviorEngine:
         ams.random = api.math_random
         ams.random_range = api.math_random_range
         ams.clamp = api.math_clamp
+
+        # Parent-child relationships
+        ams.get_parent_id = api.get_parent_id
+        ams.set_parent = api.set_parent
+        ams.detach_from_parent = api.detach_from_parent
+        ams.get_children = api.get_children
+        ams.has_parent = api.has_parent
 
         ams.log = api.log
 
@@ -985,8 +1005,14 @@ class BehaviorEngine:
         # Remove dead entities
         dead_ids = [eid for eid, e in self.entities.items() if not e.alive]
         for eid in dead_ids:
-            entity = self.entities.pop(eid)
-            self._call_lifecycle('on_destroy', entity)
+            entity = self.entities.get(eid)
+            if entity:
+                # Notify GameEngine BEFORE removing (for orphan handling)
+                if self._destroy_callback:
+                    self._destroy_callback(entity)
+                # Now remove from dict and call on_destroy
+                self.entities.pop(eid)
+                self._call_lifecycle('on_destroy', entity)
 
     def notify_hit(self, entity: Entity, other: Optional[Entity] = None,
                    hit_x: float = 0.0, hit_y: float = 0.0) -> None:

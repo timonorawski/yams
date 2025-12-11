@@ -11,7 +11,7 @@ Entities are mutable - behaviors modify them via the Lua API.
 """
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Optional
 
 
 @dataclass
@@ -53,6 +53,11 @@ class Entity:
 
     # Tags for categorization (e.g., ["enemy", "brick"])
     tags: list[str] = field(default_factory=list)
+
+    # Parent-child relationships (for rope chains, attached objects)
+    parent_id: Optional[str] = None  # Entity ID this is attached to
+    parent_offset: tuple[float, float] = (0.0, 0.0)  # Offset from parent position
+    children: list[str] = field(default_factory=list)  # Child entity IDs
 
     def get_rect(self) -> tuple[float, float, float, float]:
         """Return (x, y, width, height) for collision detection."""

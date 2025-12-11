@@ -1,0 +1,11 @@
+# yaml-language-server: $schema=../../../schemas/level_group.schema.json
+group: true
+name: "Tutorial"
+description: "Learn the basics of Sweet Physics"
+author: "AMS Team"
+
+levels:
+  - 01_simple_drop
+  - 02_swing_timing
+  - 03_two_ropes
+  - 04_precision_drop

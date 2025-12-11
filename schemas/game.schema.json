@@ -57,9 +57,9 @@
     },
     "win_condition": {
       "type": "string",
-      "enum": ["destroy_all", "survive_time", "reach_score"],
+      "enum": ["destroy_all", "survive_time", "reach_score", "none"],
       "default": "destroy_all",
-      "description": "How to win the game"
+      "description": "How to win the game. 'none' for endless/training games"
     },
     "win_target": {
       "type": "integer",

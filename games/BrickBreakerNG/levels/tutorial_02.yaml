@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=../../../schemas/level.schema.json
 # Tutorial Level 2 - Multi-Hit Bricks
 # Introduces gray (2-hit) and silver (3-hit) bricks
 

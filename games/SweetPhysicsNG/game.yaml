@@ -1,0 +1,460 @@
+# yaml-language-server: $schema=../../schemas/game.schema.json
+# Sweet Physics NG - Cut the Rope style physics puzzle
+#
+# Core mechanics:
+# - Candy hangs from rope (chain of spring-connected segments)
+# - Click rope segment to cut it → segment destroyed
+# - Children become orphaned → transform to falling versions
+# - Falling candy must reach goal zone
+# - Collect stars along the way for bonus points
+#
+# Uses rope_link behavior for spring physics (Hooke's Law).
+
+name: "Sweet Physics"
+description: "Cut the rope to drop the candy into the goal"
+version: "1.0.0"
+author: "AMS Team"
+
+screen_width: 800
+screen_height: 600
+background_color: [30, 30, 50]
+
+defaults:
+  lives: 3
+
+win_condition: none
+
+# =============================================================================
+# Entity Types
+# =============================================================================
+
+entity_types:
+
+  # ---------------------------------------------------------------------------
+  # Anchor - static point where rope attaches
+  # ---------------------------------------------------------------------------
+
+  anchor:
+    width: 20
+    height: 20
+    color: [80, 80, 80]
+    tags: [anchor]
+    render:
+      - shape: circle
+        color: [80, 80, 80]
+        radius: 0.5
+
+  # ---------------------------------------------------------------------------
+  # Rope Segment - spring-connected to parent, can be cut
+  # ---------------------------------------------------------------------------
+
+  rope_segment:
+    width: 8
+    height: 25
+    color: [139, 90, 43]
+    behaviors: [rope_link]
+    behavior_config:
+      rope_link:
+        rest_length: 28
+        stiffness: 1200
+        damping: 0.96
+    tags: [rope, cuttable]
+    render:
+      - shape: rectangle
+        color: [139, 90, 43]
+    on_parent_destroy:
+      type: falling_segment
+
+  # ---------------------------------------------------------------------------
+  # Falling Segment - detached rope with gravity
+  # ---------------------------------------------------------------------------
+
+  falling_segment:
+    width: 10
+    height: 30
+    color: [139, 90, 43]
+    behaviors: [gravity, destroy_offscreen]
+    behavior_config:
+      gravity:
+        acceleration: 800
+      destroy_offscreen:
+        edges: bottom
+        margin: 50
+    tags: [falling]
+    render:
+      - shape: rectangle
+        color: [139, 90, 43]
+    on_parent_destroy:
+      type: falling_segment
+
+  # ---------------------------------------------------------------------------
+  # Candy - the payload, spring-connected with gravity
+  # ---------------------------------------------------------------------------
+
+  candy:
+    width: 40
+    height: 40
+    color: [255, 100, 100]
+    behaviors: [gravity, rope_link]
+    behavior_config:
+      gravity:
+        acceleration: 400
+      rope_link:
+        rest_length: 35
+        stiffness: 800
+        damping: 0.97
+    tags: [candy, payload]
+    render:
+      - shape: circle
+        color: [255, 100, 100]
+        radius: 0.45
+    on_parent_destroy:
+      type: falling_candy
+
+  # ---------------------------------------------------------------------------
+  # Falling Candy - detached candy with gravity
+  # ---------------------------------------------------------------------------
+
+  falling_candy:
+    width: 40
+    height: 40
+    color: [255, 100, 100]
+    behaviors: [gravity]
+    behavior_config:
+      gravity:
+        acceleration: 800
+    tags: [candy, falling]
+    render:
+      - shape: circle
+        color: [255, 100, 100]
+        radius: 0.45
+
+  # ---------------------------------------------------------------------------
+  # Goal - where candy needs to land
+  # ---------------------------------------------------------------------------
+
+  goal:
+    width: 100
+    height: 60
+    color: [100, 200, 100]
+    tags: [goal]
+    render:
+      - shape: rectangle
+        color: [80, 160, 80]
+      - shape: circle
+        color: [120, 220, 120]
+        radius: 0.3
+
+  # ---------------------------------------------------------------------------
+  # Star - collectible bonus
+  # ---------------------------------------------------------------------------
+
+  star:
+    width: 30
+    height: 30
+    color: [255, 215, 0]
+    points: 100
+    tags: [star, collectible]
+    render:
+      - shape: circle
+        color: [255, 215, 0]
+        radius: 0.45
+      - shape: circle
+        color: [255, 255, 150]
+        radius: 0.2
+
+  # ---------------------------------------------------------------------------
+  # Platform - static obstacle
+  # ---------------------------------------------------------------------------
+
+  platform:
+    width: 100
+    height: 15
+    color: [100, 100, 120]
+    tags: [platform, solid]
+    render:
+      - shape: rectangle
+        color: [100, 100, 120]
+
+  # ---------------------------------------------------------------------------
+  # Level Setup Spawner - creates level based on configuration
+  # ---------------------------------------------------------------------------
+
+  level_setup:
+    width: 1
+    height: 1
+    color: black
+    behaviors:
+      - lua: |
+          local setup = {}
+
+          -- Helper: spawn a rope chain and return candy_id
+          function setup.spawn_rope(anchor_x, anchor_y, candy_x, candy_y, segment_count)
+              segment_count = segment_count or 6
+              local segment_height = 30
+              local segment_gap = 5
+
+              -- Spawn anchor
+              local anchor_id = ams.spawn("anchor", anchor_x - 10, anchor_y - 10, 0, 0, 20, 20, "", "")
+
+              -- Spawn rope segments as parent-child chain
+              local prev_id = anchor_id
+              local prev_y = anchor_y + 10
+
+              for i = 1, segment_count do
+                  local seg_y = prev_y + segment_gap
+                  local seg_id = ams.spawn("rope_segment", anchor_x - 5, seg_y, 0, 0, 10, segment_height, "", "")
+                  ams.set_parent(seg_id, prev_id, 0, segment_height / 2 + segment_gap)
+                  prev_id = seg_id
+                  prev_y = seg_y + segment_height
+              end
+
+              -- Spawn candy attached to last segment
+              local candy_id = ams.spawn("candy", candy_x - 20, candy_y, 0, 0, 40, 40, "", "")
+              ams.set_parent(candy_id, prev_id, 0, segment_height / 2 + 30)
+
+              return candy_id
+          end
+
+          function setup.on_spawn(entity_id)
+              local screen_w = ams.get_screen_width()
+              local screen_h = ams.get_screen_height()
+
+              -- Get level configuration from properties
+              local level_name = ams.get_prop(entity_id, "level_name") or "default"
+
+              -- Level configurations
+              local levels = {
+                  -- Default level
+                  default = {
+                      ropes = {{anchor_x = 400, anchor_y = 50, segments = 6}},
+                      candy = {x = 400, y = 180},
+                      goal = {x = 350, y = 520},
+                      stars = {}
+                  },
+                  -- Tutorial 1: Simple Drop
+                  simple_drop = {
+                      ropes = {{anchor_x = 400, anchor_y = 50, segments = 8}},
+                      candy = {x = 400, y = 180},
+                      goal = {x = 350, y = 520},
+                      stars = {{x = 385, y = 380}}
+                  },
+                  -- Tutorial 2: Swing Timing
+                  swing_timing = {
+                      ropes = {{anchor_x = 400, anchor_y = 50, segments = 10}},
+                      candy = {x = 250, y = 200},
+                      goal = {x = 600, y = 520},
+                      stars = {{x = 500, y = 350}},
+                      platforms = {{x = 300, y = 450, width = 200}}
+                  },
+                  -- Tutorial 3: Two Ropes
+                  two_ropes = {
+                      ropes = {
+                          {anchor_x = 300, anchor_y = 50, segments = 10},
+                          {anchor_x = 500, anchor_y = 50, segments = 10}
+                      },
+                      candy = {x = 400, y = 200},
+                      goal = {x = 350, y = 540},
+                      stars = {
+                          {x = 330, y = 350},
+                          {x = 385, y = 420},
+                          {x = 440, y = 350}
+                      }
+                  },
+                  -- Challenge: Precision Drop
+                  precision_drop = {
+                      ropes = {{anchor_x = 200, anchor_y = 50, segments = 8}},
+                      candy = {x = 200, y = 180},
+                      goal = {x = 600, y = 520},
+                      stars = {
+                          {x = 350, y = 300},
+                          {x = 500, y = 400}
+                      },
+                      platforms = {
+                          {x = 250, y = 400, width = 150},
+                          {x = 450, y = 350, width = 100}
+                      }
+                  }
+              }
+
+              local config = levels[level_name] or levels["default"]
+
+              -- Spawn ropes and candy
+              local candy_id = nil
+              for i, rope in ipairs(config.ropes) do
+                  if i == 1 then
+                      -- First rope: spawn candy attached
+                      candy_id = setup.spawn_rope(
+                          rope.anchor_x, rope.anchor_y,
+                          config.candy.x, config.candy.y,
+                          rope.segments
+                      )
+                  else
+                      -- Additional ropes: attach to existing candy
+                      local anchor_id = ams.spawn("anchor", rope.anchor_x - 10, rope.anchor_y - 10, 0, 0, 20, 20, "", "")
+                      local segment_height = 30
+                      local segment_gap = 5
+                      local prev_id = anchor_id
+                      local prev_y = rope.anchor_y + 10
+
+                      for j = 1, (rope.segments or 10) do
+                          local seg_y = prev_y + segment_gap
+                          local seg_id = ams.spawn("rope_segment", rope.anchor_x - 5, seg_y, 0, 0, 10, segment_height, "", "")
+                          ams.set_parent(seg_id, prev_id, 0, segment_height / 2 + segment_gap)
+                          prev_id = seg_id
+                          prev_y = seg_y + segment_height
+                      end
+
+                      -- Attach last segment to candy (candy becomes child of this rope too)
+                      if candy_id then
+                          -- For multiple ropes, we need rope segments to follow candy instead
+                          -- This is simplified - just spawn the rope chain ending near candy
+                      end
+                  end
+              end
+
+              -- Spawn goal
+              ams.spawn("goal", config.goal.x, config.goal.y, 0, 0, 100, 60, "", "")
+
+              -- Spawn stars
+              for _, star in ipairs(config.stars or {}) do
+                  ams.spawn("star", star.x, star.y, 0, 0, 30, 30, "", "")
+              end
+
+              -- Spawn platforms
+              for _, plat in ipairs(config.platforms or {}) do
+                  local w = plat.width or 100
+                  ams.spawn("platform", plat.x, plat.y, 0, 0, w, 15, "", "")
+              end
+
+              -- Self-destruct setup entity
+              ams.destroy(entity_id)
+          end
+
+          return setup
+    tags: []
+    render: []
+
+  # ---------------------------------------------------------------------------
+  # Win Banner - shown when candy reaches goal
+  # ---------------------------------------------------------------------------
+
+  win_banner:
+    width: 300
+    height: 80
+    color: [100, 200, 100]
+    tags: [ui, win]
+    render:
+      - shape: rectangle
+        color: [50, 150, 50]
+      - shape: text
+        text: "SWEET!"
+        color: white
+        font_size: 48
+
+# =============================================================================
+# Input Mapping
+# =============================================================================
+
+input_mapping:
+  # Click rope segment to cut it
+  rope_segment:
+    on_hit:
+      transform:
+        type: destroy
+
+  falling_segment:
+    on_hit:
+      transform:
+        type: destroy
+
+# =============================================================================
+# Collisions
+# =============================================================================
+
+collision_behaviors:
+  # Candy reaching goal = win
+  falling_candy:
+    goal:
+      action:
+        lua: |
+          local action = {}
+          function action.execute(candy_id, goal_id, modifier)
+              ams.destroy(candy_id)
+              local screen_w = ams.get_screen_width()
+              ams.spawn("win_banner", screen_w / 2 - 150, 250, 0, 0, 300, 80, "", "")
+              ams.play_sound("win")
+          end
+          return action
+
+    # Candy collecting star
+    star:
+      action:
+        lua: |
+          local action = {}
+          function action.execute(candy_id, star_id, modifier)
+              ams.destroy(star_id)
+              ams.add_score(100)
+              ams.play_sound("star")
+          end
+          return action
+
+    # Candy hitting platform - bounce off
+    platform:
+      action:
+        lua: |
+          local action = {}
+          function action.execute(candy_id, platform_id, modifier)
+              -- Simple bounce: reverse Y velocity
+              local vy = ams.get_vy(candy_id)
+              if vy > 0 then
+                  ams.set_vy(candy_id, -vy * 0.6)
+                  -- Push candy above platform
+                  local plat_y = ams.get_y(platform_id)
+                  local candy_h = ams.get_height(candy_id)
+                  ams.set_y(candy_id, plat_y - candy_h - 1)
+              end
+          end
+          return action
+
+  # Attached candy can also collect stars while swinging
+  candy:
+    star:
+      action:
+        lua: |
+          local action = {}
+          function action.execute(candy_id, star_id, modifier)
+              ams.destroy(star_id)
+              ams.add_score(100)
+              ams.play_sound("star")
+          end
+          return action
+
+# =============================================================================
+# Lose Conditions
+# =============================================================================
+
+lose_conditions:
+  # Candy exits screen = lose life
+  - entity_type: falling_candy
+    event: exited_screen
+    edge: bottom
+    action: lose_life
+    then:
+      destroy: falling_candy
+
+# =============================================================================
+# Player Configuration
+# =============================================================================
+
+player:
+  type: level_setup
+  spawn: [0, 0]
+
+# =============================================================================
+# Default Level (used when --level not specified)
+# =============================================================================
+
+default_layout:
+  name: "Simple Drop"
+  level_name: simple_drop

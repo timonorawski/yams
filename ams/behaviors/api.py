@@ -368,6 +368,74 @@ class LuaAPI:
         return max(min_val, min(max_val, value))
 
     # =========================================================================
+    # Parent-Child Relationships
+    # =========================================================================
+
+    def get_parent_id(self, entity_id: str) -> str:
+        """Get parent entity ID, or empty string if no parent."""
+        entity = self._engine.get_entity(entity_id)
+        if entity and entity.parent_id:
+            return entity.parent_id
+        return ""
+
+    def set_parent(self, entity_id: str, parent_id: str,
+                   offset_x: float = 0.0, offset_y: float = 0.0) -> None:
+        """
+        Attach entity to a parent.
+
+        Args:
+            entity_id: Entity to attach
+            parent_id: Parent entity ID (empty string to detach)
+            offset_x: X offset from parent center
+            offset_y: Y offset from parent center
+        """
+        entity = self._engine.get_entity(entity_id)
+        if not entity:
+            return
+
+        # Remove from old parent's children list
+        if entity.parent_id:
+            old_parent = self._engine.get_entity(entity.parent_id)
+            if old_parent and entity_id in old_parent.children:
+                old_parent.children.remove(entity_id)
+
+        if parent_id:
+            parent = self._engine.get_entity(parent_id)
+            if parent:
+                entity.parent_id = parent_id
+                entity.parent_offset = (offset_x, offset_y)
+                if entity_id not in parent.children:
+                    parent.children.append(entity_id)
+                # Also set properties for Lua access
+                entity.properties["_parent_id"] = parent_id
+                entity.properties["_parent_offset_x"] = offset_x
+                entity.properties["_parent_offset_y"] = offset_y
+        else:
+            # Detach
+            entity.parent_id = None
+            entity.parent_offset = (0.0, 0.0)
+            entity.properties.pop("_parent_id", None)
+            entity.properties.pop("_parent_offset_x", None)
+            entity.properties.pop("_parent_offset_y", None)
+
+    def detach_from_parent(self, entity_id: str) -> None:
+        """Detach entity from its parent."""
+        self.set_parent(entity_id, "")
+
+    @lua_safe_return
+    def get_children(self, entity_id: str) -> list[str]:
+        """Get IDs of all child entities."""
+        entity = self._engine.get_entity(entity_id)
+        if entity:
+            return list(entity.children)
+        return []
+
+    def has_parent(self, entity_id: str) -> bool:
+        """Check if entity has a parent."""
+        entity = self._engine.get_entity(entity_id)
+        return bool(entity and entity.parent_id)
+
+    # =========================================================================
     # Debug
     # =========================================================================
 

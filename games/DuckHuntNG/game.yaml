@@ -176,11 +176,13 @@ entity_types:
     height: 41
     color: gray
     sprite: green_fall_1
-    behaviors: [gravity, animate]
+    behaviors: [gravity, destroy_offscreen, animate]
     behavior_config:
       gravity:
         acceleration: 800
-        destroy_offscreen: true
+      destroy_offscreen:
+        edges: bottom
+        margin: 50
       animate:
         frames: 2
         fps: 5

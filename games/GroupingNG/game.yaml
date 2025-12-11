@@ -1,0 +1,336 @@
+# yaml-language-server: $schema=../../schemas/game.schema.json
+# GroupingNG - Precision grouping training game
+#
+# A training game that measures shot grouping consistency.
+# Hit inside the target to continue, miss and the round ends.
+# Your group size IS your score - smaller is better.
+#
+# Three modes:
+# - Centroid: Target shrinks to encompass your hits (default)
+# - Fixed Origin: First hit sets radius around target center
+# - Fixed Center: First hit = center, second hit = radius
+
+name: "Grouping NG"
+description: "Precision grouping training - consistency is key"
+version: "1.0.0"
+author: "AMS Team"
+
+screen_width: 800
+screen_height: 600
+background_color: [20, 20, 30]
+
+defaults:
+  lives: 1  # One miss ends the round
+
+# This game tracks group size, not score
+win_condition: none
+
+# =============================================================================
+# Entity Types
+# =============================================================================
+
+entity_types:
+
+  # ---------------------------------------------------------------------------
+  # Target - the main grouping target
+  # ---------------------------------------------------------------------------
+
+  target:
+    width: 300
+    height: 300
+    color: white
+    behaviors:
+      - lua: |
+          -- GroupingNG Target Behavior
+          -- Tracks hits, calculates centroid, manages round state
+
+          local target = {}
+
+          function target.on_spawn(id)
+              -- Initialize target state
+              local screen_w = ams.get_screen_width()
+              local screen_h = ams.get_screen_height()
+
+              -- Random position with margin from edges
+              local margin = 200
+              local x = ams.random_range(margin, screen_w - margin)
+              local y = ams.random_range(margin, screen_h - margin)
+              ams.set_x(id, x)
+              ams.set_y(id, y)
+
+              -- Store center position
+              ams.set_prop(id, "center_x", x)
+              ams.set_prop(id, "center_y", y)
+
+              -- Initial radius
+              local initial_radius = 150
+              ams.set_prop(id, "initial_radius", initial_radius)
+              ams.set_prop(id, "current_radius", initial_radius)
+
+              -- Grouping mode: centroid, fixed_origin, fixed_center
+              ams.set_prop(id, "mode", "centroid")
+
+              -- Hit tracking (stored as flattened x,y pairs)
+              ams.set_prop(id, "hit_count", 0)
+              ams.set_prop(id, "hits_x", "")  -- Comma-separated x values
+              ams.set_prop(id, "hits_y", "")  -- Comma-separated y values
+
+              -- Round state
+              ams.set_prop(id, "state", "waiting")  -- waiting, playing, round_over
+              ams.set_prop(id, "best_group", 9999)
+              ams.set_prop(id, "miss_x", 0)
+              ams.set_prop(id, "miss_y", 0)
+
+              -- Animation
+              ams.set_prop(id, "target_radius", initial_radius)
+              ams.set_prop(id, "animation_speed", 5.0)
+          end
+
+          function target.on_update(id, dt)
+              -- Animate radius changes smoothly
+              local current = ams.get_prop(id, "current_radius")
+              local target_r = ams.get_prop(id, "target_radius")
+              if math.abs(current - target_r) > 0.5 then
+                  local speed = ams.get_prop(id, "animation_speed")
+                  local diff = target_r - current
+                  ams.set_prop(id, "current_radius", current + diff * speed * dt)
+              else
+                  ams.set_prop(id, "current_radius", target_r)
+              end
+          end
+
+          return target
+    tags: [target]
+    render:
+      # Ghost ring (initial size reference) - full width of entity
+      - shape: circle
+        color: [60, 60, 80]
+        radius: 0.5
+        fill: false
+        line_width: 2
+
+      # Current target boundary - based on current_radius
+      # Note: This uses fixed 150 as initial; the actual boundary
+      # is the current_radius property which we need to track
+      - shape: circle
+        color: white
+        radius: 0.5
+        fill: false
+        line_width: 2
+
+      # Center crosshair - vertical line
+      - shape: rectangle
+        color: [150, 150, 150]
+        offset: [149, 140]
+        size: [2, 20]
+
+      # Center crosshair - horizontal line
+      - shape: rectangle
+        color: [150, 150, 150]
+        offset: [140, 149]
+        size: [20, 2]
+
+  # ---------------------------------------------------------------------------
+  # Hit marker - shown for each successful hit
+  # ---------------------------------------------------------------------------
+
+  hit_marker:
+    width: 8
+    height: 8
+    color: [100, 255, 100]
+    behaviors: []
+    tags: [marker]
+    render:
+      - shape: circle
+        color: [100, 255, 100]
+        radius: 0.5
+
+  # ---------------------------------------------------------------------------
+  # Miss marker - shown where the miss occurred
+  # ---------------------------------------------------------------------------
+
+  miss_marker:
+    width: 20
+    height: 20
+    color: [255, 80, 80]
+    behaviors: []
+    tags: [marker]
+    render:
+      # X shape for miss - two crossed rectangles
+      - shape: rectangle
+        color: [255, 80, 80]
+        offset: [0, 8]
+        size: [20, 4]
+      - shape: rectangle
+        color: [255, 80, 80]
+        offset: [8, 0]
+        size: [4, 20]
+
+# =============================================================================
+# Global Input - handles all clicks
+# =============================================================================
+
+global_on_input:
+  action:
+    lua: |
+      -- GroupingNG Global Input Handler
+      -- Routes input to the target entity for hit/miss processing
+
+      local action = {}
+
+      -- Helper: parse comma-separated values
+      local function parse_values(str)
+          local values = {}
+          if str == "" or str == nil then return values end
+          for v in string.gmatch(str, "[^,]+") do
+              table.insert(values, tonumber(v))
+          end
+          return values
+      end
+
+      function action.execute(x, y, args)
+          -- Find the target entity
+          local targets = ams.get_entities_of_type("target")
+          if not targets or #targets == 0 then
+              return
+          end
+
+          -- Get first target (there should only be one)
+          local target_id = targets[1]
+
+          -- Get current state
+          local state = ams.get_prop(target_id, "state")
+
+          if state == "round_over" then
+              -- Start new round on click
+              -- Remove old markers
+              local markers = ams.get_entities_by_tag("marker")
+              if markers then
+                  for _, m in ipairs(markers) do
+                      ams.destroy(m)
+                  end
+              end
+
+              -- New random position
+              local screen_w = ams.get_screen_width()
+              local screen_h = ams.get_screen_height()
+              local margin = 200
+              local new_x = ams.random_range(margin, screen_w - margin)
+              local new_y = ams.random_range(margin, screen_h - margin)
+              ams.set_x(target_id, new_x)
+              ams.set_y(target_id, new_y)
+
+              local initial_radius = ams.get_prop(target_id, "initial_radius")
+              ams.set_prop(target_id, "center_x", new_x)
+              ams.set_prop(target_id, "center_y", new_y)
+              ams.set_prop(target_id, "current_radius", initial_radius)
+              ams.set_prop(target_id, "target_radius", initial_radius)
+              ams.set_prop(target_id, "hit_count", 0)
+              ams.set_prop(target_id, "hits_x", "")
+              ams.set_prop(target_id, "hits_y", "")
+              ams.set_prop(target_id, "state", "waiting")
+              return
+          end
+
+          -- Check if hit is inside target
+          local center_x = ams.get_prop(target_id, "center_x")
+          local center_y = ams.get_prop(target_id, "center_y")
+          local radius = ams.get_prop(target_id, "current_radius")
+
+          local dx = x - center_x
+          local dy = y - center_y
+          local dist = math.sqrt(dx*dx + dy*dy)
+          local grace = 3  -- 3 pixel grace margin
+
+          if dist <= radius + grace then
+              -- HIT - record it
+              if state == "waiting" then
+                  ams.set_prop(target_id, "state", "playing")
+              end
+
+              local count = ams.get_prop(target_id, "hit_count")
+              local hits_x = ams.get_prop(target_id, "hits_x") or ""
+              local hits_y = ams.get_prop(target_id, "hits_y") or ""
+
+              if count > 0 then
+                  hits_x = hits_x .. "," .. tostring(x)
+                  hits_y = hits_y .. "," .. tostring(y)
+              else
+                  hits_x = tostring(x)
+                  hits_y = tostring(y)
+              end
+
+              count = count + 1
+              ams.set_prop(target_id, "hit_count", count)
+              ams.set_prop(target_id, "hits_x", hits_x)
+              ams.set_prop(target_id, "hits_y", hits_y)
+
+              -- Spawn hit marker at click position
+              ams.spawn("hit_marker", x - 4, y - 4, 0, 0, 0, 0, "", "")
+
+              -- Update centroid mode
+              local mode = ams.get_prop(target_id, "mode")
+              if mode == "centroid" and count >= 2 then
+                  -- Parse hits and calculate centroid
+                  local xs = parse_values(hits_x)
+                  local ys = parse_values(hits_y)
+
+                  local sum_x, sum_y = 0, 0
+                  for i = 1, #xs do
+                      sum_x = sum_x + xs[i]
+                      sum_y = sum_y + ys[i]
+                  end
+                  local cx = sum_x / #xs
+                  local cy = sum_y / #ys
+
+                  ams.set_prop(target_id, "center_x", cx)
+                  ams.set_prop(target_id, "center_y", cy)
+
+                  -- Calculate max distance from centroid
+                  local max_d = 0
+                  for i = 1, #xs do
+                      local ddx = xs[i] - cx
+                      local ddy = ys[i] - cy
+                      local d = math.sqrt(ddx*ddx + ddy*ddy)
+                      if d > max_d then max_d = d end
+                  end
+
+                  -- New radius with 15% margin, minimum 15
+                  local new_radius = math.max(max_d * 1.15, 15)
+                  ams.set_prop(target_id, "target_radius", new_radius)
+              end
+
+              ams.add_score(10)
+          else
+              -- MISS - end round
+              ams.set_prop(target_id, "state", "round_over")
+              ams.set_prop(target_id, "miss_x", x)
+              ams.set_prop(target_id, "miss_y", y)
+
+              -- Spawn miss marker
+              ams.spawn("miss_marker", x - 10, y - 10, 0, 0, 0, 0, "", "")
+
+              -- Update best if better
+              local current_radius = ams.get_prop(target_id, "current_radius")
+              local best = ams.get_prop(target_id, "best_group")
+              if current_radius < best then
+                  ams.set_prop(target_id, "best_group", current_radius)
+              end
+          end
+      end
+
+      return action
+
+# =============================================================================
+# Collisions (none needed)
+# =============================================================================
+
+collisions: []
+
+# =============================================================================
+# Player Configuration
+# =============================================================================
+
+player:
+  type: target
+  spawn: [400, 300]  # Will be randomized by behavior

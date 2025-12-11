@@ -62,7 +62,7 @@
     "level_group": {
       "type": "object",
       "description": "A group/campaign of levels",
-      "required": ["name", "type", "levels"],
+      "required": ["name", "levels"],
       "properties": {
         "name": {
           "type": "string",
@@ -73,6 +73,11 @@
           "const": "group",
           "description": "Must be 'group' to indicate level group"
         },
+        "group": {
+          "type": "boolean",
+          "const": true,
+          "description": "Boolean true to indicate level group"
+        },
         "levels": {
           "type": "array",
           "items": { "type": "string" },
@@ -82,8 +87,16 @@
         "description": {
           "type": "string",
           "description": "Optional description"
+        },
+        "author": {
+          "type": "string",
+          "description": "Author of the level group"
         }
       },
+      "anyOf": [
+        { "required": ["type"] },
+        { "required": ["group"] }
+      ],
       "additionalProperties": false
     },
 
@@ -112,17 +125,17 @@
           "description": "Grid layout configuration"
         },
         "layout": {
-          "type": "string",
-          "description": "ASCII layout (multiline string)"
+          "oneOf": [
+            { "type": "string" },
+            { "type": "object", "additionalProperties": true }
+          ],
+          "description": "ASCII layout (multiline string) or properties dict (e.g., {level_name: 'simple'})"
         },
         "layout_key": {
           "type": "object",
-          "description": "Character to entity type mapping",
+          "description": "Character to entity type mapping (e.g., {I: invader, M: mover, \".\": empty})",
           "additionalProperties": {
-            "oneOf": [
-              { "type": "string" },
-              { "type": "string", "const": "empty" }
-            ]
+            "type": "string"
           }
         },
         "paddle": {
