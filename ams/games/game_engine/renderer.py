@@ -9,7 +9,6 @@ from ams.games.game_engine.entity import GameEntity
 from ams.games.game_engine.config import (
     GameDefinition,
     RenderCommand,
-    RenderWhen,
     SoundConfig,
     SpriteConfig,
 )
@@ -57,83 +56,13 @@ class GameEngineRenderer:
                          screen: pygame.Surface) -> None:
         """Render entity using a list of render commands."""
         for cmd in commands:
-            # Check when condition
-            if cmd.when and not self._evaluate_when(entity, cmd.when):
+            # Check when condition (delegate to entity)
+            if cmd.when and not entity.evaluate_when(cmd.when, self._elapsed_time):
                 continue
             self._render_command(entity, cmd, screen)
             # Stop processing further commands if stop flag is set
             if cmd.stop:
                 break
-
-    def _evaluate_when(self, entity: GameEntity, when: RenderWhen) -> bool:
-        """Evaluate a when condition against entity properties."""
-        # Get property value (handle computed properties)
-        prop_value = self._get_entity_property(entity, when.property)
-
-        # Compare
-        if when.compare == 'equals':
-            return prop_value == when.value
-        elif when.compare == 'not_equals':
-            return prop_value != when.value
-        elif when.compare == 'greater_than':
-            return prop_value is not None and prop_value > when.value
-        elif when.compare == 'less_than':
-            return prop_value is not None and prop_value < when.value
-        elif when.compare == 'between':
-            # min <= value < max (value field is max, min field is min)
-            if prop_value is None or when.min is None:
-                return False
-            return when.min <= prop_value < when.value
-        return False
-
-    def _get_entity_property(self, entity: GameEntity, prop_name: str) -> Any:
-        """Get entity property, including computed properties."""
-        # Built-in computed properties
-        if prop_name == 'damage_ratio':
-            max_hits = entity.properties.get('brick_max_hits', 1)
-            hits_remaining = entity.properties.get('brick_hits_remaining', max_hits)
-            if max_hits > 0:
-                return 1 - (hits_remaining / max_hits)
-            return 0
-        elif prop_name == 'health_ratio':
-            max_health = entity.properties.get('max_health', entity.health)
-            if max_health > 0:
-                return entity.health / max_health
-            return 0
-        elif prop_name == 'alive':
-            return entity.alive
-        elif prop_name == 'age':
-            # Seconds since spawn
-            return self._elapsed_time - entity.spawn_time
-        # Velocity properties (direct entity attributes)
-        elif prop_name == 'vx':
-            return entity.vx
-        elif prop_name == 'vy':
-            return entity.vy
-        # Direction properties (computed from velocity)
-        elif prop_name == 'facing':
-            # Returns 'left' or 'right' based on horizontal velocity
-            return 'left' if entity.vx < 0 else 'right'
-        elif prop_name == 'moving_up':
-            return entity.vy < 0
-        elif prop_name == 'moving_down':
-            return entity.vy > 0
-        elif prop_name == 'heading':
-            # Heading in degrees, 0° = north (up), clockwise
-            # 0° = up, 90° = right, 180° = down, 270° = left
-            import math
-            if entity.vx == 0 and entity.vy == 0:
-                return 0  # Stationary defaults to north
-            # atan2 gives angle from positive x-axis, counterclockwise
-            # We want angle from negative y-axis (north), clockwise
-            angle_rad = math.atan2(entity.vx, -entity.vy)
-            heading = math.degrees(angle_rad)
-            if heading < 0:
-                heading += 360
-            return heading
-
-        # Regular properties
-        return entity.properties.get(prop_name)
 
     def _render_command(self, entity: GameEntity, cmd: RenderCommand,
                         screen: pygame.Surface) -> None:
@@ -230,7 +159,7 @@ class GameEngineRenderer:
                 surface.blit(text_surface, text_rect)
 
     def _resolve_alpha(self, entity: GameEntity, alpha_value: Any) -> Optional[int]:
-        """Resolve alpha value (int, $property, or {lua: expr})."""
+        """Resolve alpha value (int, $property, or {lua: expr}) to 0-255 range."""
         if alpha_value is None:
             return None
 
@@ -238,8 +167,8 @@ class GameEngineRenderer:
             return int(alpha_value * 255) if alpha_value <= 1 else int(alpha_value)
 
         if isinstance(alpha_value, str) and alpha_value.startswith('$'):
-            prop_name = alpha_value[1:]
-            prop_val = self._get_entity_property(entity, prop_name)
+            # Delegate property resolution to entity
+            prop_val = entity.resolve_property_ref(alpha_value, self._elapsed_time)
             if prop_val is not None:
                 # Assume 0-1 range, convert to 0-255
                 return int(float(prop_val) * 255)
@@ -256,31 +185,9 @@ class GameEngineRenderer:
         """Resolve text content ($property references)."""
         if not text_value:
             return ""
-        if text_value.startswith('$'):
-            prop_name = text_value[1:]
-            val = self._get_entity_property(entity, prop_name)
-            return str(val) if val is not None else ""
-        return text_value
-
-    def _resolve_sprite_template(self, entity: GameEntity, sprite_name: str) -> str:
-        """Resolve template placeholders in sprite name.
-
-        Supports {property_name} syntax to substitute entity properties.
-        Example: "green_right_{frame}" with frame=2 -> "green_right_2"
-        """
-        import re
-
-        def replace_placeholder(match):
-            prop_name = match.group(1)
-            value = entity.properties.get(prop_name)
-            if value is not None:
-                # Convert to int if it's a whole number float
-                if isinstance(value, float) and value == int(value):
-                    return str(int(value))
-                return str(value)
-            return match.group(0)  # Keep original if property not found
-
-        return re.sub(r'\{(\w+)\}', replace_placeholder, sprite_name)
+        # Delegate property resolution to entity
+        val = entity.resolve_property_ref(text_value, self._elapsed_time)
+        return str(val) if val is not None else ""
 
     def _render_sprite(self, entity: GameEntity, sprite_name: str,
                        screen: pygame.Surface, x: int, y: int, w: int, h: int) -> None:
@@ -291,8 +198,8 @@ class GameEngineRenderer:
             pygame.draw.rect(screen, color, pygame.Rect(x, y, w, h))
             return
 
-        # Resolve template placeholders like {frame}
-        resolved_name = self._resolve_sprite_template(entity, sprite_name)
+        # Resolve template placeholders like {frame} (delegate to entity)
+        resolved_name = entity.resolve_sprite_template(sprite_name)
 
         # Check if sprite is loaded
         sprite = self._sprites.get(resolved_name)
