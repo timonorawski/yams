@@ -13,7 +13,7 @@ __all__ = [
     'GameState',
     'BaseGame',
     'GameEngine',
-    'GameEngineSkin',
+    'GameEngineRenderer',
     'EntityPlacement',
     'GameEngineLevelData',
     'GamePalette',
