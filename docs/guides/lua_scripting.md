@@ -8,12 +8,14 @@ AMS supports four types of Lua scripts, each with a specific purpose:
 
 | Script Type | Directory | Purpose | Entry Function |
 |-------------|-----------|---------|----------------|
-| **Behaviors** | `ams/behaviors/lua/` | Entity lifecycle (update, spawn, destroy) | `on_update(entity_id, dt)` |
-| **Collision Actions** | `ams/behaviors/collision_actions/` | Handle collisions between entities | `execute(entity_a_id, entity_b_id, modifier)` |
-| **Generators** | `ams/behaviors/generators/` | Compute property values at spawn time | `generate(args)` |
-| **Input Actions** | `ams/input_actions/` | Respond to user input events | `execute(x, y, args)` |
+| **Behaviors** | `ams/games/game_engine/lua/behavior/` | Entity lifecycle (update, spawn, destroy) | `on_update(entity_id, dt)` |
+| **Collision Actions** | `ams/games/game_engine/lua/collision_action/` | Handle collisions between entities | `execute(entity_a_id, entity_b_id, modifier)` |
+| **Generators** | `ams/games/game_engine/lua/generator/` | Compute property values at spawn time | `generate(args)` |
+| **Input Actions** | `ams/input_action/` | Respond to user input events | `execute(x, y, args)` |
 
 All scripts share access to the `ams` API but have different entry points and use cases.
+
+**Key Concept**: Scripts operate on entities via ID strings, never direct object references. This maintains the security sandbox and ensures proper garbage collection.
 
 ---
 
@@ -23,37 +25,51 @@ All Lua scripts access game functionality through the global `ams` table. This s
 
 ### Entity Access
 
+#### Transform (Position & Velocity)
+
 ```lua
--- Position
-ams.get_x(entity_id)              -- Get X position
-ams.get_y(entity_id)              -- Get Y position
-ams.set_x(entity_id, x)           -- Set X position
-ams.set_y(entity_id, y)           -- Set Y position
+-- Position (pixels from top-left)
+local x = ams.get_x(entity_id)              -- Get X position
+local y = ams.get_y(entity_id)              -- Get Y position
+ams.set_x(entity_id, x)                     -- Set X position
+ams.set_y(entity_id, y)                     -- Set Y position
 
--- Velocity
-ams.get_vx(entity_id)             -- Get X velocity
-ams.get_vy(entity_id)             -- Get Y velocity
-ams.set_vx(entity_id, vx)         -- Set X velocity
-ams.set_vy(entity_id, vy)         -- Set Y velocity
+-- Velocity (pixels per second)
+local vx = ams.get_vx(entity_id)            -- Get X velocity
+local vy = ams.get_vy(entity_id)            -- Get Y velocity
+ams.set_vx(entity_id, vx)                   -- Set X velocity
+ams.set_vy(entity_id, vy)                   -- Set Y velocity
 
--- Dimensions
-ams.get_width(entity_id)          -- Get entity width
-ams.get_height(entity_id)         -- Get entity height
-
--- Visual
-ams.get_sprite(entity_id)         -- Get sprite name
-ams.set_sprite(entity_id, name)   -- Set sprite name
-ams.get_color(entity_id)          -- Get color name
-ams.set_color(entity_id, color)   -- Set color name
-
--- Health
-ams.get_health(entity_id)         -- Get health value
-ams.set_health(entity_id, hp)     -- Set health value
-
--- Lifecycle
-ams.is_alive(entity_id)           -- Check if entity is alive
-ams.destroy(entity_id)            -- Mark entity for destruction
+-- Dimensions (read-only, set in YAML)
+local w = ams.get_width(entity_id)          -- Get entity width
+local h = ams.get_height(entity_id)         -- Get entity height
 ```
+
+#### Visual Properties
+
+```lua
+-- Sprite (string name, resolved by render system)
+local sprite = ams.get_sprite(entity_id)    -- Get sprite name
+ams.set_sprite(entity_id, "duck_damaged")   -- Set sprite name
+
+-- Color (string name from color palette)
+local color = ams.get_color(entity_id)      -- Get color name
+ams.set_color(entity_id, "red")             -- Set color name
+```
+
+#### Health & Lifecycle
+
+```lua
+-- Health (integer value)
+local hp = ams.get_health(entity_id)        -- Get health value
+ams.set_health(entity_id, hp - 1)           -- Set health value
+
+-- Lifecycle state
+local alive = ams.is_alive(entity_id)       -- Check if entity is alive (boolean)
+ams.destroy(entity_id)                      -- Mark entity for destruction (end of frame)
+```
+
+**Important**: `ams.destroy()` marks the entity for destruction but doesn't remove it immediately. It will be removed at the end of the frame after `on_destroy` callbacks run.
 
 ### Custom Properties
 
@@ -82,58 +98,233 @@ local walls = ams.get_config(entity_id, "bounce", "walls", "all")
 
 ### Entity Spawning & Queries
 
+#### Spawning New Entities
+
 ```lua
--- Spawn new entity, returns entity_id
+-- Full signature
 local id = ams.spawn(entity_type, x, y, vx, vy, width, height, color, sprite)
 
--- Use 0 for width/height to inherit from entity_type config
-ams.spawn("duck_flying", x, y, vx, vy, 0, 0, "", "")
+-- Common usage: inherit size and visuals from entity_type config
+local id = ams.spawn("particle", x, y, vx, vy, 0, 0, "", "")
 
--- Query entities
-local ids = ams.get_entities_of_type("brick")    -- By type name
-local ids = ams.get_entities_by_tag("enemy")     -- By tag
-local ids = ams.get_all_entity_ids()             -- All alive entities
-local count = ams.count_entities_by_tag("duck")  -- Count by tag
+-- Override specific properties
+local id = ams.spawn("brick", x, y, 0, 0, 0, 0, "red", "brick_damaged")
+
+-- Returns: entity_id string (e.g., "particle_a1b2c3d4") or nil on failure
 ```
+
+**Parameters**:
+- `entity_type`: String name from `entity_types` in YAML
+- `x, y`: Initial position (pixels from top-left)
+- `vx, vy`: Initial velocity (pixels/second)
+- `width, height`: Size override (use 0 to inherit from entity_type)
+- `color`: Color override (use "" to inherit)
+- `sprite`: Sprite override (use "" to inherit)
+
+#### Querying Entities
+
+```lua
+-- By entity type (exact match)
+local brick_ids = ams.get_entities_of_type("brick")
+-- Returns: 1-indexed Lua table of entity_id strings
+
+-- By tag (entities can have multiple tags)
+local enemy_ids = ams.get_entities_by_tag("enemy")
+-- Returns: 1-indexed Lua table of entity_id strings
+
+-- All alive entities
+local all_ids = ams.get_all_entity_ids()
+-- Returns: 1-indexed Lua table of entity_id strings
+
+-- Count by tag (faster than getting all IDs)
+local duck_count = ams.count_entities_by_tag("duck")
+-- Returns: integer count
+
+-- Example: Iterate over all bricks
+local bricks = ams.get_entities_of_type("brick")
+for i, id in ipairs(bricks) do
+    ams.set_color(id, "red")
+end
+
+-- Example: Check if any enemies remain
+if ams.count_entities_by_tag("enemy") == 0 then
+    ams.log("All enemies defeated!")
+end
+```
+
+**Important**: Query results are 1-indexed Lua tables, not Python lists. Use `ipairs()` for iteration and `#table` for length.
 
 ### Game State
 
 ```lua
-ams.get_screen_width()    -- Screen width in pixels
-ams.get_screen_height()   -- Screen height in pixels
-ams.get_score()           -- Current score
-ams.add_score(points)     -- Add to score
-ams.get_time()            -- Elapsed game time in seconds
+-- Screen dimensions (read-only)
+local width = ams.get_screen_width()     -- Screen width in pixels (float)
+local height = ams.get_screen_height()   -- Screen height in pixels (float)
+
+-- Score
+local score = ams.get_score()            -- Current score (int)
+ams.add_score(100)                       -- Add to score (use negative to subtract)
+
+-- Time
+local elapsed = ams.get_time()           -- Elapsed game time in seconds (float)
+-- Useful for time-based effects, wave timings, etc.
 ```
 
-### Events
+**Example: Screen boundary checking**
+```lua
+local x = ams.get_x(entity_id)
+local w = ams.get_width(entity_id)
+local screen_w = ams.get_screen_width()
+
+if x + w > screen_w then
+    -- Entity is off right edge
+    ams.destroy(entity_id)
+end
+```
+
+### Events (Deferred Actions)
 
 ```lua
-ams.play_sound("shot")                        -- Play a sound
-ams.schedule(delay, "callback_name", entity_id)  -- Schedule callback
+-- Play a sound (queued, processed by game layer)
+ams.play_sound("brick_hit")
+
+-- Schedule a callback to run after delay
+ams.schedule(2.0, "on_timer", entity_id)
+-- Calls behavior.on_timer(entity_id) after 2.0 seconds
+-- The callback must be defined in the entity's behavior script
+```
+
+**Important**: These are *deferred* actions:
+- Sounds are queued and played by the game layer at the end of the frame
+- Scheduled callbacks run after the specified delay
+- This prevents infinite loops and ensures consistent ordering
+
+**Example: Timed destruction**
+```lua
+-- In behavior script
+local behavior = {}
+
+function behavior.on_spawn(entity_id)
+    -- Schedule destruction after 3 seconds
+    ams.schedule(3.0, "on_expire", entity_id)
+end
+
+function behavior.on_expire(entity_id)
+    ams.play_sound("poof")
+    ams.destroy(entity_id)
+end
+
+return behavior
 ```
 
 ### Math Utilities
 
+AMS provides both convenience wrappers via `ams.*` and access to the full Lua `math` library.
+
+#### Trigonometry
+
 ```lua
--- Trigonometry
-ams.sin(radians)
-ams.cos(radians)
-ams.sqrt(x)
-ams.atan2(y, x)
+-- ams.* wrappers (convenience)
+local s = ams.sin(angle_radians)      -- Sine
+local c = ams.cos(angle_radians)      -- Cosine
+local d = ams.sqrt(x)                 -- Square root (clamped to ≥0)
+local angle = ams.atan2(dy, dx)       -- Arctangent of dy/dx
 
--- Random
-ams.random()                    -- Random float [0, 1)
-ams.random_range(min, max)      -- Random float [min, max]
-
--- Utility
-ams.clamp(value, min, max)      -- Clamp to range
+-- Lua math library (all functions available)
+local angle = math.atan2(dy, dx)
+local dist = math.sqrt(dx*dx + dy*dy)
+local osc = math.sin(ams.get_time() * 2)
 ```
+
+#### Random Numbers
+
+```lua
+-- ams.* wrappers
+local r = ams.random()                    -- Float in [0, 1)
+local r = ams.random_range(10, 50)        -- Float in [10, 50]
+
+-- Lua math.random (also available)
+local r = math.random()                   -- Float in [0, 1)
+local i = math.random(5)                  -- Integer in [1, 5]
+local i = math.random(10, 20)             -- Integer in [10, 20]
+```
+
+#### Utility Functions
+
+```lua
+-- Clamp value to range
+local clamped = ams.clamp(value, 0, 100)  -- Keeps value in [0, 100]
+
+-- Absolute value (from math library)
+local abs_value = math.abs(-42)           -- 42
+
+-- Min/max
+local min = math.min(a, b, c)
+local max = math.max(x, y)
+```
+
+**Example: Calculate velocity from angle**
+```lua
+local angle = ams.random_range(-120, -60)  -- Degrees
+local angle_rad = math.rad(angle)          -- Convert to radians
+local speed = 300
+
+local vx = speed * ams.cos(angle_rad)
+local vy = speed * ams.sin(angle_rad)
+
+ams.set_vx(entity_id, vx)
+ams.set_vy(entity_id, vy)
+```
+
+### Parent-Child Relationships
+
+For complex entities like rope chains or attached effects:
+
+```lua
+-- Get parent entity ID
+local parent_id = ams.get_parent_id(entity_id)
+-- Returns: parent entity_id string, or "" if no parent
+
+-- Attach entity to a parent
+ams.set_parent(entity_id, parent_id, offset_x, offset_y)
+-- offset_x, offset_y: position relative to parent's center
+
+-- Detach from parent
+ams.detach_from_parent(entity_id)
+
+-- Get all children
+local children = ams.get_children(entity_id)
+-- Returns: 1-indexed Lua table of entity_id strings
+
+-- Check if has parent
+local attached = ams.has_parent(entity_id)
+-- Returns: boolean
+```
+
+**Example: Attach spark effect to projectile**
+```lua
+-- In projectile's on_spawn
+local spark_id = ams.spawn("spark", x, y, 0, 0, 0, 0, "", "")
+ams.set_parent(spark_id, entity_id, 0, -10)  -- 10 pixels above center
+-- Spark will now follow the projectile
+```
+
+**See also**: `follow_parent` and `rope_link` behaviors for automatic parent-following.
 
 ### Debug
 
 ```lua
-ams.log("message")    -- Print debug message to console
+-- Print debug message to console
+ams.log("Entity spawned at " .. x .. ", " .. y)
+ams.log("Velocity: " .. ams.get_vx(entity_id))
+
+-- Example: Debug entity state
+local function debug_entity(id)
+    ams.log("Entity " .. id .. ":")
+    ams.log("  Position: " .. ams.get_x(id) .. ", " .. ams.get_y(id))
+    ams.log("  Velocity: " .. ams.get_vx(id) .. ", " .. ams.get_vy(id))
+    ams.log("  Alive: " .. tostring(ams.is_alive(id)))
+end
 ```
 
 ---
