@@ -107,17 +107,14 @@ class LuaEngine:
         # Entity storage
         self.entities: dict[str, Entity] = {}
 
-        # Loaded behavior scripts (name -> lua function table)
-        self._behaviors: dict[str, Any] = {}
-
-        # Loaded collision actions (name -> lua function table)
-        self._collision_actions: dict[str, Any] = {}
-
-        # Loaded property generators (name -> lua function table)
-        self._generators: dict[str, Any] = {}
-
-        # Loaded input actions (name -> lua function table)
-        self._input_actions: dict[str, Any] = {}
+        # Loaded Lua routines by type (type -> name -> lua function table)
+        # Types: 'behavior', 'collision', 'generator', 'input'
+        self._routines: dict[str, dict[str, Any]] = {
+            'behavior': {},    # Entity lifecycle routines
+            'collision': {},   # Collision handler routines
+            'generator': {},   # Value generator routines
+            'input': {},       # Input action routines
+        }
 
         # Pending entity spawns/destroys (processed end of frame)
         self._pending_spawns: list[Entity] = []
@@ -313,7 +310,7 @@ class LuaEngine:
 
         Returns True if loaded successfully.
         """
-        if name in self._behaviors:
+        if name in self._routines['behavior']:
             return True  # Already loaded
 
         if content_path is None:
@@ -339,7 +336,7 @@ class LuaEngine:
                 print(f"[LuaEngine] Behavior {name} did not return a table")
                 return False
 
-            self._behaviors[name] = result
+            self._routines['behavior'][name] = result
             return True
 
         except Exception as e:
@@ -370,7 +367,7 @@ class LuaEngine:
         Returns:
             True if loaded successfully
         """
-        if name in self._behaviors:
+        if name in self._routines['behavior']:
             return True  # Already loaded
 
         try:
@@ -381,7 +378,7 @@ class LuaEngine:
                 print(f"[LuaEngine] Inline behavior {name} did not return a table")
                 return False
 
-            self._behaviors[name] = result
+            self._routines['behavior'][name] = result
             return True
 
         except Exception as e:
@@ -424,7 +421,7 @@ class LuaEngine:
 
         Returns True if loaded successfully.
         """
-        if name in self._collision_actions:
+        if name in self._routines['collision']:
             return True  # Already loaded
 
         if content_path is None:
@@ -446,7 +443,7 @@ class LuaEngine:
                 print(f"[LuaEngine] Collision action {name} did not return a table")
                 return False
 
-            self._collision_actions[name] = result
+            self._routines['collision'][name] = result
             return True
 
         except Exception as e:
@@ -495,7 +492,7 @@ class LuaEngine:
         Returns:
             True if loaded successfully
         """
-        if name in self._collision_actions:
+        if name in self._routines['collision']:
             return True  # Already loaded
 
         try:
@@ -505,7 +502,7 @@ class LuaEngine:
                 print(f"[LuaEngine] Inline collision action {name} did not return a table")
                 return False
 
-            self._collision_actions[name] = result
+            self._routines['collision'][name] = result
             return True
 
         except Exception as e:
@@ -532,11 +529,11 @@ class LuaEngine:
             True if action executed successfully
         """
         # Load action if not already loaded
-        if action_name not in self._collision_actions:
+        if action_name not in self._routines['collision']:
             if not self.load_collision_action(action_name):
                 return False
 
-        action = self._collision_actions.get(action_name)
+        action = self._routines['collision'].get(action_name)
         if not action:
             return False
 
@@ -578,7 +575,7 @@ class LuaEngine:
 
         Returns True if loaded successfully.
         """
-        if name in self._input_actions:
+        if name in self._routines['input']:
             return True  # Already loaded
 
         if content_path is None:
@@ -596,7 +593,7 @@ class LuaEngine:
                 print(f"[LuaEngine] Input action {name} did not return a table with execute function")
                 return False
 
-            self._input_actions[name] = result
+            self._routines['input'][name] = result
             return True
 
         except Exception as e:
@@ -628,7 +625,7 @@ class LuaEngine:
         Returns:
             True if loaded successfully
         """
-        if name in self._input_actions:
+        if name in self._routines['input']:
             return True  # Already loaded
 
         try:
@@ -638,7 +635,7 @@ class LuaEngine:
                 print(f"[LuaEngine] Inline input action {name} did not return a table with execute function")
                 return False
 
-            self._input_actions[name] = result
+            self._routines['input'][name] = result
             return True
 
         except Exception as e:
@@ -665,11 +662,11 @@ class LuaEngine:
             True if action executed successfully
         """
         # Load action if not already loaded
-        if action_name not in self._input_actions:
+        if action_name not in self._routines['input']:
             if not self.load_input_action(action_name):
                 return False
 
-        action = self._input_actions.get(action_name)
+        action = self._routines['input'].get(action_name)
         if not action:
             return False
 
@@ -709,7 +706,7 @@ class LuaEngine:
 
         Returns True if loaded successfully.
         """
-        if name in self._generators:
+        if name in self._routines['generator']:
             return True  # Already loaded
 
         if content_path is None:
@@ -731,7 +728,7 @@ class LuaEngine:
                 print(f"[LuaEngine] Generator {name} did not return a table")
                 return False
 
-            self._generators[name] = result
+            self._routines['generator'][name] = result
             return True
 
         except Exception as e:
@@ -775,11 +772,11 @@ class LuaEngine:
             property: {call: "grid_position", args: {row: 1, col: 5}}
         """
         # Load generator if not already loaded
-        if name not in self._generators:
+        if name not in self._routines['generator']:
             if not self.load_generator(name):
                 return None
 
-        generator = self._generators.get(name)
+        generator = self._routines['generator'].get(name)
         if not generator:
             return None
 
@@ -1038,7 +1035,7 @@ class LuaEngine:
     def _call_lifecycle(self, method_name: str, entity: Entity, *args) -> None:
         """Call a lifecycle method on all of an entity's behaviors."""
         for behavior_name in entity.behaviors:
-            behavior = self._behaviors.get(behavior_name)
+            behavior = self._routines['behavior'].get(behavior_name)
             if behavior is None:
                 continue
 
@@ -1058,7 +1055,7 @@ class LuaEngine:
             return
 
         for behavior_name in entity.behaviors:
-            behavior = self._behaviors.get(behavior_name)
+            behavior = self._routines['behavior'].get(behavior_name)
             if behavior is None:
                 continue
 
