@@ -33,6 +33,7 @@ from dataclasses import dataclass, field
 if TYPE_CHECKING:
     from ams.session import AMSSession
     from games.common.base_game import BaseGame
+    from ams.content_fs import ContentFS
 
 
 @dataclass
@@ -67,46 +68,54 @@ class GameRegistry:
     4. Falling back to game_info.py module variables if no BaseGame found
     """
 
-    def __init__(self, games_dir: Optional[Path] = None):
+    def __init__(self, content_fs: 'ContentFS'):
         """
         Initialize the game registry.
 
         Args:
-            games_dir: Path to games directory. Defaults to ./games/
+            content_fs: ContentFS for layered content access. Games are
+                       discovered from all content layers.
         """
-        if games_dir is None:
-            games_dir = Path(__file__).parent
-        self.games_dir = Path(games_dir)
+        self._content_fs = content_fs
         self._games: Dict[str, GameInfo] = {}
         self._game_classes: Dict[str, Type['BaseGame']] = {}
         self._discover_games()
 
     def _discover_games(self) -> None:
-        """Scan games directory and register valid games."""
-        if not self.games_dir.exists():
-            return
-
+        """Discover games from ContentFS (all content layers)."""
         # Skip these directories
         skip_dirs = {'base', 'common', '__pycache__'}
 
-        for item in self.games_dir.iterdir():
-            if not item.is_dir():
+        if not self._content_fs.exists('games'):
+            return
+
+        for item_name in self._content_fs.listdir('games'):
+            if item_name.startswith('_') or item_name.startswith('.'):
                 continue
-            if item.name.startswith('_') or item.name.startswith('.'):
+            if item_name.lower() in skip_dirs:
                 continue
-            if item.name.lower() in skip_dirs:
+
+            game_path = f'games/{item_name}'
+            if not self._content_fs.isdir(game_path):
+                continue
+
+            # Get the real filesystem path for this game
+            # (uses highest-priority layer that has this game)
+            try:
+                real_game_dir = Path(self._content_fs.getsyspath(game_path))
+            except Exception:
                 continue
 
             # Need either game_mode.py, game_info.py, or game.yaml
-            has_game_mode = (item / 'game_mode.py').exists()
-            has_game_info = (item / 'game_info.py').exists()
-            has_game_yaml = (item / 'game.yaml').exists()
+            has_game_mode = self._content_fs.exists(f'{game_path}/game_mode.py')
+            has_game_info = self._content_fs.exists(f'{game_path}/game_info.py')
+            has_game_yaml = self._content_fs.exists(f'{game_path}/game.yaml')
 
             if has_game_mode or has_game_info:
-                self._register_game(item)
+                self._register_game(real_game_dir)
             elif has_game_yaml:
                 # YAML-only game - use GameEngine.from_yaml factory
-                self._register_yaml_game(item)
+                self._register_yaml_game(real_game_dir)
 
     def _register_game(self, game_dir: Path) -> None:
         """
@@ -391,6 +400,10 @@ class GameRegistry:
         except (ImportError, AttributeError):
             pass
 
+        # Inject ContentFS for layered content access
+        if 'content_fs' not in kwargs:
+            kwargs['content_fs'] = self._content_fs
+
         # Prefer using cached game class directly
         game_class = self._game_classes.get(slug.lower())
         if game_class is not None:
@@ -476,9 +489,22 @@ class GameRegistry:
 _registry: Optional[GameRegistry] = None
 
 
-def get_registry() -> GameRegistry:
-    """Get the global game registry instance."""
+def get_registry(content_fs: Optional['ContentFS'] = None) -> GameRegistry:
+    """Get the global game registry instance.
+
+    Args:
+        content_fs: ContentFS instance. Required on first call to initialize
+                   the registry. Subsequent calls can omit it.
+
+    Returns:
+        The global GameRegistry instance.
+
+    Raises:
+        ValueError: If called without content_fs when registry not initialized.
+    """
     global _registry
     if _registry is None:
-        _registry = GameRegistry()
+        if content_fs is None:
+            raise ValueError("ContentFS required to initialize registry")
+        _registry = GameRegistry(content_fs)
     return _registry

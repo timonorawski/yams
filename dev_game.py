@@ -28,20 +28,26 @@ import pygame
 import sys
 import os
 import argparse
+from pathlib import Path
 
 # Ensure project root is on path
 _project_root = os.path.dirname(os.path.abspath(__file__))
 if _project_root not in sys.path:
     sys.path.insert(0, _project_root)
 
+from ams.content_fs import ContentFS
 from games.registry import get_registry
 
 
 def main():
     """Main entry point for development game launcher."""
 
+    # Initialize layered content filesystem
+    core_dir = Path(__file__).parent
+    content_fs = ContentFS(core_dir)
+
     # Get game registry
-    registry = get_registry()
+    registry = get_registry(content_fs)
     available_games = registry.list_games()
 
     # Phase 1: Parse just enough to identify the game

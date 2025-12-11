@@ -20,7 +20,7 @@ from abc import abstractmethod
 from dataclasses import dataclass, field
 import json
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Protocol, Tuple, Type, runtime_checkable
+from typing import Any, Dict, List, Optional, Protocol, Tuple, Type, runtime_checkable, TYPE_CHECKING
 
 import pygame
 import yaml
@@ -28,6 +28,9 @@ import yaml
 from games.common import BaseGame, GameState
 from games.common.input import InputEvent
 from ams.behaviors import BehaviorEngine, Entity
+
+if TYPE_CHECKING:
+    from ams.content_fs import ContentFS
 
 
 # =============================================================================
@@ -984,8 +987,8 @@ class GameEngine(BaseGame):
     # Game definition file (override in subclass)
     GAME_DEF_FILE: Optional[Path] = None
 
-    # Custom behaviors directory (override to add game-specific behaviors)
-    BEHAVIORS_DIR: Optional[Path] = None
+    # Game slug (for ContentFS path resolution, used for behaviors, levels, assets)
+    GAME_SLUG: Optional[str] = None
 
     @classmethod
     def from_yaml(cls, yaml_path: Path) -> Type['GameEngine']:
@@ -1024,6 +1027,9 @@ class GameEngine(BaseGame):
         game_def_file = yaml_path
         levels_dir = yaml_path.parent / 'levels'
 
+        # Extract game slug from path
+        game_slug = yaml_path.parent.name.lower()
+
         class YAMLGameMode(cls):
             NAME = name
             DESCRIPTION = description
@@ -1031,10 +1037,11 @@ class GameEngine(BaseGame):
             AUTHOR = author
             GAME_DEF_FILE = game_def_file
             LEVELS_DIR = levels_dir
+            GAME_SLUG = game_slug
 
-            def __init__(self, **kwargs):
+            def __init__(self, content_fs: 'ContentFS', **kwargs):
                 kwargs.pop('skin', None)
-                super().__init__(skin='default', **kwargs)
+                super().__init__(content_fs, skin='default', **kwargs)
 
             def _get_skin(self, skin_name: str) -> 'GameEngineSkin':
                 return GameEngineSkin()
@@ -1047,6 +1054,7 @@ class GameEngine(BaseGame):
 
     def __init__(
         self,
+        content_fs: 'ContentFS',
         skin: str = 'default',
         lives: int = 3,
         width: int = 800,
@@ -1056,12 +1064,14 @@ class GameEngine(BaseGame):
         """Initialize game engine.
 
         Args:
+            content_fs: ContentFS for layered content access
             skin: Skin name for rendering
             lives: Starting lives
             width: Screen width
             height: Screen height
             **kwargs: BaseGame arguments
         """
+        self._content_fs = content_fs
         # Initialize before super().__init__ (may call _apply_level_config)
         self._starting_lives = lives
         self._lives = lives
@@ -1077,18 +1087,21 @@ class GameEngine(BaseGame):
         self._inline_collision_action_counter = 0
         self._inline_input_action_counter = 0
 
-        # Create behavior engine
+        # Create behavior engine with ContentFS
         self._behavior_engine = BehaviorEngine(
+            content_fs=self._content_fs,
             screen_width=width,
             screen_height=height,
         )
 
-        # Load core behaviors
+        # Load core behaviors from ContentFS
         self._behavior_engine.load_behaviors_from_dir()
 
-        # Load game-specific behaviors
-        if self.BEHAVIORS_DIR and self.BEHAVIORS_DIR.exists():
-            self._behavior_engine.load_behaviors_from_dir(self.BEHAVIORS_DIR)
+        # Load game-specific behaviors from ContentFS
+        if self.GAME_SLUG:
+            game_behaviors_path = f'games/{self.GAME_SLUG}/behaviors'
+            if self._content_fs.exists(game_behaviors_path):
+                self._behavior_engine.load_behaviors_from_dir(game_behaviors_path)
 
         # Load game definition
         if self.GAME_DEF_FILE and self.GAME_DEF_FILE.exists():

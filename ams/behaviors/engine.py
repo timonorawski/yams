@@ -17,14 +17,16 @@ Directory structure:
 - ams/input_actions/               - Input actions (triggered by user input)
 """
 
-from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Optional, TYPE_CHECKING
 import uuid
 
 from lupa import LuaRuntime
 
 from .entity import Entity
 from .api import LuaAPI
+
+if TYPE_CHECKING:
+    from ams.content_fs import ContentFS
 
 
 def _lua_attribute_filter(obj, attr_name, is_setting):
@@ -72,8 +74,11 @@ class BehaviorEngine:
     Manages Lua behaviors and entity lifecycle.
 
     Usage:
-        engine = BehaviorEngine(screen_width=800, screen_height=600)
-        engine.load_behavior('descend', 'path/to/descend.lua')
+        from ams.content_fs import ContentFS
+
+        content_fs = ContentFS(Path('/path/to/repo'))
+        engine = BehaviorEngine(content_fs, screen_width=800, screen_height=600)
+        engine.load_behaviors_from_dir()  # Loads from ams/behaviors/lua/
 
         entity = engine.create_entity('brick', behaviors=['descend'],
                                        behavior_config={'descend': {'speed': 50}})
@@ -84,13 +89,13 @@ class BehaviorEngine:
             render(entity)
     """
 
-    # Default paths for Lua scripts
-    BEHAVIORS_DIR = Path(__file__).parent / 'lua'
-    COLLISION_ACTIONS_DIR = Path(__file__).parent / 'collision_actions'
-    GENERATORS_DIR = Path(__file__).parent / 'generators'
-    INPUT_ACTIONS_DIR = Path(__file__).parent.parent / 'input_actions'
-
-    def __init__(self, screen_width: float = 800, screen_height: float = 600):
+    def __init__(
+        self,
+        content_fs: 'ContentFS',
+        screen_width: float = 800,
+        screen_height: float = 600,
+    ):
+        self._content_fs = content_fs
         self.screen_width = screen_width
         self.screen_height = screen_height
         self.score = 0
@@ -345,26 +350,29 @@ class BehaviorEngine:
         # Validate sandbox is properly locked down
         self._validate_sandbox()
 
-    def load_behavior(self, name: str, path: Optional[Path] = None) -> bool:
+    def load_behavior(self, name: str, content_path: Optional[str] = None) -> bool:
         """
-        Load a behavior script from file.
+        Load a behavior script from ContentFS.
 
-        If path is None, looks in BEHAVIORS_DIR for {name}.lua.
+        Args:
+            name: Behavior name (used as key and for default path lookup)
+            content_path: ContentFS path to .lua file. If None, looks in
+                         'ams/behaviors/lua/{name}.lua'
 
         Returns True if loaded successfully.
         """
         if name in self._behaviors:
             return True  # Already loaded
 
-        if path is None:
-            path = self.BEHAVIORS_DIR / f"{name}.lua"
+        if content_path is None:
+            content_path = f'ams/behaviors/lua/{name}.lua'
 
-        if not path.exists():
-            print(f"[BehaviorEngine] Behavior not found: {path}")
+        if not self._content_fs.exists(content_path):
+            print(f"[BehaviorEngine] Behavior not found: {content_path}")
             return False
 
         try:
-            code = path.read_text()
+            code = self._content_fs.readtext(content_path)
             # Execute the Lua file - it should return a table with on_update, etc.
             result = self._lua.execute(code)
 
@@ -428,42 +436,54 @@ class BehaviorEngine:
             print(f"[BehaviorEngine] Error loading inline behavior {name}: {e}")
             return False
 
-    def load_behaviors_from_dir(self, directory: Optional[Path] = None) -> int:
-        """Load all .lua files from directory. Returns count loaded."""
-        if directory is None:
-            directory = self.BEHAVIORS_DIR
+    def load_behaviors_from_dir(self, content_dir: Optional[str] = None) -> int:
+        """Load all .lua files from ContentFS directory.
+
+        Args:
+            content_dir: ContentFS path to directory (e.g., 'ams/behaviors/lua').
+                        If None, uses default 'ams/behaviors/lua'.
+
+        Returns count loaded.
+        """
+        if content_dir is None:
+            content_dir = 'ams/behaviors/lua'
 
         count = 0
-        if directory.exists():
-            for lua_file in directory.glob("*.lua"):
-                name = lua_file.stem
-                if self.load_behavior(name, lua_file):
-                    count += 1
+        if self._content_fs.exists(content_dir):
+            for item in self._content_fs.listdir(content_dir):
+                if item.endswith('.lua'):
+                    name = item[:-4]  # Remove .lua extension
+                    content_path = f'{content_dir}/{item}'
+                    if self.load_behavior(name, content_path):
+                        count += 1
         return count
 
-    def load_collision_action(self, name: str, path: Optional[Path] = None) -> bool:
+    def load_collision_action(self, name: str, content_path: Optional[str] = None) -> bool:
         """
-        Load a collision action script.
+        Load a collision action script from ContentFS.
 
         Collision actions handle two-entity interactions (collisions).
         They expose an `execute(entity_a_id, entity_b_id, modifier)` function.
 
-        If path is None, looks in COLLISION_ACTIONS_DIR for {name}.lua.
+        Args:
+            name: Action name
+            content_path: ContentFS path. If None, looks in
+                         'ams/behaviors/collision_actions/{name}.lua'
 
         Returns True if loaded successfully.
         """
         if name in self._collision_actions:
             return True  # Already loaded
 
-        if path is None:
-            path = self.COLLISION_ACTIONS_DIR / f"{name}.lua"
+        if content_path is None:
+            content_path = f'ams/behaviors/collision_actions/{name}.lua'
 
-        if not path.exists():
-            print(f"[BehaviorEngine] Collision action not found: {path}")
+        if not self._content_fs.exists(content_path):
+            print(f"[BehaviorEngine] Collision action not found: {content_path}")
             return False
 
         try:
-            code = path.read_text()
+            code = self._content_fs.readtext(content_path)
             result = self._lua.execute(code)
 
             if result is None:
@@ -481,17 +501,19 @@ class BehaviorEngine:
             print(f"[BehaviorEngine] Error loading collision action {name}: {e}")
             return False
 
-    def load_collision_actions_from_dir(self, directory: Optional[Path] = None) -> int:
-        """Load all collision action .lua files from directory. Returns count loaded."""
-        if directory is None:
-            directory = self.COLLISION_ACTIONS_DIR
+    def load_collision_actions_from_dir(self, content_dir: Optional[str] = None) -> int:
+        """Load all collision action .lua files from ContentFS directory."""
+        if content_dir is None:
+            content_dir = 'ams/behaviors/collision_actions'
 
         count = 0
-        if directory.exists():
-            for lua_file in directory.glob("*.lua"):
-                name = lua_file.stem
-                if self.load_collision_action(name, lua_file):
-                    count += 1
+        if self._content_fs.exists(content_dir):
+            for item in self._content_fs.listdir(content_dir):
+                if item.endswith('.lua'):
+                    name = item[:-4]
+                    content_path = f'{content_dir}/{item}'
+                    if self.load_collision_action(name, content_path):
+                        count += 1
         return count
 
     def load_inline_collision_action(self, name: str, lua_code: str) -> bool:
@@ -588,33 +610,34 @@ class BehaviorEngine:
     # Input Actions
     # =========================================================================
 
-    def load_input_action(self, name: str, path: Optional[Path] = None) -> bool:
+    def load_input_action(self, name: str, content_path: Optional[str] = None) -> bool:
         """
-        Load an input action script.
+        Load an input action script from ContentFS.
 
         Input actions are triggered by user input (clicks, touches, etc.).
         They expose an `execute(x, y, args)` function that receives:
         - x, y: Input position in screen coordinates
         - args: Lua table of action arguments from YAML config
 
-        If path is None, looks in INPUT_ACTIONS_DIR for {name}.lua.
+        Args:
+            name: Action name
+            content_path: ContentFS path. If None, looks in
+                         'ams/input_actions/{name}.lua'
 
         Returns True if loaded successfully.
         """
         if name in self._input_actions:
             return True  # Already loaded
 
-        if path is None:
-            path = self.INPUT_ACTIONS_DIR / f'{name}.lua'
+        if content_path is None:
+            content_path = f'ams/input_actions/{name}.lua'
 
-        if not path.exists():
-            print(f"[BehaviorEngine] Input action file not found: {path}")
+        if not self._content_fs.exists(content_path):
+            print(f"[BehaviorEngine] Input action file not found: {content_path}")
             return False
 
         try:
-            with open(path, 'r') as f:
-                lua_code = f.read()
-
+            lua_code = self._content_fs.readtext(content_path)
             result = self._lua.execute(lua_code)
 
             if result is None or not hasattr(result, 'execute'):
@@ -716,9 +739,9 @@ class BehaviorEngine:
             print(f"[BehaviorEngine] Error executing input action {action_name}: {e}")
             return False
 
-    def load_generator(self, name: str, path: Optional[Path] = None) -> bool:
+    def load_generator(self, name: str, content_path: Optional[str] = None) -> bool:
         """
-        Load a property generator script.
+        Load a property generator script from ContentFS.
 
         Property generators compute dynamic property values. They expose a
         `generate(args)` function that takes a Lua table of arguments and
@@ -727,22 +750,25 @@ class BehaviorEngine:
         Use case: Complex property calculations like grid positions, color
         interpolation, pattern generation, etc.
 
-        If path is None, looks in GENERATORS_DIR for {name}.lua.
+        Args:
+            name: Generator name
+            content_path: ContentFS path. If None, looks in
+                         'ams/behaviors/generators/{name}.lua'
 
         Returns True if loaded successfully.
         """
         if name in self._generators:
             return True  # Already loaded
 
-        if path is None:
-            path = self.GENERATORS_DIR / f"{name}.lua"
+        if content_path is None:
+            content_path = f'ams/behaviors/generators/{name}.lua'
 
-        if not path.exists():
-            print(f"[BehaviorEngine] Generator not found: {path}")
+        if not self._content_fs.exists(content_path):
+            print(f"[BehaviorEngine] Generator not found: {content_path}")
             return False
 
         try:
-            code = path.read_text()
+            code = self._content_fs.readtext(content_path)
             result = self._lua.execute(code)
 
             if result is None:
@@ -760,17 +786,26 @@ class BehaviorEngine:
             print(f"[BehaviorEngine] Error loading generator {name}: {e}")
             return False
 
-    def load_generators_from_dir(self, directory: Optional[Path] = None) -> int:
-        """Load all generator .lua files from directory. Returns count loaded."""
-        if directory is None:
-            directory = self.GENERATORS_DIR
+    def load_generators_from_dir(self, content_dir: Optional[str] = None) -> int:
+        """Load all generator .lua files from ContentFS directory.
+
+        Args:
+            content_dir: ContentFS path to directory (e.g., 'ams/behaviors/generators').
+                        If None, uses default 'ams/behaviors/generators'.
+
+        Returns count loaded.
+        """
+        if content_dir is None:
+            content_dir = 'ams/behaviors/generators'
 
         count = 0
-        if directory.exists():
-            for lua_file in directory.glob("*.lua"):
-                name = lua_file.stem
-                if self.load_generator(name, lua_file):
-                    count += 1
+        if self._content_fs.exists(content_dir):
+            for item in self._content_fs.listdir(content_dir):
+                if item.endswith('.lua'):
+                    name = item[:-4]  # Remove .lua extension
+                    content_path = f'{content_dir}/{item}'
+                    if self.load_generator(name, content_path):
+                        count += 1
         return count
 
     def call_generator(self, name: str, args: Optional[dict[str, Any]] = None) -> Any:

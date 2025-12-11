@@ -26,12 +26,14 @@ import sys
 import os
 import time
 import argparse
+from pathlib import Path
 
 # Add DuckHunt to path for imports (needed for some shared modules)
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'games', 'DuckHunt'))
 
 from ams.session import AMSSession
 from ams.detection_backend import InputSourceAdapter
+from ams.content_fs import ContentFS
 from games.registry import get_registry, GameRegistry
 from input.sources.mouse import MouseInputSource
 
@@ -850,8 +852,12 @@ def launch_game_generic(args, screen, detection_backend, ams, registry: GameRegi
 def main():
     """Main entry point for AMS game launcher."""
 
+    # Initialize layered content filesystem
+    core_dir = Path(__file__).parent
+    content_fs = ContentFS(core_dir)
+
     # Get game registry for auto-discovery
-    registry = get_registry()
+    registry = get_registry(content_fs)
     available_games = registry.list_games()
 
     # Parse command-line arguments
