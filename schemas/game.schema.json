@@ -700,7 +700,11 @@
         },
         "on_input": {
           "$ref": "#/$defs/input_action",
-          "description": "Action to take on input"
+          "description": "Action to take on any input (regardless of position)"
+        },
+        "on_hit": {
+          "$ref": "#/$defs/input_action",
+          "description": "Action when input position is inside entity bounds (click-on-entity)"
         }
       },
       "additionalProperties": false

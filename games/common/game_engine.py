@@ -287,10 +287,17 @@ class LoseConditionConfig:
 
 @dataclass
 class InputMappingConfig:
-    """Configuration for input mapping to an entity type."""
+    """Configuration for input mapping to an entity type.
+
+    Modes:
+    - target_x/target_y: Set properties from input position (e.g., paddle)
+    - on_input: Action when any input occurs for this entity type
+    - on_hit: Action when input position is INSIDE the entity (click-on-entity)
+    """
     target_x: Optional[str] = None  # Property to set from input.position.x
     target_y: Optional[str] = None  # Property to set from input.position.y
-    on_input: Optional[InputAction] = None  # Action to take on input
+    on_input: Optional[InputAction] = None  # Action to take on any input
+    on_hit: Optional[InputAction] = None  # Action when input is inside entity bounds
 
 
 @dataclass
@@ -1107,6 +1114,8 @@ class GameEngine(BaseGame):
         raw_input_mapping = data.get('input_mapping', {})
         for entity_type, mapping_data in raw_input_mapping.items():
             on_input = None
+            on_hit = None
+
             if 'on_input' in mapping_data:
                 on_input_data = mapping_data['on_input']
                 transform_config = None
@@ -1125,10 +1134,28 @@ class GameEngine(BaseGame):
                     when=when_condition,
                 )
 
+            # Parse on_hit (input must be inside entity bounds)
+            if 'on_hit' in mapping_data:
+                on_hit_data = mapping_data['on_hit']
+                transform_config = None
+                when_condition = None
+
+                if 'transform' in on_hit_data:
+                    transform_config = self._parse_transform_config(on_hit_data['transform'])
+
+                if 'when' in on_hit_data:
+                    when_condition = self._parse_when_condition(on_hit_data['when'])
+
+                on_hit = InputAction(
+                    transform=transform_config,
+                    when=when_condition,
+                )
+
             game_def.input_mapping[entity_type] = InputMappingConfig(
                 target_x=mapping_data.get('target_x'),
                 target_y=mapping_data.get('target_y'),
                 on_input=on_input,
+                on_hit=on_hit,
             )
 
         # Parse lose_conditions
@@ -1743,9 +1770,19 @@ class GameEngine(BaseGame):
                 if mapping.target_y:
                     entity.properties[mapping.target_y] = event.position.y
 
-                # Check for on_input action
+                # Check for on_input action (fires for any input)
                 if mapping.on_input:
                     self._handle_input_action(entity, mapping.on_input)
+
+                # Check for on_hit action (only fires if input is inside entity)
+                if mapping.on_hit:
+                    if self._point_in_entity(event.position.x, event.position.y, entity):
+                        self._handle_input_action(entity, mapping.on_hit)
+
+    def _point_in_entity(self, x: float, y: float, entity: Entity) -> bool:
+        """Check if a point is inside an entity's bounding box."""
+        return (entity.x <= x <= entity.x + entity.width and
+                entity.y <= y <= entity.y + entity.height)
 
     def _handle_input_action(self, entity: Entity, action: InputAction) -> None:
         """Handle an input action for an entity."""

@@ -380,8 +380,12 @@ class GameRegistry:
         if info is None:
             raise ValueError(f"Unknown game: {slug}")
 
-        # Import game's input module
-        input_manager_module = importlib.import_module(f"{info.module_path}.input.input_manager")
+        # Try game-specific input module, fall back to common input
+        try:
+            input_manager_module = importlib.import_module(f"{info.module_path}.input.input_manager")
+        except ModuleNotFoundError:
+            # Use common input module (for GameEngine-based games)
+            input_manager_module = importlib.import_module("games.common.input.input_manager")
         InputManager = input_manager_module.InputManager
 
         if ams_session is not None:
@@ -390,7 +394,11 @@ class GameRegistry:
             source = AMSInputAdapter(ams_session, width, height)
         else:
             # Standalone mode - use mouse
-            mouse_module = importlib.import_module(f"{info.module_path}.input.sources.mouse")
+            try:
+                mouse_module = importlib.import_module(f"{info.module_path}.input.sources.mouse")
+            except ModuleNotFoundError:
+                # Use common mouse input source
+                mouse_module = importlib.import_module("games.common.input.sources.mouse")
             source = mouse_module.MouseInputSource()
 
         return InputManager(source)

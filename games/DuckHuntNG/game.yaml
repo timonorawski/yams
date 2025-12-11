@@ -1,0 +1,250 @@
+# yaml-language-server: $schema=../../schemas/game.schema.json
+# DuckHunt NextGen - YAML-driven duck hunting game
+#
+# This demonstrates the declarative game engine with:
+# - Entity transforms (duck_flying -> duck_hit -> duck_falling)
+# - on_hit input mapping (click on duck to hit it)
+# - on_update transforms with age conditions (timed transitions)
+# - Reusable behaviors (bounce, gravity)
+
+name: "Duck Hunt NG"
+description: "YAML-driven duck hunting game"
+version: "1.0.0"
+author: "AMS Team"
+
+screen_width: 800
+screen_height: 600
+background_color: [135, 206, 235]  # Sky blue
+
+defaults:
+  lives: 3
+
+# Win when score target reached (or time survives, etc.)
+win_condition: reach_score
+win_target: 1000
+
+# =============================================================================
+# Entity Types
+# =============================================================================
+
+entity_types:
+
+  # ---------------------------------------------------------------------------
+  # Duck - Flying state
+  # ---------------------------------------------------------------------------
+  # Moves with velocity, bounces off walls in upper portion of screen.
+  # When clicked (on_hit), transforms to duck_hit.
+
+  duck_flying:
+    width: 50
+    height: 50
+    color: green
+    behaviors: [bounce]
+    behavior_config:
+      bounce:
+        walls: top_sides
+        min_y: 50
+        max_y: 0.6
+    tags: [duck, target]
+    render:
+      # Duck body (oval)
+      - shape: circle
+        color: $color
+        fill: true
+      # Eye
+      - shape: circle
+        color: white
+        fill: true
+        offset: [30, 10]
+        size: [10, 10]
+      - shape: circle
+        color: black
+        fill: true
+        offset: [33, 12]
+        size: [4, 4]
+      # Beak
+      - shape: triangle
+        color: orange
+        fill: true
+        points: [[0.9, 0.4], [1.2, 0.5], [0.9, 0.6]]
+
+  # ---------------------------------------------------------------------------
+  # Duck - Hit state (pause before falling)
+  # ---------------------------------------------------------------------------
+  # Static, shows hit effect for 0.5 seconds, then transforms to falling.
+
+  duck_hit:
+    width: 50
+    height: 50
+    color: red
+    behaviors:
+      - lua: |
+          local hit = {}
+          function hit.on_spawn(entity_id)
+              -- Award points when duck is hit
+              ams.add_score(100)
+              ams.play_sound("duck_hit")
+          end
+          return hit
+    tags: [duck]
+    on_update:
+      - when:
+          age: [0.5, null]  # After 0.5 seconds
+        transform:
+          type: duck_falling
+    render:
+      # Hit effect - X eyes
+      - shape: circle
+        color: $color
+        fill: true
+      # X for left eye
+      - shape: line
+        color: white
+        line_width: 2
+        points: [[0.15, 0.2], [0.35, 0.4]]
+      - shape: line
+        color: white
+        line_width: 2
+        points: [[0.35, 0.2], [0.15, 0.4]]
+      # X for right eye
+      - shape: line
+        color: white
+        line_width: 2
+        points: [[0.55, 0.2], [0.75, 0.4]]
+      - shape: line
+        color: white
+        line_width: 2
+        points: [[0.75, 0.2], [0.55, 0.4]]
+
+  # ---------------------------------------------------------------------------
+  # Duck - Falling state
+  # ---------------------------------------------------------------------------
+  # Falls with gravity, destroyed when off screen.
+
+  duck_falling:
+    width: 50
+    height: 50
+    color: gray
+    behaviors: [gravity]
+    behavior_config:
+      gravity:
+        acceleration: 800
+        destroy_offscreen: true
+    tags: [duck]
+    render:
+      - shape: circle
+        color: $color
+        fill: true
+      # Closed eyes (lines)
+      - shape: line
+        color: black
+        line_width: 2
+        points: [[0.2, 0.3], [0.4, 0.3]]
+      - shape: line
+        color: black
+        line_width: 2
+        points: [[0.6, 0.3], [0.8, 0.3]]
+
+  # ---------------------------------------------------------------------------
+  # Spawner - invisible entity that spawns ducks
+  # ---------------------------------------------------------------------------
+
+  spawner:
+    width: 1
+    height: 1
+    color: black
+    behaviors:
+      - lua: |
+          local spawner = {}
+
+          function spawner.on_spawn(entity_id)
+              ams.set_prop(entity_id, "spawn_timer", 0)
+          end
+
+          function spawner.on_update(entity_id, dt)
+              local timer = ams.get_prop(entity_id, "spawn_timer") or 0
+              timer = timer + dt
+
+              local interval = ams.get_config(entity_id, "spawner", "interval", 2.0)
+              local max_ducks = ams.get_config(entity_id, "spawner", "max_ducks", 3)
+
+              if timer >= interval then
+                  ams.set_prop(entity_id, "spawn_timer", timer - interval)
+
+                  -- Count current ducks
+                  local current = ams.count_entities_by_tag("duck")
+
+                  if current < max_ducks then
+                      -- Spawn a duck
+                      local screen_w = ams.get_screen_width()
+                      local screen_h = ams.get_screen_height()
+
+                      -- Random edge spawn
+                      local edge = math.floor(ams.random() * 3)
+                      local x, y, vx, vy
+                      local speed = ams.random_range(150, 300)
+
+                      if edge == 0 then
+                          -- Left edge
+                          x = -40
+                          y = ams.random_range(50, screen_h * 0.4)
+                          vx = speed
+                          vy = ams.random_range(-speed * 0.5, speed * 0.5)
+                      elseif edge == 1 then
+                          -- Right edge
+                          x = screen_w + 10
+                          y = ams.random_range(50, screen_h * 0.4)
+                          vx = -speed
+                          vy = ams.random_range(-speed * 0.5, speed * 0.5)
+                      else
+                          -- Bottom
+                          x = ams.random_range(100, screen_w - 100)
+                          y = screen_h * 0.7
+                          vx = ams.random_range(-speed * 0.5, speed * 0.5)
+                          vy = -speed
+                      end
+
+                      -- Random color
+                      local colors = {"green", "blue", "red", "cyan", "magenta"}
+                      local color = colors[math.floor(ams.random() * 5) + 1]
+
+                      ams.spawn("duck_flying", x, y, vx, vy, 50, 50, color, "")
+                  end
+              end
+
+              ams.set_prop(entity_id, "spawn_timer", timer)
+          end
+
+          return spawner
+    behavior_config:
+      spawner:
+        interval: 2.0
+        max_ducks: 3
+    tags: []
+    render: []  # Invisible
+
+# =============================================================================
+# Input Mapping
+# =============================================================================
+# on_hit: fires when input position is INSIDE the entity bounds
+
+input_mapping:
+  duck_flying:
+    on_hit:
+      transform:
+        type: duck_hit
+
+# =============================================================================
+# Collisions (none needed for DuckHunt - input-based)
+# =============================================================================
+
+collisions: []
+
+# =============================================================================
+# Player Configuration
+# =============================================================================
+# No player entity - this is a shooting gallery game
+
+player:
+  type: spawner
+  spawn: [0, 0]
