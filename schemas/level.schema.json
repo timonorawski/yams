@@ -1,0 +1,308 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://ams.games/schemas/level.schema.json",
+  "title": "AMS Level Definition",
+  "description": "Schema for AMS level YAML files",
+  "type": "object",
+  "required": ["name"],
+
+  "oneOf": [
+    { "$ref": "#/$defs/level_group" },
+    { "$ref": "#/$defs/level_definition" }
+  ],
+
+  "$defs": {
+    "point_2d": {
+      "type": "array",
+      "items": { "type": "number" },
+      "minItems": 2,
+      "maxItems": 2,
+      "description": "2D point as [x, y]"
+    },
+
+    "lua_expression": {
+      "type": "object",
+      "properties": {
+        "lua": {
+          "type": "string",
+          "description": "Lua expression to evaluate"
+        }
+      },
+      "required": ["lua"],
+      "additionalProperties": false
+    },
+
+    "call_generator": {
+      "type": "object",
+      "properties": {
+        "call": {
+          "type": "string",
+          "description": "Name of the generator to call"
+        },
+        "args": {
+          "type": "object",
+          "description": "Arguments to pass to the generator"
+        }
+      },
+      "required": ["call"],
+      "additionalProperties": false
+    },
+
+    "dynamic_value": {
+      "oneOf": [
+        { "type": "string" },
+        { "type": "number" },
+        { "type": "boolean" },
+        { "$ref": "#/$defs/lua_expression" },
+        { "$ref": "#/$defs/call_generator" }
+      ],
+      "description": "Static value, Lua expression, or generator call"
+    },
+
+    "level_group": {
+      "type": "object",
+      "description": "A group/campaign of levels",
+      "required": ["name", "type", "levels"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Campaign/group display name"
+        },
+        "type": {
+          "type": "string",
+          "const": "group",
+          "description": "Must be 'group' to indicate level group"
+        },
+        "levels": {
+          "type": "array",
+          "items": { "type": "string" },
+          "minItems": 1,
+          "description": "List of level file names (without .yaml)"
+        },
+        "description": {
+          "type": "string",
+          "description": "Optional description"
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "level_definition": {
+      "type": "object",
+      "description": "A single level definition",
+      "required": ["name"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Level display name"
+        },
+        "difficulty": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10,
+          "description": "Difficulty rating (1-10)"
+        },
+        "lives": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Starting lives (overrides game default)"
+        },
+        "grid": {
+          "$ref": "#/$defs/grid_config",
+          "description": "Grid layout configuration"
+        },
+        "layout": {
+          "type": "string",
+          "description": "ASCII layout (multiline string)"
+        },
+        "layout_key": {
+          "type": "object",
+          "description": "Character to entity type mapping",
+          "additionalProperties": {
+            "oneOf": [
+              { "type": "string" },
+              { "type": "string", "const": "empty" }
+            ]
+          }
+        },
+        "paddle": {
+          "$ref": "#/$defs/player_config",
+          "description": "Paddle/player configuration"
+        },
+        "player": {
+          "$ref": "#/$defs/player_config",
+          "description": "Player configuration (alias for paddle)"
+        },
+        "ball": {
+          "$ref": "#/$defs/ball_config",
+          "description": "Ball configuration"
+        },
+        "entities": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/entity_placement"
+          },
+          "description": "Manual entity placements"
+        },
+        "time_limit": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Level time limit in seconds"
+        },
+        "target_score": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Score required to complete level"
+        }
+      },
+      "additionalProperties": true
+    },
+
+    "grid_config": {
+      "type": "object",
+      "description": "Grid layout configuration",
+      "properties": {
+        "cols": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Number of columns"
+        },
+        "rows": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Number of rows"
+        },
+        "brick_width": {
+          "type": "number",
+          "minimum": 1,
+          "description": "Width of each brick/cell"
+        },
+        "brick_height": {
+          "type": "number",
+          "minimum": 1,
+          "description": "Height of each brick/cell"
+        },
+        "start_x": {
+          "type": "number",
+          "description": "Grid starting X position"
+        },
+        "start_y": {
+          "type": "number",
+          "description": "Grid starting Y position"
+        },
+        "spacing_x": {
+          "type": "number",
+          "description": "Horizontal spacing between cells"
+        },
+        "spacing_y": {
+          "type": "number",
+          "description": "Vertical spacing between cells"
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "player_config": {
+      "type": "object",
+      "description": "Player/paddle configuration",
+      "properties": {
+        "x": {
+          "type": "number",
+          "description": "Spawn X position"
+        },
+        "y": {
+          "type": "number",
+          "description": "Spawn Y position"
+        },
+        "type": {
+          "type": "string",
+          "description": "Entity type (overrides game default)"
+        },
+        "width": {
+          "type": "number",
+          "minimum": 1,
+          "description": "Override width"
+        },
+        "height": {
+          "type": "number",
+          "minimum": 1,
+          "description": "Override height"
+        },
+        "behavior_config": {
+          "type": "object",
+          "description": "Override behavior configuration",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        }
+      },
+      "additionalProperties": true
+    },
+
+    "ball_config": {
+      "type": "object",
+      "description": "Ball configuration",
+      "properties": {
+        "x": {
+          "type": "number",
+          "description": "Spawn X position"
+        },
+        "y": {
+          "type": "number",
+          "description": "Spawn Y position"
+        },
+        "type": {
+          "type": "string",
+          "description": "Entity type (overrides game default)"
+        },
+        "behavior_config": {
+          "type": "object",
+          "description": "Override behavior configuration",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        }
+      },
+      "additionalProperties": true
+    },
+
+    "entity_placement": {
+      "type": "object",
+      "description": "Manual entity placement",
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "description": "Entity type name"
+        },
+        "x": {
+          "oneOf": [
+            { "type": "number" },
+            { "$ref": "#/$defs/lua_expression" },
+            { "$ref": "#/$defs/call_generator" }
+          ],
+          "description": "X position"
+        },
+        "y": {
+          "oneOf": [
+            { "type": "number" },
+            { "$ref": "#/$defs/lua_expression" },
+            { "$ref": "#/$defs/call_generator" }
+          ],
+          "description": "Y position"
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 1,
+          "description": "Number to spawn"
+        }
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/dynamic_value"
+      }
+    }
+  }
+}

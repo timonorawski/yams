@@ -65,11 +65,18 @@ class BrickBreakerNGMode(GameEngine):
 
 ## YAML Game Definition
 
-A game is defined by a `game.yaml` file with these sections:
+A game is defined by a `game.yaml` file with these sections.
+
+**JSON Schema validation is available** at `schemas/game.schema.json` and `schemas/level.schema.json`. Add the schema reference to enable IDE validation:
+
+```yaml
+# yaml-language-server: $schema=../../schemas/game.schema.json
+```
 
 ### Basic Structure
 
 ```yaml
+# yaml-language-server: $schema=../../schemas/game.schema.json
 name: "Brick Breaker NG"
 description: "Lua behavior-driven brick breaker"
 version: "1.0.0"
@@ -171,8 +178,79 @@ assets:
 | Simple path | `name: path` | Load full image |
 | With transparency | `file`, `transparent` | Image with color key |
 | Sheet region | `file`, `x`, `y`, `width`, `height`, `transparent` | Extract region from sprite sheet |
+| Data URI | `data: "data:image/png;base64,..."` | Embedded base64 image |
+| File reference | `file: "@name"` | Reference to `assets.files.name` |
 
 The `transparent` field is an RGB array `[r, g, b]` - that color becomes transparent.
+
+#### Data URIs for Self-Contained Games
+
+Assets can be embedded directly in game.yaml using data URIs:
+
+```yaml
+assets:
+  sprites:
+    # Embedded PNG (base64)
+    ball:
+      data: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAYAAA..."
+      transparent: [255, 0, 255]
+
+  sounds:
+    # Embedded WAV (base64)
+    hit: "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEA..."
+```
+
+This makes game.yaml fully self-contained—no external asset files needed.
+Files get large but enable single-file distribution.
+
+#### Shared File References
+
+When multiple sprites use the same sprite sheet, use the `files:` dict to avoid duplicating embedded data:
+
+```yaml
+assets:
+  # Shared file references (name -> path or data URI)
+  files:
+    ducks_sheet: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUg..."
+    # Or file path: ducks_sheet: sprites/ducks.png
+
+  sprites:
+    # Reference shared file with @ prefix
+    duck_flying:
+      file: "@ducks_sheet"      # Resolves to files.ducks_sheet
+      x: 0
+      y: 126
+      width: 37
+      height: 42
+      transparent: [159, 227, 163]
+
+    duck_hit:
+      file: "@ducks_sheet"      # Same sheet, different region
+      x: 216
+      y: 126
+      width: 35
+      height: 42
+      transparent: [159, 227, 163]
+
+    duck_falling:
+      file: "@ducks_sheet"
+      x: 300
+      y: 126
+      width: 37
+      height: 42
+      transparent: [159, 227, 163]
+
+  sounds:
+    # Sounds can also use @references
+    quack: "@quack_sound"
+```
+
+The `@` prefix tells the engine to look up the value in `assets.files`. This:
+- Avoids embedding the same sprite sheet multiple times
+- Allows switching between embedded and file-based assets easily
+- Keeps the YAML readable when using large data URIs
+
+When loading, sprites sharing the same source are efficiently cached—the image is only decoded once regardless of how many sprites reference it.
 
 #### How It Works
 

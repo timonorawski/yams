@@ -229,8 +229,15 @@ class SpriteSheet:
 
 @dataclass
 class SpriteConfig:
-    """Configuration for a sprite - either simple file or sheet with regions."""
-    file: str  # Path to image file
+    """Configuration for a sprite - file path, data URI, or sheet region.
+
+    Supports:
+    - File path: file: sprites/paddle.png
+    - Data URI: data: "data:image/png;base64,iVBORw0KGgo..."
+    - Either can have region extraction (x, y, width, height)
+    """
+    file: str = ""  # Path to image file (mutually exclusive with data)
+    data: Optional[str] = None  # Data URI (data:image/png;base64,...)
     transparent: Optional[Tuple[int, int, int]] = None  # RGB color key
     # For sprite sheets:
     x: Optional[int] = None  # Region x offset
@@ -240,16 +247,37 @@ class SpriteConfig:
 
 
 @dataclass
+class SoundConfig:
+    """Configuration for a sound - file path or data URI."""
+    file: str = ""  # Path to sound file
+    data: Optional[str] = None  # Data URI (data:audio/wav;base64,...)
+
+
+@dataclass
 class AssetsConfig:
     """Configuration for game assets (sounds, sprites).
 
-    Sprites can be defined in three ways:
-    1. Simple path: "paddle: sprites/paddle.png"
-    2. With transparency: "paddle: {file: sprites/paddle.png, transparent: [255, 0, 255]}"
-    3. Sprite sheet region: "duck_flying: {file: sprites/ducks.png, x: 0, y: 126, width: 37, height: 42}"
+    Assets can be file paths, embedded data URIs, or references to shared files.
+
+    Shared files (for sprite sheets used by multiple sprites):
+        files:
+          ducks_sheet: "data:image/png;base64,..."
+
+    Sprites:
+    - Simple path: "paddle: sprites/paddle.png"
+    - With options: {file: sprites/paddle.png, transparent: [255, 0, 255]}
+    - Data URI: {data: "data:image/png;base64,..."}
+    - File reference: {file: "@ducks_sheet", x: 0, y: 0, width: 37, height: 42}
+
+    Sounds:
+    - Simple path: "hit: sounds/hit.wav"
+    - Data URI: {data: "data:audio/wav;base64,..."}
+    - File reference: {file: "@sounds_sheet"}
     """
-    # Sound name -> file path mapping
-    sounds: Dict[str, str] = field(default_factory=dict)
+    # Shared file references (name -> path or data URI)
+    files: Dict[str, str] = field(default_factory=dict)
+    # Sound name -> SoundConfig mapping
+    sounds: Dict[str, SoundConfig] = field(default_factory=dict)
     # Sprite name -> SpriteConfig mapping
     sprites: Dict[str, SpriteConfig] = field(default_factory=dict)
 
@@ -589,21 +617,47 @@ class GameEngineSkin:
         if not self._game_def:
             return
 
-        for sound_name, sound_path in self._game_def.assets.sounds.items():
-            self._load_sound(sound_name, sound_path)
+        for sound_name, sound_config in self._game_def.assets.sounds.items():
+            self._load_sound(sound_name, sound_config)
 
-    def _load_sound(self, name: str, path: str) -> None:
-        """Load a single sound file."""
+    def _load_sound(self, name: str, config: SoundConfig) -> None:
+        """Load a single sound from config (file path or data URI)."""
         try:
-            # Resolve path relative to assets_dir if not absolute
-            sound_path = Path(path)
-            if not sound_path.is_absolute() and self._assets_dir:
-                sound_path = self._assets_dir / path
+            if config.data:
+                # Data URI: decode and load from bytes
+                sound = self._load_sound_from_data_uri(config.data)
+                if sound:
+                    self._sounds[name] = sound
+            elif config.file:
+                # File path: load from disk
+                sound_path = Path(config.file)
+                if not sound_path.is_absolute() and self._assets_dir:
+                    sound_path = self._assets_dir / config.file
 
-            if sound_path.exists():
-                self._sounds[name] = pygame.mixer.Sound(str(sound_path))
+                if sound_path.exists():
+                    self._sounds[name] = pygame.mixer.Sound(str(sound_path))
         except Exception as e:
             print(f"[GameEngineSkin] Failed to load sound '{name}': {e}")
+
+    def _load_sound_from_data_uri(self, data_uri: str) -> Optional[pygame.mixer.Sound]:
+        """Load a sound from a data URI (data:audio/wav;base64,...)."""
+        import base64
+        import io
+
+        try:
+            # Parse data URI: data:[<mediatype>][;base64],<data>
+            if not data_uri.startswith('data:'):
+                return None
+
+            # Split header and data
+            header, encoded = data_uri.split(',', 1)
+            # Decode base64
+            audio_bytes = base64.b64decode(encoded)
+            # Load from bytes
+            return pygame.mixer.Sound(io.BytesIO(audio_bytes))
+        except Exception as e:
+            print(f"[GameEngineSkin] Failed to load sound from data URI: {e}")
+            return None
 
     def _load_sprites(self) -> None:
         """Load sprites defined in game definition assets."""
@@ -616,30 +670,49 @@ class GameEngineSkin:
             self._load_sprite(sprite_name, sprite_config)
 
     def _load_sprite(self, name: str, config: SpriteConfig) -> None:
-        """Load a single sprite from config.
+        """Load a single sprite from config (file path or data URI).
 
         Supports:
-        - Full image files (no region specified)
+        - File paths or data URIs
         - Regions within sprite sheets (x, y, width, height specified)
         - Transparency via color key
+        - Shared sheets via @references (cached by data URI hash)
         """
         try:
-            # Resolve path relative to assets_dir
-            sprite_path = Path(config.file)
-            if not sprite_path.is_absolute() and self._assets_dir:
-                sprite_path = self._assets_dir / config.file
+            sheet: Optional[pygame.Surface] = None
 
-            if not sprite_path.exists():
-                print(f"[GameEngineSkin] Sprite file not found: {sprite_path}")
+            if config.data:
+                # Data URI: decode and load from bytes
+                # Use hash of data URI as cache key for deduplication
+                # This allows multiple sprites to share the same embedded sheet
+                import hashlib
+                sheet_key = f"data:{hashlib.md5(config.data.encode()).hexdigest()[:16]}"
+                if sheet_key in self._sprite_sheets:
+                    sheet = self._sprite_sheets[sheet_key]
+                else:
+                    sheet = self._load_image_from_data_uri(config.data)
+                    if sheet:
+                        self._sprite_sheets[sheet_key] = sheet
+            elif config.file:
+                # File path: load from disk
+                sprite_path = Path(config.file)
+                if not sprite_path.is_absolute() and self._assets_dir:
+                    sprite_path = self._assets_dir / config.file
+
+                if not sprite_path.exists():
+                    print(f"[GameEngineSkin] Sprite file not found: {sprite_path}")
+                    return
+
+                # Load or get cached sheet
+                sheet_key = str(sprite_path)
+                if sheet_key not in self._sprite_sheets:
+                    sheet = pygame.image.load(str(sprite_path)).convert()
+                    self._sprite_sheets[sheet_key] = sheet
+                else:
+                    sheet = self._sprite_sheets[sheet_key]
+
+            if sheet is None:
                 return
-
-            # Load or get cached sheet
-            sheet_key = str(sprite_path)
-            if sheet_key not in self._sprite_sheets:
-                sheet = pygame.image.load(str(sprite_path)).convert()
-                self._sprite_sheets[sheet_key] = sheet
-            else:
-                sheet = self._sprite_sheets[sheet_key]
 
             # Extract region or use full image
             if config.x is not None and config.y is not None:
@@ -659,6 +732,26 @@ class GameEngineSkin:
 
         except Exception as e:
             print(f"[GameEngineSkin] Failed to load sprite '{name}': {e}")
+
+    def _load_image_from_data_uri(self, data_uri: str) -> Optional[pygame.Surface]:
+        """Load an image from a data URI (data:image/png;base64,...)."""
+        import base64
+        import io
+
+        try:
+            # Parse data URI: data:[<mediatype>][;base64],<data>
+            if not data_uri.startswith('data:'):
+                return None
+
+            # Split header and data
+            _, encoded = data_uri.split(',', 1)
+            # Decode base64
+            image_bytes = base64.b64decode(encoded)
+            # Load from bytes
+            return pygame.image.load(io.BytesIO(image_bytes)).convert()
+        except Exception as e:
+            print(f"[GameEngineSkin] Failed to load image from data URI: {e}")
+            return None
 
     def _parse_color(self, color_str: str) -> Tuple[int, int, int]:
         """Parse color string to RGB tuple."""
@@ -777,9 +870,12 @@ class GameEngine(BaseGame):
 
         # Parse assets section
         assets_data = data.get('assets', {})
-        sprites_config = self._parse_sprites_config(assets_data.get('sprites', {}))
+        files_config = assets_data.get('files', {})
+        sounds_config = self._parse_sounds_config(assets_data.get('sounds', {}), files_config)
+        sprites_config = self._parse_sprites_config(assets_data.get('sprites', {}), files_config)
         assets_config = AssetsConfig(
-            sounds=assets_data.get('sounds', {}),
+            files=files_config,
+            sounds=sounds_config,
             sprites=sprites_config,
         )
 
@@ -1157,20 +1253,50 @@ class GameEngine(BaseGame):
 
         return OnUpdateTransform(when=when, transform=transform)
 
-    def _parse_sprites_config(self, sprites_data: Dict[str, Any]) -> Dict[str, SpriteConfig]:
+    def _resolve_file_reference(
+        self, value: str, files: Dict[str, str]
+    ) -> Tuple[str, Optional[str]]:
+        """Resolve a file value that may be a @reference.
+
+        Args:
+            value: File path, data URI, or @reference
+            files: Shared files dict from assets.files
+
+        Returns:
+            Tuple of (file_path, data_uri) - one will be set, other None
+        """
+        if value.startswith('@'):
+            # Reference to shared file
+            ref_name = value[1:]
+            ref_value = files.get(ref_name, '')
+            if ref_value.startswith('data:'):
+                return ('', ref_value)
+            else:
+                return (ref_value, None)
+        elif value.startswith('data:'):
+            return ('', value)
+        else:
+            return (value, None)
+
+    def _parse_sprites_config(
+        self, sprites_data: Dict[str, Any], files: Dict[str, str]
+    ) -> Dict[str, SpriteConfig]:
         """Parse sprites configuration from YAML.
 
-        Supports three formats:
+        Supports:
         1. Simple path string: "paddle: sprites/paddle.png"
-        2. Dict with file and optional transparency: {file: ..., transparent: [r, g, b]}
-        3. Dict with region: {file: ..., x: 0, y: 0, width: 32, height: 32}
+        2. Dict with file: {file: sprites/paddle.png, transparent: [r, g, b]}
+        3. Dict with data URI: {data: "data:image/png;base64,..."}
+        4. File reference: {file: "@sheet_name", x: 0, y: 0, ...}
+        5. Either can have region: {x: 0, y: 0, width: 32, height: 32}
         """
         result: Dict[str, SpriteConfig] = {}
 
         for name, sprite_data in sprites_data.items():
             if isinstance(sprite_data, str):
-                # Simple path string
-                result[name] = SpriteConfig(file=sprite_data)
+                # Simple path string, data URI, or @reference
+                file_path, data_uri = self._resolve_file_reference(sprite_data, files)
+                result[name] = SpriteConfig(file=file_path, data=data_uri)
             elif isinstance(sprite_data, dict):
                 # Dict format with optional fields
                 transparent = None
@@ -1179,14 +1305,59 @@ class GameEngine(BaseGame):
                     if isinstance(t, (list, tuple)) and len(t) >= 3:
                         transparent = (int(t[0]), int(t[1]), int(t[2]))
 
+                # Resolve file reference if present
+                file_value = sprite_data.get('file', '')
+                data_value = sprite_data.get('data')
+
+                if file_value and file_value.startswith('@'):
+                    file_path, data_uri = self._resolve_file_reference(file_value, files)
+                else:
+                    file_path = file_value
+                    data_uri = data_value
+
                 result[name] = SpriteConfig(
-                    file=sprite_data.get('file', ''),
+                    file=file_path,
+                    data=data_uri,
                     transparent=transparent,
                     x=sprite_data.get('x'),
                     y=sprite_data.get('y'),
                     width=sprite_data.get('width'),
                     height=sprite_data.get('height'),
                 )
+
+        return result
+
+    def _parse_sounds_config(
+        self, sounds_data: Dict[str, Any], files: Dict[str, str]
+    ) -> Dict[str, SoundConfig]:
+        """Parse sounds configuration from YAML.
+
+        Supports:
+        1. Simple path string: "hit: sounds/hit.wav"
+        2. Data URI string: "hit: data:audio/wav;base64,..."
+        3. Dict with file: {file: sounds/hit.wav}
+        4. Dict with data URI: {data: "data:audio/wav;base64,..."}
+        5. File reference: "@sound_name" or {file: "@sound_name"}
+        """
+        result: Dict[str, SoundConfig] = {}
+
+        for name, sound_data in sounds_data.items():
+            if isinstance(sound_data, str):
+                # Simple path string, data URI, or @reference
+                file_path, data_uri = self._resolve_file_reference(sound_data, files)
+                result[name] = SoundConfig(file=file_path, data=data_uri)
+            elif isinstance(sound_data, dict):
+                # Resolve file reference if present
+                file_value = sound_data.get('file', '')
+                data_value = sound_data.get('data')
+
+                if file_value and file_value.startswith('@'):
+                    file_path, data_uri = self._resolve_file_reference(file_value, files)
+                else:
+                    file_path = file_value
+                    data_uri = data_value
+
+                result[name] = SoundConfig(file=file_path, data=data_uri)
 
         return result
 

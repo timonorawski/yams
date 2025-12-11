@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=../../schemas/game.schema.json
 # BrickBreaker NextGen - Game Definition
 #
 # This YAML defines all entity types, their behaviors, and game rules.

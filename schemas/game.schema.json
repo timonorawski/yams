@@ -1,0 +1,862 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://ams.games/schemas/game.schema.json",
+  "title": "AMS Game Definition",
+  "description": "Schema for AMS game.yaml files - data-driven arcade game definitions",
+  "type": "object",
+  "required": ["name"],
+  "additionalProperties": false,
+
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Display name of the game"
+    },
+    "description": {
+      "type": "string",
+      "description": "Brief description of the game"
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$",
+      "description": "Semantic version (e.g., 1.0.0)"
+    },
+    "author": {
+      "type": "string",
+      "description": "Game author or team name"
+    },
+    "screen_width": {
+      "type": "integer",
+      "minimum": 320,
+      "maximum": 3840,
+      "default": 800,
+      "description": "Game screen width in pixels"
+    },
+    "screen_height": {
+      "type": "integer",
+      "minimum": 240,
+      "maximum": 2160,
+      "default": 600,
+      "description": "Game screen height in pixels"
+    },
+    "background_color": {
+      "$ref": "#/$defs/rgb_color",
+      "description": "Background color as [R, G, B]"
+    },
+    "defaults": {
+      "type": "object",
+      "description": "Default game settings (lives, etc.)",
+      "properties": {
+        "lives": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 3
+        }
+      },
+      "additionalProperties": true
+    },
+    "win_condition": {
+      "type": "string",
+      "enum": ["destroy_all", "survive_time", "reach_score"],
+      "default": "destroy_all",
+      "description": "How to win the game"
+    },
+    "win_target": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Score target or time in seconds for win condition"
+    },
+    "win_target_type": {
+      "type": "string",
+      "description": "Entity base type that must be destroyed (for destroy_all)"
+    },
+    "lose_on_player_death": {
+      "type": "boolean",
+      "default": true,
+      "description": "Whether losing all lives ends the game"
+    },
+    "assets": {
+      "$ref": "#/$defs/assets_config"
+    },
+    "entity_types": {
+      "type": "object",
+      "description": "Entity type definitions",
+      "additionalProperties": {
+        "$ref": "#/$defs/entity_type"
+      }
+    },
+    "collision_behaviors": {
+      "type": "object",
+      "description": "Collision behavior handlers: collision_behaviors[type_a][type_b] = action",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": {
+          "$ref": "#/$defs/collision_action"
+        }
+      }
+    },
+    "collisions": {
+      "type": "array",
+      "description": "Collision detection pairs",
+      "items": {
+        "type": "array",
+        "items": { "type": "string" },
+        "minItems": 2,
+        "maxItems": 2
+      }
+    },
+    "input_mapping": {
+      "type": "object",
+      "description": "Input mapping by entity type",
+      "additionalProperties": {
+        "$ref": "#/$defs/input_mapping"
+      }
+    },
+    "lose_conditions": {
+      "type": "array",
+      "description": "Events that cause life loss",
+      "items": {
+        "$ref": "#/$defs/lose_condition"
+      }
+    },
+    "player": {
+      "type": "object",
+      "description": "Player configuration",
+      "properties": {
+        "type": {
+          "type": "string",
+          "description": "Entity type for the player"
+        },
+        "spawn": {
+          "$ref": "#/$defs/point_2d",
+          "description": "Player spawn position [x, y]"
+        }
+      },
+      "required": ["type", "spawn"]
+    },
+    "default_layout": {
+      "type": "object",
+      "description": "Default level layout when no level is specified",
+      "properties": {
+        "ball_spawn": {
+          "$ref": "#/$defs/point_2d"
+        },
+        "brick_grid": {
+          "$ref": "#/$defs/brick_grid"
+        },
+        "entities": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/entity_placement"
+          }
+        }
+      }
+    }
+  },
+
+  "$defs": {
+    "rgb_color": {
+      "type": "array",
+      "items": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 255
+      },
+      "minItems": 3,
+      "maxItems": 3,
+      "description": "RGB color as [R, G, B] array"
+    },
+
+    "point_2d": {
+      "type": "array",
+      "items": { "type": "number" },
+      "minItems": 2,
+      "maxItems": 2,
+      "description": "2D point as [x, y]"
+    },
+
+    "color_name": {
+      "type": "string",
+      "enum": ["red", "green", "blue", "yellow", "cyan", "magenta", "white", "black", "orange", "purple", "gray", "silver"],
+      "description": "Named color"
+    },
+
+    "color_ref": {
+      "oneOf": [
+        { "$ref": "#/$defs/color_name" },
+        { "$ref": "#/$defs/rgb_color" },
+        {
+          "type": "string",
+          "pattern": "^\\$.+$",
+          "description": "Property reference (e.g., $color)"
+        }
+      ]
+    },
+
+    "lua_expression": {
+      "type": "object",
+      "properties": {
+        "lua": {
+          "type": "string",
+          "description": "Lua expression to evaluate"
+        }
+      },
+      "required": ["lua"],
+      "additionalProperties": false,
+      "description": "Inline Lua expression"
+    },
+
+    "lua_behavior": {
+      "type": "object",
+      "properties": {
+        "lua": {
+          "type": "string",
+          "description": "Multiline Lua behavior code returning a behavior table"
+        }
+      },
+      "required": ["lua"],
+      "additionalProperties": false,
+      "description": "Inline Lua behavior definition"
+    },
+
+    "call_generator": {
+      "type": "object",
+      "properties": {
+        "call": {
+          "type": "string",
+          "description": "Name of the generator to call"
+        },
+        "args": {
+          "type": "object",
+          "description": "Arguments to pass to the generator"
+        }
+      },
+      "required": ["call"],
+      "additionalProperties": false,
+      "description": "Call a Lua property generator"
+    },
+
+    "dynamic_value": {
+      "oneOf": [
+        { "type": "string" },
+        { "type": "number" },
+        { "type": "boolean" },
+        { "$ref": "#/$defs/lua_expression" },
+        { "$ref": "#/$defs/call_generator" }
+      ],
+      "description": "Static value, Lua expression, or generator call"
+    },
+
+    "behavior_ref": {
+      "oneOf": [
+        {
+          "type": "string",
+          "description": "Name of a Lua behavior file"
+        },
+        { "$ref": "#/$defs/lua_behavior" }
+      ],
+      "description": "Behavior file reference or inline Lua"
+    },
+
+    "assets_config": {
+      "type": "object",
+      "description": "Game assets (sounds, sprites, shared files)",
+      "properties": {
+        "files": {
+          "type": "object",
+          "description": "Shared file references (name -> path or data URI)",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "sounds": {
+          "type": "object",
+          "description": "Sound mappings",
+          "additionalProperties": {
+            "$ref": "#/$defs/sound_config"
+          }
+        },
+        "sprites": {
+          "type": "object",
+          "description": "Sprite mappings",
+          "additionalProperties": {
+            "$ref": "#/$defs/sprite_config"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "sound_config": {
+      "oneOf": [
+        {
+          "type": "string",
+          "description": "File path, data URI, or @reference"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "file": {
+              "type": "string",
+              "description": "File path or @reference"
+            },
+            "data": {
+              "type": "string",
+              "pattern": "^data:audio/",
+              "description": "Data URI (data:audio/wav;base64,...)"
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+
+    "sprite_config": {
+      "oneOf": [
+        {
+          "type": "string",
+          "description": "File path, data URI, or @reference"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "file": {
+              "type": "string",
+              "description": "File path or @reference (e.g., @ducks_sheet)"
+            },
+            "data": {
+              "type": "string",
+              "pattern": "^data:image/",
+              "description": "Data URI (data:image/png;base64,...)"
+            },
+            "transparent": {
+              "$ref": "#/$defs/rgb_color",
+              "description": "Transparency color key"
+            },
+            "x": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Region X offset in sprite sheet"
+            },
+            "y": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Region Y offset in sprite sheet"
+            },
+            "width": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Region width"
+            },
+            "height": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Region height"
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+
+    "entity_type": {
+      "type": "object",
+      "description": "Entity type definition",
+      "properties": {
+        "extends": {
+          "type": "string",
+          "description": "Base entity type to inherit from"
+        },
+        "width": {
+          "type": "number",
+          "minimum": 1,
+          "description": "Entity width in pixels"
+        },
+        "height": {
+          "type": "number",
+          "minimum": 1,
+          "description": "Entity height in pixels"
+        },
+        "color": {
+          "$ref": "#/$defs/color_ref",
+          "description": "Entity color"
+        },
+        "sprite": {
+          "type": "string",
+          "description": "Sprite name from assets.sprites"
+        },
+        "behaviors": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/behavior_ref"
+          },
+          "description": "List of behaviors attached to this entity"
+        },
+        "behavior_config": {
+          "type": "object",
+          "description": "Configuration for behaviors",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        },
+        "health": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Entity health points"
+        },
+        "points": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Points awarded when destroyed"
+        },
+        "tags": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Tags for categorization (player, enemy, brick, etc.)"
+        },
+        "render_as": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Composite rendering from other entity types"
+        },
+        "render": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/render_command"
+          },
+          "description": "Render commands for this entity"
+        },
+        "on_destroy": {
+          "$ref": "#/$defs/transform_config",
+          "description": "Transform to apply when entity is destroyed"
+        },
+        "on_update": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/on_update_transform"
+          },
+          "description": "Conditional transforms during update"
+        }
+      },
+      "additionalProperties": true
+    },
+
+    "render_command": {
+      "type": "object",
+      "description": "A single render primitive",
+      "required": ["shape"],
+      "properties": {
+        "shape": {
+          "type": "string",
+          "enum": ["rectangle", "circle", "triangle", "polygon", "line", "sprite", "text"],
+          "description": "Shape type to render"
+        },
+        "color": {
+          "$ref": "#/$defs/color_ref",
+          "description": "Shape color or $property reference"
+        },
+        "fill": {
+          "type": "boolean",
+          "default": true,
+          "description": "Whether to fill the shape"
+        },
+        "line_width": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 1,
+          "description": "Line width for outlines"
+        },
+        "alpha": {
+          "oneOf": [
+            { "type": "number", "minimum": 0, "maximum": 255 },
+            { "type": "string", "pattern": "^\\$.+$" },
+            { "$ref": "#/$defs/lua_expression" }
+          ],
+          "description": "Alpha transparency (0-255, $property, or {lua: expr})"
+        },
+        "offset": {
+          "$ref": "#/$defs/point_2d",
+          "description": "Offset from entity position"
+        },
+        "size": {
+          "$ref": "#/$defs/point_2d",
+          "description": "Override entity size [width, height]"
+        },
+        "points": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/point_2d"
+          },
+          "description": "Points for polygon/triangle/line (normalized 0-1)"
+        },
+        "radius": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Circle radius (normalized to entity size)"
+        },
+        "sprite_name": {
+          "type": "string",
+          "description": "Sprite name for sprite shape"
+        },
+        "text": {
+          "type": "string",
+          "description": "Text content or $property reference"
+        },
+        "font_size": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 20,
+          "description": "Font size in pixels"
+        },
+        "align": {
+          "type": "string",
+          "enum": ["center", "left", "right"],
+          "default": "center",
+          "description": "Text alignment"
+        },
+        "when": {
+          "$ref": "#/$defs/render_when",
+          "description": "Condition for rendering"
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "render_when": {
+      "type": "object",
+      "description": "Condition for conditional rendering",
+      "required": ["property"],
+      "properties": {
+        "property": {
+          "type": "string",
+          "description": "Property name to check"
+        },
+        "value": {
+          "description": "Expected value"
+        },
+        "compare": {
+          "type": "string",
+          "enum": ["equals", "not_equals", "greater_than", "less_than"],
+          "default": "equals",
+          "description": "Comparison operator"
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "when_condition": {
+      "type": "object",
+      "description": "Condition for triggering actions",
+      "properties": {
+        "property": {
+          "type": "string",
+          "description": "Property name to check"
+        },
+        "value": {
+          "description": "Expected property value"
+        },
+        "age": {
+          "type": "array",
+          "items": [
+            { "oneOf": [{ "type": "number" }, { "type": "null" }] },
+            { "oneOf": [{ "type": "number" }, { "type": "null" }] }
+          ],
+          "minItems": 2,
+          "maxItems": 2,
+          "description": "Age range [min, max] in seconds (null for unbounded)"
+        },
+        "interval": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Repeat every N seconds"
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "spawn_config": {
+      "type": "object",
+      "description": "Configuration for spawning an entity",
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "description": "Entity type to spawn"
+        },
+        "offset": {
+          "$ref": "#/$defs/point_2d",
+          "description": "Offset from parent position"
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 1,
+          "description": "Number to spawn"
+        },
+        "inherit_velocity": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Fraction of parent velocity to inherit"
+        },
+        "lifetime": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Auto-destroy after N seconds"
+        }
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/dynamic_value",
+        "description": "Additional spawn properties (can use {lua: ...})"
+      }
+    },
+
+    "transform_config": {
+      "type": "object",
+      "description": "Entity transformation configuration",
+      "properties": {
+        "type": {
+          "type": "string",
+          "description": "'destroy' or entity type to transform into"
+        },
+        "children": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/spawn_config"
+          },
+          "description": "Entities to spawn during transform"
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "on_update_transform": {
+      "type": "object",
+      "description": "Transform triggered during update",
+      "properties": {
+        "when": {
+          "$ref": "#/$defs/when_condition",
+          "description": "Condition for triggering"
+        },
+        "transform": {
+          "$ref": "#/$defs/transform_config",
+          "description": "Transform to apply"
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "collision_action": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "action": {
+              "type": "string",
+              "description": "Name of collision action Lua script"
+            },
+            "modifier": {
+              "type": "object",
+              "description": "Configuration passed to action",
+              "additionalProperties": true
+            }
+          },
+          "required": ["action"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "action": {
+              "$ref": "#/$defs/lua_behavior",
+              "description": "Inline Lua collision action"
+            },
+            "modifier": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          },
+          "required": ["action"],
+          "additionalProperties": false
+        }
+      ]
+    },
+
+    "input_action": {
+      "type": "object",
+      "description": "Action to take on input",
+      "properties": {
+        "transform": {
+          "$ref": "#/$defs/transform_config",
+          "description": "Transform to apply on input"
+        },
+        "when": {
+          "$ref": "#/$defs/when_condition",
+          "description": "Condition for triggering"
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "input_mapping": {
+      "type": "object",
+      "description": "Input mapping for an entity type",
+      "properties": {
+        "target_x": {
+          "type": "string",
+          "description": "Property to set from input.position.x"
+        },
+        "target_y": {
+          "type": "string",
+          "description": "Property to set from input.position.y"
+        },
+        "on_input": {
+          "$ref": "#/$defs/input_action",
+          "description": "Action to take on input"
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "targeted_transform": {
+      "type": "object",
+      "description": "Transform targeting a specific entity type",
+      "required": ["entity_type", "type"],
+      "properties": {
+        "entity_type": {
+          "type": "string",
+          "description": "Entity type to transform"
+        },
+        "type": {
+          "type": "string",
+          "description": "Type to transform into"
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "lose_condition": {
+      "type": "object",
+      "description": "Event that causes life loss",
+      "required": ["entity_type", "event"],
+      "properties": {
+        "entity_type": {
+          "type": "string",
+          "description": "Entity type to watch"
+        },
+        "event": {
+          "type": "string",
+          "enum": ["exited_screen", "property_true", "destroyed"],
+          "description": "Event type"
+        },
+        "edge": {
+          "type": "string",
+          "enum": ["top", "bottom", "left", "right", "any"],
+          "description": "Screen edge for exited_screen event"
+        },
+        "property": {
+          "type": "string",
+          "description": "Property name for property_true event"
+        },
+        "action": {
+          "type": "string",
+          "enum": ["lose_life", "game_over"],
+          "default": "lose_life",
+          "description": "Action to take"
+        },
+        "then": {
+          "type": "object",
+          "description": "Actions to take after the event",
+          "properties": {
+            "destroy": {
+              "type": "string",
+              "description": "Entity type to destroy"
+            },
+            "clear_property": {
+              "type": "string",
+              "description": "Property to clear"
+            },
+            "transform": {
+              "$ref": "#/$defs/targeted_transform",
+              "description": "Transform to apply to another entity"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "brick_grid": {
+      "type": "object",
+      "description": "Grid layout for bricks",
+      "properties": {
+        "start_x": {
+          "type": "number",
+          "description": "Starting X position"
+        },
+        "start_y": {
+          "type": "number",
+          "description": "Starting Y position"
+        },
+        "cols": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Number of columns"
+        },
+        "rows": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Number of rows"
+        },
+        "spacing_x": {
+          "type": "number",
+          "description": "Horizontal spacing between bricks"
+        },
+        "spacing_y": {
+          "type": "number",
+          "description": "Vertical spacing between bricks"
+        },
+        "row_types": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Entity type for each row (bottom to top)"
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "entity_placement": {
+      "type": "object",
+      "description": "Entity placement in a level",
+      "required": ["type", "x", "y"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "description": "Entity type name"
+        },
+        "x": {
+          "oneOf": [
+            { "type": "number" },
+            { "$ref": "#/$defs/lua_expression" },
+            { "$ref": "#/$defs/call_generator" }
+          ],
+          "description": "X position"
+        },
+        "y": {
+          "oneOf": [
+            { "type": "number" },
+            { "$ref": "#/$defs/lua_expression" },
+            { "$ref": "#/$defs/call_generator" }
+          ],
+          "description": "Y position"
+        }
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/dynamic_value"
+      }
+    }
+  }
+}
