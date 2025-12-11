@@ -8,6 +8,8 @@ You can play these games with:
 - real arrows, darts, nerf balls, bean bags, or anything you can throw at a wall
 - your finger on a phone or tablet
 
+And if you're interested in how it works, or how to write your own games, you can read every single line of code.
+
 The same game runs identically on a 30-foot projected wall, in a browser, or on a laptop in a classroom.  
 One file. Zero installs for players. Zero dark patterns. Zero pay-to-win.
 
