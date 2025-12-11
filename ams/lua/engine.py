@@ -451,7 +451,7 @@ class LuaEngine:
         entity_a: Entity,
         entity_b: Entity,
         modifier: Optional[dict[str, Any]] = None,
-        default_path: str = 'ams/games/game_engine/lua/collision_action'
+        default_path: str = 'lua/collision_action'
     ) -> bool:
         """
         Execute a collision action between two entities.
@@ -547,7 +547,7 @@ class LuaEngine:
         self,
         name: str,
         args: Optional[dict[str, Any]] = None,
-        default_path: str = 'ams/games/game_engine/lua/generator'
+        default_path: str = 'lua/generator'
     ) -> Any:
         """
         Call a property generator to compute a value.

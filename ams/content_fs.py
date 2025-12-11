@@ -75,7 +75,9 @@ class ContentFS:
     """
 
     PRIORITY_CORE = 0
+    PRIORITY_ENGINE = 5       # Engine lua scripts (ams/games/game_engine/)
     PRIORITY_OVERLAY_BASE = 10
+    PRIORITY_GAME = 50        # Game-specific content (games/{slug}/)
     PRIORITY_USER = 100
 
     def __init__(self, core_dir: Path, add_user_layer: bool = True):
@@ -93,6 +95,12 @@ class ContentFS:
         if core_dir.exists():
             self._multi_fs.add_fs('core', OSFS(str(core_dir)), priority=self.PRIORITY_CORE)
             self._layers['core'] = (core_dir, self.PRIORITY_CORE)
+
+        # Add engine layer for lua scripts (lua/behavior/, lua/collision_action/, etc.)
+        engine_dir = core_dir / 'ams' / 'games' / 'game_engine'
+        if engine_dir.exists():
+            self._multi_fs.add_fs('engine', OSFS(str(engine_dir)), priority=self.PRIORITY_ENGINE)
+            self._layers['engine'] = (engine_dir, self.PRIORITY_ENGINE)
 
         # Add overlay layers from environment
         self._add_overlay_layers()
@@ -146,6 +154,30 @@ class ContentFS:
     def core_dir(self) -> Path:
         """Get the core content directory."""
         return self._core_dir
+
+    def add_game_layer(self, game_path: Path) -> bool:
+        """Add a game directory as a content layer.
+
+        Game layers have higher priority than engine/core but lower than user.
+        This allows games to override engine lua scripts (lua/behavior/, etc.)
+        and provide game-specific assets.
+
+        Args:
+            game_path: Path to game directory (e.g., games/Breakout/)
+
+        Returns:
+            True if layer was added, False if path doesn't exist
+        """
+        if not game_path.exists():
+            return False
+
+        # Remove existing game layer if present
+        if 'game' in self._layers:
+            self._multi_fs.remove_fs('game')
+
+        self._multi_fs.add_fs('game', OSFS(str(game_path)), priority=self.PRIORITY_GAME)
+        self._layers['game'] = (game_path, self.PRIORITY_GAME)
+        return True
 
     def exists(self, path: str) -> bool:
         """Check if a path exists in any layer.

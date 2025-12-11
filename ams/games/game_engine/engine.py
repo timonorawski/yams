@@ -179,6 +179,12 @@ class GameEngine(BaseGame):
         self._inline_collision_action_counter = 0
         self._inline_input_action_counter = 0
 
+        # Add game directory as ContentFS layer (higher priority than engine)
+        # This allows games to override engine lua scripts at lua/{type}/
+        if self.GAME_SLUG:
+            game_path = self._content_fs.core_dir / 'games' / self.GAME_SLUG
+            self._content_fs.add_game_layer(game_path)
+
         # Create behavior engine with ContentFS and game-specific API
         self._behavior_engine = LuaEngine(
             content_fs=self._content_fs,
@@ -187,16 +193,9 @@ class GameEngine(BaseGame):
             api_class=GameLuaAPI,
         )
 
-        # Load core behaviors from ContentFS
-        self._behavior_engine.load_subroutines_from_dir(
-            'behavior', 'ams/games/game_engine/lua/behavior'
-        )
-
-        # Load game-specific behaviors from ContentFS
-        if self.GAME_SLUG:
-            game_behaviors_path = f'games/{self.GAME_SLUG}/behavior'
-            if self._content_fs.exists(game_behaviors_path):
-                self._behavior_engine.load_subroutines_from_dir('behavior', game_behaviors_path)
+        # Load subroutines from lua/{type}/ - ContentFS resolves game overrides automatically
+        # Priority: game > engine > core (via ContentFS layering)
+        self._load_subroutines()
 
         # Load game definition
         if self.GAME_DEF_FILE and self.GAME_DEF_FILE.exists():
@@ -479,6 +478,25 @@ class GameEngine(BaseGame):
             lifetime=data.get('lifetime'),
             properties=props,
         )
+
+    def _load_subroutines(self) -> None:
+        """Load Lua subroutines from ContentFS.
+
+        Loads from lua/{type}/ paths. ContentFS layering handles priority:
+        - Game layer (games/{GAME_SLUG}/lua/{type}/) - highest, can override
+        - Engine layer (ams/games/game_engine/lua/{type}/) - core defaults
+
+        Subroutine types loaded:
+        - behavior: Entity lifecycle scripts
+        - collision_action: Collision handlers
+        - generator: Property generators
+        """
+        subroutine_types = ['behavior', 'collision_action', 'generator']
+
+        for sub_type in subroutine_types:
+            lua_path = f'lua/{sub_type}'
+            if self._content_fs.exists(lua_path):
+                self._behavior_engine.load_subroutines_from_dir(sub_type, lua_path)
 
     def _parse_behaviors(self, entity_type: str, behaviors_data: List[Any]) -> List[str]:
         """Parse behaviors list, handling both file references and inline Lua.
