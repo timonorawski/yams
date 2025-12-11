@@ -484,7 +484,7 @@ class GameEngine(BaseGame):
 
         Loads from lua/{type}/ paths. ContentFS layering handles priority:
         - Game layer (games/{GAME_SLUG}/lua/{type}/) - highest, can override
-        - Engine layer (ams/games/game_engine/lua/{type}/) - core defaults
+        - Engine layer (ams/games/game_engine/lua/{type}/) - base defaults
 
         Subroutine types loaded:
         - behavior: Entity lifecycle scripts

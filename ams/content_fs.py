@@ -1,13 +1,13 @@
-"""Layered content filesystem using PyFilesystem2 MultiFS.
+"""Layered content filesystem for game assets using PyFilesystem2 MultiFS.
 
-Provides unified file access across multiple content layers:
-- Core content (built-in games, behaviors)
-- Overlay directories (team/shared content)
-- User directory (personal customizations)
+Provides unified file access across multiple layers (highest priority first):
+- User: {user_data_dir}/ (personal customizations)
+- Game: games/{slug}/ (game-specific content)
+- Overlay: {overlay}/ (team/shared content)
+- Engine: ams/games/game_engine/ (base engine content)
 
-Higher priority layers shadow lower priority files, enabling users to
-override core assets, levels, and behaviors without modifying the
-original files.
+Higher priority layers shadow lower priority files, enabling games to
+override engine defaults and users to override everything.
 
 Environment variables:
 - AMS_DATA_DIR: Override default user data directory
@@ -49,32 +49,33 @@ def get_user_data_dir() -> Path:
 
 
 class ContentFS:
-    """Layered content filesystem for AMS.
+    """Layered content filesystem for AMS game assets.
 
-    Provides unified file access across:
-    - Core content (built-in games, behaviors)
-    - Overlay directories (team/shared content)
-    - User directory (personal customizations)
+    Provides unified file access across multiple layers:
+    - User: {user_data_dir}/ (personal customizations)
+    - Game: games/{slug}/ (game-specific content)
+    - Overlay: {overlay}/ (team/shared content)
+    - Engine: ams/games/game_engine/ (base engine content)
 
     Higher priority layers shadow lower priority files.
 
     Example usage:
         content_fs = ContentFS(Path('/path/to/repo'))
 
-        # Check if file exists in any layer
-        if content_fs.exists('games/DuckHunt/game.yaml'):
-            yaml_text = content_fs.readtext('games/DuckHunt/game.yaml')
+        # Lua script lookup (always under lua/ subdirectory)
+        if content_fs.exists('lua/behavior/bounce.lua'):
+            lua_code = content_fs.readtext('lua/behavior/bounce.lua')
 
-        # Get real filesystem path (for pygame.image.load)
-        sprite_path = content_fs.getsyspath('games/DuckHunt/assets/sprites.png')
-        surface = pygame.image.load(sprite_path)
+        # Asset lookup
+        sprite_path = content_fs.getsyspath('assets/sprites.png')
+
+        # Direct repo access for game definitions
+        game_yaml = content_fs.core_dir / 'games' / 'DuckHunt' / 'game.yaml'
 
         # Debug: see which layer a file comes from
-        source = content_fs.get_layer_source('games/DuckHunt/assets/sprites.png')
-        # Returns 'user' if user has overridden it, 'core' otherwise
+        source = content_fs.get_layer_source('lua/behavior/bounce.lua')
     """
 
-    PRIORITY_CORE = 0
     PRIORITY_ENGINE = 5       # Engine lua scripts (ams/games/game_engine/)
     PRIORITY_OVERLAY_BASE = 10
     PRIORITY_GAME = 50        # Game-specific content (games/{slug}/)
@@ -91,12 +92,11 @@ class ContentFS:
         self._core_dir = core_dir
         self._layers: dict[str, tuple[Path, int]] = {}  # name -> (path, priority) for debugging
 
-        # Add core layer (lowest priority)
-        if core_dir.exists():
-            self._multi_fs.add_fs('core', OSFS(str(core_dir)), priority=self.PRIORITY_CORE)
-            self._layers['core'] = (core_dir, self.PRIORITY_CORE)
+        # Note: We intentionally do NOT add the repo root as a layer.
+        # The engine layer provides base content that games can override.
+        # Direct filesystem access via core_dir property is available when needed.
 
-        # Add engine layer for lua scripts (lua/behavior/, lua/collision_action/, etc.)
+        # Add engine layer (ams/games/game_engine/)
         engine_dir = core_dir / 'ams' / 'games' / 'game_engine'
         if engine_dir.exists():
             self._multi_fs.add_fs('engine', OSFS(str(engine_dir)), priority=self.PRIORITY_ENGINE)
@@ -158,9 +158,8 @@ class ContentFS:
     def add_game_layer(self, game_path: Path) -> bool:
         """Add a game directory as a content layer.
 
-        Game layers have higher priority than engine/core but lower than user.
-        This allows games to override engine lua scripts (lua/behavior/, etc.)
-        and provide game-specific assets.
+        Game layers have higher priority than engine but lower than user.
+        This allows games to override engine content (lua scripts, assets, etc.).
 
         Args:
             game_path: Path to game directory (e.g., games/Breakout/)

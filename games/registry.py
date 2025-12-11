@@ -73,8 +73,9 @@ class GameRegistry:
         Initialize the game registry.
 
         Args:
-            content_fs: ContentFS for layered content access. Games are
-                       discovered from all content layers.
+            content_fs: ContentFS for layered content access.
+                       - Python games: core_dir only (security)
+                       - YAML games: all layers (Lua is sandboxed)
         """
         self._content_fs = content_fs
         self._games: Dict[str, GameInfo] = {}
@@ -82,40 +83,60 @@ class GameRegistry:
         self._discover_games()
 
     def _discover_games(self) -> None:
-        """Discover games from ContentFS (all content layers)."""
-        # Skip these directories
+        """Discover games from appropriate sources.
+
+        Python games (game_mode.py): Only from core repo (security - arbitrary code)
+        YAML games (game.yaml): From all ContentFS layers (Lua is sandboxed)
+        """
         skip_dirs = {'base', 'common', '__pycache__'}
 
-        if not self._content_fs.exists('games'):
-            return
+        # Track discovered slugs to avoid duplicates
+        discovered_slugs: set[str] = set()
 
-        for item_name in self._content_fs.listdir('games'):
-            if item_name.startswith('_') or item_name.startswith('.'):
-                continue
-            if item_name.lower() in skip_dirs:
-                continue
+        # 1. SECURITY: Python games only from core repo
+        games_dir = self._content_fs.core_dir / 'games'
+        if games_dir.exists():
+            for game_dir in games_dir.iterdir():
+                if not game_dir.is_dir():
+                    continue
+                if game_dir.name.startswith('_') or game_dir.name.startswith('.'):
+                    continue
+                if game_dir.name.lower() in skip_dirs:
+                    continue
 
-            game_path = f'games/{item_name}'
-            if not self._content_fs.isdir(game_path):
-                continue
+                slug = game_dir.name.lower()
+                has_game_mode = (game_dir / 'game_mode.py').exists()
+                has_game_info = (game_dir / 'game_info.py').exists()
 
-            # Get the real filesystem path for this game
-            # (uses highest-priority layer that has this game)
-            try:
-                real_game_dir = Path(self._content_fs.getsyspath(game_path))
-            except Exception:
-                continue
+                if has_game_mode or has_game_info:
+                    self._register_game(game_dir)
+                    discovered_slugs.add(slug)
+                elif (game_dir / 'game.yaml').exists():
+                    # YAML game in core repo
+                    self._register_yaml_game(game_dir)
+                    discovered_slugs.add(slug)
 
-            # Need either game_mode.py, game_info.py, or game.yaml
-            has_game_mode = self._content_fs.exists(f'{game_path}/game_mode.py')
-            has_game_info = self._content_fs.exists(f'{game_path}/game_info.py')
-            has_game_yaml = self._content_fs.exists(f'{game_path}/game.yaml')
+        # 2. YAML games from all ContentFS layers (Lua is sandboxed, safe)
+        if self._content_fs.exists('games'):
+            for item_name in self._content_fs.listdir('games'):
+                if item_name.startswith('_') or item_name.startswith('.'):
+                    continue
+                if item_name.lower() in skip_dirs:
+                    continue
+                if item_name.lower() in discovered_slugs:
+                    continue  # Already registered from core
 
-            if has_game_mode or has_game_info:
-                self._register_game(real_game_dir)
-            elif has_game_yaml:
-                # YAML-only game - use GameEngine.from_yaml factory
-                self._register_yaml_game(real_game_dir)
+                game_path = f'games/{item_name}'
+                if not self._content_fs.isdir(game_path):
+                    continue
+
+                # Only YAML games from non-core layers (Python would be security risk)
+                if self._content_fs.exists(f'{game_path}/game.yaml'):
+                    try:
+                        real_game_dir = Path(self._content_fs.getsyspath(game_path))
+                        self._register_yaml_game(real_game_dir)
+                    except Exception:
+                        continue
 
     def _register_game(self, game_dir: Path) -> None:
         """
