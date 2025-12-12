@@ -234,6 +234,8 @@ class SpriteConfig:
     # Flip options:
     flip_x: bool = False  # Flip horizontally
     flip_y: bool = False  # Flip vertically
+    # Provenance (from registration files):
+    provenance: Optional[Dict[str, Any]] = None  # Author, license, source, etc.
 
 
 @dataclass
@@ -241,6 +243,8 @@ class SoundConfig:
     """Configuration for a sound - file path or data URI."""
     file: str = ""  # Path to sound file
     data: Optional[str] = None  # Data URI (data:audio/wav;base64,...)
+    # Provenance (from registration files):
+    provenance: Optional[Dict[str, Any]] = None  # Author, license, source, etc.
 
 
 @dataclass

@@ -299,15 +299,29 @@ class GameEngine(BaseGame):
         # Store raw data for inline script loading
         self._raw_game_data = data
 
-        # Parse assets section
+        # Discover registered assets from YAML files in assets/ directory
+        from ams.games.game_engine.asset_registry import AssetRegistry
+        assets_dir = path.parent / 'assets'
+        registry = AssetRegistry(
+            content_fs=self._content_fs,
+            assets_base_dir=assets_dir
+        )
+        registry.discover('assets/')
+
+        # Parse inline assets section
         assets_data = data.get('assets', {})
         files_config = assets_data.get('files', {})
-        sounds_config = self._parse_sounds_config(assets_data.get('sounds', {}), files_config)
-        sprites_config = self._parse_sprites_config(assets_data.get('sprites', {}), files_config)
+        inline_sounds = self._parse_sounds_config(assets_data.get('sounds', {}), files_config)
+        inline_sprites = self._parse_sprites_config(assets_data.get('sprites', {}), files_config)
+
+        # Merge registered with inline (inline takes precedence)
+        merged_sounds = registry.merge_sounds(inline_sounds)
+        merged_sprites = registry.merge_sprites(inline_sprites)
+
         assets_config = AssetsConfig(
             files=files_config,
-            sounds=sounds_config,
-            sprites=sprites_config,
+            sounds=merged_sounds,
+            sprites=merged_sprites,
         )
 
         game_def = GameDefinition(
