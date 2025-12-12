@@ -10,7 +10,8 @@
   },
   "dependencies": {
     "js-yaml": "^4.1.0",
-    "monaco-editor": "^0.52.0"
+    "monaco-editor": "^0.52.0",
+    "monaco-yaml": "^5.2.2"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^3.0.0",

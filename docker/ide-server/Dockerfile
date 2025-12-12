@@ -30,9 +30,12 @@ COPY --from=frontend-builder /frontend/dist /app/frontend/dist
 # Copy server script
 COPY docker/ide-server/server.py /app/server.py
 
-# Copy schema files
-COPY ams/games/game_engine/schemas /app/schemas
-COPY ams/games/game_engine/lua/lua_script.schema.json /app/schemas/
+# Create directories for volume mounts
+RUN mkdir -p /app/schemas /app/builtins
+
+# Copy schemas and filetypes registry (available even if volumes not mounted)
+COPY ams/games/game_engine/lua/lua_script.schema.json /app/schemas/lua_script.schema.json
+COPY ams/games/game_engine/schemas/filetypes.json /app/schemas/filetypes.json
 
 EXPOSE 8003
 

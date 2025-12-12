@@ -20,13 +20,27 @@
   let newProjectError = null;
   let isCreatingProject = false;
 
+  // New file modal
+  let showNewFileModal = false;
+  let filetypes = [];
+  let selectedFiletype = null;
+  let newFileName = '';
+  let newFileError = null;
+  let isCreatingFile = false;
+
+  // Built-in scripts (read-only)
+  let builtinCategories = {};
+  let expandedBuiltins = new Set();
+  let viewingBuiltin = null;  // { category, filename, content }
+
   // Project files as YAML strings (keyed by path)
   let projectFiles = {};
 
   let currentFile = 'game.yaml';
 
   // Reactive getter for current file content
-  $: editorContent = projectFiles[currentFile] || '';
+  $: editorContent = viewingBuiltin ? viewingBuiltin.content : (projectFiles[currentFile] || '');
+  $: isReadOnly = !!viewingBuiltin;
 
   // File tree structure (will be populated from API)
   let files = [];
@@ -36,9 +50,67 @@
 
   // Load project on mount
   onMount(async () => {
+    await Promise.all([loadFiletypes(), loadBuiltins()]);
     await loadProjectList();
     await loadProject();
   });
+
+  async function loadFiletypes() {
+    try {
+      const res = await fetch('/api/filetypes');
+      if (res.ok) {
+        const data = await res.json();
+        filetypes = data.filetypes || [];
+      }
+    } catch (e) {
+      console.error('Failed to load filetypes:', e);
+    }
+  }
+
+  async function loadBuiltins() {
+    try {
+      const res = await fetch('/api/builtins');
+      if (res.ok) {
+        const data = await res.json();
+        builtinCategories = data.categories || {};
+      }
+    } catch (e) {
+      console.error('Failed to load builtins:', e);
+    }
+  }
+
+  function toggleBuiltinCategory(category) {
+    if (expandedBuiltins.has(category)) {
+      expandedBuiltins.delete(category);
+    } else {
+      expandedBuiltins.add(category);
+    }
+    expandedBuiltins = expandedBuiltins;
+  }
+
+  async function viewBuiltin(category, filename) {
+    try {
+      const res = await fetch(`/api/builtins/${category}/${filename}`);
+      if (res.ok) {
+        const data = await res.json();
+        viewingBuiltin = {
+          category,
+          filename,
+          name: filename.replace('.lua.yaml', ''),
+          content: data.content
+        };
+        // Clear project file selection when viewing builtin
+        currentFile = null;
+      }
+    } catch (e) {
+      console.error('Failed to load builtin:', e);
+    }
+  }
+
+  function closeBuiltinView() {
+    viewingBuiltin = null;
+    currentFile = 'game.yaml';
+  }
 
   async function loadProjectList() {
     try {
@@ -139,6 +211,83 @@
     createProject(name);
   }
 
+  function openNewFileModal(filetype = null) {
+    selectedFiletype = filetype || filetypes[0];
+    newFileName = '';
+    newFileError = null;
+    showNewFileModal = true;
+
+    // Auto-generate filename for non-singleton filetypes
+    if (selectedFiletype && !selectedFiletype.singleton) {
+      const baseName = selectedFiletype.filename.replace('{name}', 'my_script').replace('{n}', '1');
+      newFileName = baseName.replace('.lua.yaml', '').replace('.yaml', '');
+    }
+  }
+
+  function getFiletypeFilename(filetype, name) {
+    if (filetype.singleton) {
+      return filetype.filename;
+    }
+    // Replace placeholders
+    let filename = filetype.filename
+      .replace('{name}', name)
+      .replace('{n}', name);
+    return filetype.folder + filename;
+  }
+
+  function applyFiletypeTemplate(filetype, name) {
+    // Replace {name} and {n} placeholders in template content
+    return filetype.template
+      .replace(/\{name\}/g, name)
+      .replace(/\{n\}/g, name);
+  }
+
+  async function handleCreateFile() {
+    if (!selectedFiletype) {
+      newFileError = 'Please select a file type';
+      return;
+    }
+
+    const name = newFileName.trim().toLowerCase().replace(/[^a-z0-9_]/g, '_');
+    if (!name && !selectedFiletype.singleton) {
+      newFileError = 'File name is required';
+      return;
+    }
+
+    const filePath = getFiletypeFilename(selectedFiletype, name);
+    const content = applyFiletypeTemplate(selectedFiletype, name);
+
+    isCreatingFile = true;
+    newFileError = null;
+
+    try {
+      const res = await fetch(`/api/projects/${projectName}/files/${filePath}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content })
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.detail || 'Failed to create file');
+      }
+
+      // Reload project files and switch to new file
+      await loadProject();
+      currentFile = filePath;
+      projectFiles[filePath] = content;
+      projectFiles = projectFiles;
+
+      showNewFileModal = false;
+      newFileName = '';
+      selectedFiletype = null;
+    } catch (e) {
+      newFileError = e.message;
+    } finally {
+      isCreatingFile = false;
+    }
+  }
+
   function buildFileTree(fileList) {
     // Convert flat file list to tree structure
     const tree = [];
@@ -213,6 +362,11 @@
 
   async function handleFileSelect(event) {
     const path = event.detail.path;
+
+    // Clear builtin view if viewing one
+    if (viewingBuiltin) {
+      viewingBuiltin = null;
+    }
 
     // Save current file before switching if dirty
     if (isDirty) {
@@ -291,8 +445,20 @@
         </ul>
       </div>
     </div>
-    <div class="flex-1 px-4">
-      <span class="text-base-content/60 text-sm">{currentFile}</span>
+    <div class="flex-1 px-4 flex items-center gap-2">
+      {#if viewingBuiltin}
+        <button
+          class="btn btn-xs btn-ghost"
+          on:click={closeBuiltinView}
+          title="Back to project files"
+        >
+          ←
+        </button>
+        <span class="text-base-content/60 text-sm">{viewingBuiltin.category}/{viewingBuiltin.name}</span>
+        <span class="badge badge-sm badge-warning">read-only</span>
+      {:else}
+        <span class="text-base-content/60 text-sm">{currentFile}</span>
+      {/if}
     </div>
     <div class="flex-none flex items-center gap-3 pr-2">
       <button class="btn btn-sm btn-ghost px-4" on:click={() => console.log('Run')}>
@@ -319,8 +485,56 @@
   <!-- Main content -->
   <div class="flex flex-1 overflow-hidden">
     <!-- Sidebar -->
-    <aside class="w-52 bg-base-200 border-r border-base-300 overflow-y-auto">
-      <FileTree {files} on:select={handleFileSelect} />
+    <aside class="w-52 bg-base-200 border-r border-base-300 flex flex-col">
+      <!-- Project Files Section -->
+      <div class="flex items-center justify-between px-2 py-1.5 border-b border-base-300">
+        <span class="text-xs uppercase text-base-content/50 font-semibold">Files</span>
+        <button
+          class="btn btn-xs btn-ghost text-primary"
+          on:click={() => openNewFileModal()}
+          title="New File"
+        >
+          +
+        </button>
+      </div>
+      <div class="flex-1 overflow-y-auto">
+        <FileTree {files} on:select={handleFileSelect} />
+      </div>
+
+      <!-- Built-in Scripts Section -->
+      <div class="border-t border-base-300">
+        <div class="px-2 py-1.5 border-b border-base-300">
+          <span class="text-xs uppercase text-base-content/50 font-semibold">Built-ins</span>
+        </div>
+        <div class="max-h-48 overflow-y-auto px-1 py-1">
+          {#each Object.entries(builtinCategories) as [category, scripts]}
+            <div class="select-none">
+              <button
+                class="flex items-center gap-1.5 w-full px-2 py-1 bg-transparent text-base-content text-sm text-left cursor-pointer rounded hover:bg-base-300"
+                on:click={() => toggleBuiltinCategory(category)}
+              >
+                <span class="text-xs w-4 text-center">{expandedBuiltins.has(category) ? '▼' : '▶'}</span>
+                <span class="flex-1 truncate capitalize">{category.replace('_', ' ')}</span>
+                <span class="text-xs text-base-content/40">{scripts.length}</span>
+              </button>
+              {#if expandedBuiltins.has(category)}
+                <div class="ml-4 border-l border-base-300 pl-2">
+                  {#each scripts as script}
+                    <button
+                      class="flex items-center gap-1.5 w-full px-2 py-0.5 bg-transparent text-base-content/70 text-xs text-left cursor-pointer rounded hover:bg-base-300"
+                      class:bg-base-300={viewingBuiltin?.filename === script.filename}
+                      on:click={() => viewBuiltin(category, script.filename)}
+                    >
+                      <span class="w-4 text-center">🌙</span>
+                      <span class="flex-1 truncate">{script.name}</span>
+                    </button>
+                  {/each}
+                </div>
+              {/if}
+            </div>
+          {/each}
+        </div>
+      </div>
     </aside>
 
     <!-- Editor + Preview -->
@@ -330,6 +544,9 @@
         <MonacoEditor
           value={editorContent}
           language="yaml"
+          readOnly={isReadOnly}
+          filePath={viewingBuiltin ? `builtins/${viewingBuiltin.category}/${viewingBuiltin.filename}` : currentFile}
+          {filetypes}
           on:change={handleEditorChange}
         />
       </div>
@@ -412,6 +629,92 @@
         </div>
       </div>
       <div class="modal-backdrop" on:click={() => showNewProjectModal = false} on:keydown={() => {}}></div>
+    </div>
+  {/if}
+
+  <!-- New File Modal -->
+  {#if showNewFileModal}
+    <div class="modal modal-open">
+      <div class="modal-box max-w-lg">
+        <h3 class="font-bold text-lg mb-4">Create New File</h3>
+
+        <!-- Filetype Selection -->
+        <div class="form-control mb-4">
+          <label class="label">
+            <span class="label-text">File Type</span>
+          </label>
+          <div class="grid grid-cols-2 gap-2">
+            {#each filetypes.filter(t => !t.singleton) as filetype}
+              <button
+                class="btn btn-sm justify-start gap-2"
+                class:btn-primary={selectedFiletype?.id === filetype.id}
+                class:btn-outline={selectedFiletype?.id !== filetype.id}
+                on:click={() => {
+                  selectedFiletype = filetype;
+                  newFileName = '';
+                }}
+              >
+                <span class="text-lg">
+                  {#if filetype.icon === 'lua'}
+                    🌙
+                  {:else if filetype.icon === 'level'}
+                    🗺️
+                  {:else}
+                    📄
+                  {/if}
+                </span>
+                <span class="truncate">{filetype.name}</span>
+              </button>
+            {/each}
+          </div>
+        </div>
+
+        {#if selectedFiletype}
+          <p class="text-sm text-base-content/60 mb-4">{selectedFiletype.description}</p>
+
+          <!-- File Name Input -->
+          <div class="form-control">
+            <label class="label" for="file-name">
+              <span class="label-text">Name</span>
+              <span class="label-text-alt text-base-content/50">{selectedFiletype.folder}{newFileName || '...'}{selectedFiletype.filename.includes('.lua.yaml') ? '.lua.yaml' : '.yaml'}</span>
+            </label>
+            <input
+              id="file-name"
+              type="text"
+              placeholder="my_script"
+              class="input input-bordered w-full"
+              class:input-error={newFileError}
+              bind:value={newFileName}
+              on:keydown={(e) => e.key === 'Enter' && handleCreateFile()}
+            />
+            {#if newFileError}
+              <label class="label">
+                <span class="label-text-alt text-error">{newFileError}</span>
+              </label>
+            {/if}
+          </div>
+        {/if}
+
+        <div class="modal-action">
+          <button
+            class="btn btn-ghost"
+            on:click={() => { showNewFileModal = false; newFileName = ''; newFileError = null; selectedFiletype = null; }}
+          >
+            Cancel
+          </button>
+          <button
+            class="btn btn-primary"
+            on:click={handleCreateFile}
+            disabled={isCreatingFile || !selectedFiletype}
+          >
+            {#if isCreatingFile}
+              <span class="loading loading-spinner loading-sm"></span>
+            {/if}
+            Create
+          </button>
+        </div>
+      </div>
+      <div class="modal-backdrop" on:click={() => showNewFileModal = false} on:keydown={() => {}}></div>
     </div>
   {/if}
 </div>

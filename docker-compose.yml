@@ -61,6 +61,10 @@ services:
     volumes:
       # Only mount projects directory - frontend is built into the image
       - ${PROJECTS_DIR:-./data/projects}:/app/data/projects
+      # Mount built-in Lua scripts read-only for live updates
+      - ./ams/games/game_engine/lua/behavior:/app/builtins/behavior:ro
+      - ./ams/games/game_engine/lua/collision_action:/app/builtins/collision_action:ro
+      - ./ams/games/game_engine/lua/generator:/app/builtins/generator:ro
     environment:
       - PYTHONUNBUFFERED=1
       - IDE_PROJECTS_DIR=/app/data/projects

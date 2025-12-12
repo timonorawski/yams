@@ -31,6 +31,7 @@ app = FastAPI(title="AMS IDE Server")
 PROJECTS_DIR = Path(os.environ.get("IDE_PROJECTS_DIR", "/app/data/projects"))
 FRONTEND_DIR = Path("/app/frontend/dist")
 SCHEMAS_DIR = Path("/app/schemas")
+BUILTINS_DIR = Path("/app/builtins")
 
 # Ensure projects directory exists
 PROJECTS_DIR.mkdir(parents=True, exist_ok=True)
@@ -68,8 +69,69 @@ async def list_schemas():
     """List available schemas."""
     schemas = []
     if SCHEMAS_DIR.exists():
-        schemas.extend([f.name for f in SCHEMAS_DIR.glob("*.json")])
+        schemas.extend([f.name for f in SCHEMAS_DIR.glob("*.json") if f.name != "filetypes.json"])
     return {"schemas": schemas}
+
+
+@app.get("/api/filetypes")
+async def get_filetypes():
+    """Get file type registry for the IDE (schemas, templates, file matching patterns)."""
+    filetypes_path = SCHEMAS_DIR / "filetypes.json"
+
+    if not filetypes_path.exists():
+        return {"filetypes": []}
+
+    data = json.loads(filetypes_path.read_text())
+    return {"filetypes": data.get("filetypes", [])}
+
+
+# ============================================================================
+# Built-in Scripts API (read-only)
+# ============================================================================
+
+@app.get("/api/builtins")
+async def list_builtins():
+    """List all built-in Lua scripts by category."""
+    categories = {}
+
+    if not BUILTINS_DIR.exists():
+        return {"categories": categories}
+
+    for category_dir in BUILTINS_DIR.iterdir():
+        if category_dir.is_dir():
+            scripts = []
+            for script_file in sorted(category_dir.glob("*.lua.yaml")):
+                scripts.append({
+                    "name": script_file.stem.replace(".lua", ""),
+                    "filename": script_file.name,
+                    "path": f"{category_dir.name}/{script_file.name}"
+                })
+            if scripts:
+                categories[category_dir.name] = scripts
+
+    return {"categories": categories}
+
+
+@app.get("/api/builtins/{category}/{filename}")
+async def read_builtin(category: str, filename: str):
+    """Read a built-in script (read-only)."""
+    script_path = BUILTINS_DIR / category / filename
+
+    if not script_path.exists():
+        raise HTTPException(status_code=404, detail="Script not found")
+
+    # Security: ensure file is within builtins directory
+    try:
+        script_path.resolve().relative_to(BUILTINS_DIR.resolve())
+    except ValueError:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    return {
+        "category": category,
+        "filename": filename,
+        "content": script_path.read_text(),
+        "readonly": True
+    }
 
 
 # ============================================================================

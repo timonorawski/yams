@@ -35,10 +35,7 @@
 </script>
 
 <div class="h-full flex flex-col">
-  <div class="p-2 text-xs uppercase text-base-content/50 font-semibold">
-    Explorer
-  </div>
-  <div class="flex-1 overflow-y-auto px-1">
+  <div class="flex-1 overflow-y-auto px-1 py-1">
     {#each files as file}
       <div class="select-none">
         {#if file.type === 'folder'}

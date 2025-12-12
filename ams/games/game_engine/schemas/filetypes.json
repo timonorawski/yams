@@ -1,0 +1,84 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "description": "File type registry for the AMS Web IDE - defines file types, their schemas, and templates",
+  "filetypes": [
+    {
+      "id": "game",
+      "name": "Game Config",
+      "description": "Main game configuration file",
+      "icon": "game",
+      "filename": "game.yaml",
+      "folder": "",
+      "language": "yaml",
+      "schema": "/api/schemas/game.schema.json",
+      "fileMatch": ["**/game.yaml"],
+      "singleton": true,
+      "template": "name: My Game\ndescription: A new AMS game\n\nscreen_width: 800\nscreen_height: 600\nbackground_color: [30, 30, 46]\n\nentity_types:\n  target:\n    width: 50\n    height: 50\n    color: red\n    health: 1\n    points: 10\n    tags: [target]\n\ndefault_layout:\n  entities:\n    - type: target\n      x: 400\n      y: 300\n"
+    },
+    {
+      "id": "level",
+      "name": "Level",
+      "description": "Game level with entity layouts",
+      "icon": "level",
+      "filename": "level_{n}.yaml",
+      "folder": "levels/",
+      "language": "yaml",
+      "schema": "/api/schemas/level.schema.json",
+      "fileMatch": ["**/levels/*.yaml"],
+      "singleton": false,
+      "template": "name: Level {n}\ndescription: A new level\n\nentities:\n  - type: target\n    x: 400\n    y: 300\n"
+    },
+    {
+      "id": "behavior",
+      "name": "Behavior",
+      "description": "Entity lifecycle behavior script",
+      "icon": "lua",
+      "filename": "{name}.lua.yaml",
+      "folder": "lua/behaviors/",
+      "language": "yaml",
+      "schema": "/api/schemas/lua_script.schema.json",
+      "fileMatch": ["**/lua/behaviors/*.lua.yaml", "**/builtins/behavior/*.lua.yaml"],
+      "singleton": false,
+      "template": "type: behavior\nname: {name}\ndescription: |\n  Describe what this behavior does.\nversion: \"1.0\"\ntags: []\n\nconfig:\n  speed:\n    type: float\n    description: Movement speed in pixels/second\n    default: 100\n    min: 0\n\nprovides:\n  hooks:\n    - on_update\n\nrequires:\n  api: [get_x, set_x]\n\nexamples:\n  - title: Basic usage\n    yaml: |\n      behaviors: [{name}]\n      behavior_config:\n        {name}:\n          speed: 100\n\nlua: |\n  local {name} = {}\n\n  function {name}.on_spawn(entity_id)\n    -- Called when entity is created\n  end\n\n  function {name}.on_update(entity_id, dt)\n    -- Called every frame\n    local x = ams.get_x(entity_id)\n    local speed = ams.get_config(entity_id, \"{name}\", \"speed\", 100)\n    ams.set_x(entity_id, x + speed * dt)\n  end\n\n  function {name}.on_destroy(entity_id)\n    -- Called when entity is destroyed\n  end\n\n  return {name}\n"
+    },
+    {
+      "id": "collision_action",
+      "name": "Collision Action",
+      "description": "Handler for entity collisions",
+      "icon": "lua",
+      "filename": "{name}.lua.yaml",
+      "folder": "lua/collision_actions/",
+      "language": "yaml",
+      "schema": "/api/schemas/lua_script.schema.json",
+      "fileMatch": ["**/lua/collision_actions/*.lua.yaml", "**/builtins/collision_action/*.lua.yaml"],
+      "singleton": false,
+      "template": "type: collision_action\nname: {name}\ndescription: |\n  Describe what happens on collision.\nversion: \"1.0\"\ntags: []\n\nconfig:\n  damage:\n    type: int\n    description: Damage amount\n    default: 1\n    min: 0\n\nprovides:\n  hooks:\n    - execute\n\nrequires:\n  api: [destroy]\n\nlua: |\n  local {name} = {}\n\n  function {name}.execute(entity_a_id, entity_b_id, modifier)\n    -- Called when entities collide\n    -- modifier contains config from collision_behaviors\n    local damage = modifier.damage or 1\n    ams.destroy(entity_b_id)\n  end\n\n  return {name}\n"
+    },
+    {
+      "id": "generator",
+      "name": "Generator",
+      "description": "Property value generator for entity spawning",
+      "icon": "lua",
+      "filename": "{name}.lua.yaml",
+      "folder": "lua/generators/",
+      "language": "yaml",
+      "schema": "/api/schemas/lua_script.schema.json",
+      "fileMatch": ["**/lua/generators/*.lua.yaml", "**/builtins/generator/*.lua.yaml"],
+      "singleton": false,
+      "template": "type: generator\nname: {name}\ndescription: |\n  Generate a computed value at spawn time.\nversion: \"1.0\"\ntags: []\n\nargs:\n  min:\n    type: float\n    description: Minimum value\n    default: 0\n  max:\n    type: float\n    description: Maximum value\n    default: 100\n\nprovides:\n  hooks:\n    - generate\n\nrequires:\n  api: [random]\n\nexamples:\n  - title: Random position\n    yaml: |\n      x: {call: {name}, args: {min: 0, max: 800}}\n\nlua: |\n  local {name} = {}\n\n  function {name}.generate(args)\n    local min = args.min or 0\n    local max = args.max or 100\n    return min + ams.random() * (max - min)\n  end\n\n  return {name}\n"
+    },
+    {
+      "id": "input_action",
+      "name": "Input Action",
+      "description": "Handler for user input events",
+      "icon": "lua",
+      "filename": "{name}.lua.yaml",
+      "folder": "lua/input_actions/",
+      "language": "yaml",
+      "schema": "/api/schemas/lua_script.schema.json",
+      "fileMatch": ["**/lua/input_actions/*.lua.yaml"],
+      "singleton": false,
+      "template": "type: input_action\nname: {name}\ndescription: |\n  Handle user input (click/hit) events.\nversion: \"1.0\"\ntags: []\n\nargs:\n  entity_type:\n    type: string\n    description: Type of entity to spawn\n    default: particle\n\nprovides:\n  hooks:\n    - execute\n\nrequires:\n  api: [spawn]\n\nlua: |\n  local {name} = {}\n\n  function {name}.execute(x, y, args)\n    -- Called when user clicks/hits at (x, y)\n    local entity_type = args.entity_type or \"particle\"\n    ams.spawn(entity_type, x, y)\n  end\n\n  return {name}\n"
+    }
+  ]
+}
