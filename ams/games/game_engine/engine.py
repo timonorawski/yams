@@ -17,12 +17,20 @@ Usage:
 """
 
 from abc import abstractmethod
+import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Type, TYPE_CHECKING
 import uuid
 
 import pygame
-import yaml
+
+# PyYAML is optional - not available in browser/WASM builds
+try:
+    import yaml
+    HAS_YAML = True
+except ImportError:
+    yaml = None
+    HAS_YAML = False
 
 from ams.games.base_game import BaseGame
 from ams.games.game_state import GameState
@@ -84,14 +92,14 @@ class GameEngine(BaseGame):
 
     @classmethod
     def from_yaml(cls, yaml_path: Path) -> Type['GameEngine']:
-        """Create a GameEngine subclass from a YAML game definition.
+        """Create a GameEngine subclass from a YAML or JSON game definition.
 
         This factory method eliminates the need for boilerplate Python files
-        for YAML-only games. It reads metadata from the YAML and dynamically
+        for YAML-only games. It reads metadata from the YAML/JSON and dynamically
         creates a properly configured GameEngine subclass.
 
         Args:
-            yaml_path: Path to the game.yaml file
+            yaml_path: Path to the game.yaml or game.json file
 
         Returns:
             A new GameEngine subclass configured for this game
@@ -101,9 +109,14 @@ class GameEngine(BaseGame):
             MyGame = GameEngine.from_yaml(Path('games/MyGame/game.yaml'))
             game = MyGame()
         """
-        # Load YAML to extract metadata
+        # Load YAML or JSON to extract metadata (JSON for browser builds)
         with open(yaml_path) as f:
-            game_data = yaml.safe_load(f)
+            if yaml_path.suffix == '.json':
+                game_data = json.load(f)
+            elif HAS_YAML:
+                game_data = yaml.safe_load(f)
+            else:
+                raise ImportError(f"Cannot load {yaml_path}: PyYAML not available. Use JSON for browser builds.")
 
         # Extract metadata with defaults
         name = game_data.get('name', yaml_path.parent.name)
@@ -230,9 +243,14 @@ class GameEngine(BaseGame):
             self._spawn_initial_entities()
 
     def _load_game_definition(self, path: Path) -> GameDefinition:
-        """Load game definition from YAML file."""
+        """Load game definition from YAML or JSON file."""
         with open(path) as f:
-            data = yaml.safe_load(f)
+            if path.suffix == '.json':
+                data = json.load(f)
+            elif HAS_YAML:
+                data = yaml.safe_load(f)
+            else:
+                raise ImportError(f"Cannot load {path}: PyYAML not available. Use JSON for browser builds.")
 
         # Validate against schema (raises SchemaValidationError unless AMS_SKIP_SCHEMA_VALIDATION=1)
         validate_game_yaml(data, path)
@@ -1293,6 +1311,7 @@ class GameEngine(BaseGame):
                 self._behavior_engine.get_alive_entities()
             )
 
+
             for entity in entities:
                 # Apply target_x/target_y if configured
                 if mapping.target_x:
@@ -1918,6 +1937,19 @@ class GameEngine(BaseGame):
                     spawn_props['vy'] = spawn_props['vy'] + inherited_vy
                 elif spawn.inherit_velocity > 0:
                     spawn_props['vy'] = inherited_vy
+
+                # Convert speed+angle to vx/vy in Python
+                # This is needed for browser mode where Lua on_spawn may not run synchronously
+                # The ball behavior also handles this, but it's harmless to do it here too
+                if 'speed' in spawn_props and 'angle' in spawn_props:
+                    import math
+                    speed = spawn_props.pop('speed')
+                    angle = spawn_props.pop('angle')
+                    if speed is not None and angle is not None:
+                        angle_rad = math.radians(angle)
+                        # cos gives x component, sin gives y component
+                        spawn_props['vx'] = spawn_props.get('vx', 0) + speed * math.cos(angle_rad)
+                        spawn_props['vy'] = spawn_props.get('vy', 0) + speed * math.sin(angle_rad)
 
                 # Extract color/vx/vy from properties into overrides
                 overrides = {}

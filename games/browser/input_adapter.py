@@ -54,11 +54,17 @@ class BrowserInputAdapter:
             if event.button == 1:  # Left click only
                 self._add_hit_event(event.pos)
 
+        # NOTE: MOUSEMOTION should NOT create HIT events!
+        # The paddle follows via input_mapping.target_x which only triggers on HIT.
+        # Mouse tracking for paddle would need a different mechanism (not implemented).
+
         elif event.type == pygame.FINGERDOWN:
             # Touch event - position is normalized (0.0 to 1.0)
             x = int(event.x * self.screen_width)
             y = int(event.y * self.screen_height)
             self._add_hit_event((x, y))
+
+        # NOTE: FINGERMOTION should NOT create HIT events - same as MOUSEMOTION
 
     def _ensure_imports(self):
         """Lazily import Pydantic-based classes when first needed."""
@@ -83,6 +89,9 @@ class BrowserInputAdapter:
             event_type=self._EventType.HIT,
         )
         self._events.append(event)
+        # Debug: log every 60th event or all clicks
+        if len(self._events) == 1 or len(self._events) % 60 == 0:
+            print(f"[InputAdapter] Event queued: pos={pos}, queue_size={len(self._events)}")
 
     def get_events(self) -> List[Any]:
         """

@@ -88,6 +88,51 @@ class GameEntity(Entity):
             self._lifecycle_dispatch(self, 'on_destroy')
         self.alive = False
 
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize entity for JavaScript (browser mode).
+
+        Returns dict with all entity state needed for Lua execution in WASMOON.
+        """
+        return {
+            'id': self.id,
+            'entity_type': self.entity_type,
+            'alive': self.alive,
+            'x': self.x,
+            'y': self.y,
+            'vx': self.vx,
+            'vy': self.vy,
+            'width': self.width,
+            'height': self.height,
+            'color': self.color,
+            'sprite': self.sprite,
+            'health': self.health,
+            'visible': self.visible,
+            'behaviors': list(self.behaviors),
+            'behavior_config': dict(self.behavior_config),
+            'tags': list(self.tags),
+            'properties': dict(self.properties),
+            'spawn_time': self.spawn_time,
+            'parent_id': self.parent_id,
+            'parent_offset': list(self.parent_offset),
+            'children': list(self.children),
+        }
+
+    def apply_changes(self, changes: dict[str, Any]) -> None:
+        """Apply changes from JavaScript Lua execution (browser mode).
+
+        Args:
+            changes: Dict of property changes from WASMOON execution.
+        """
+        for key, value in changes.items():
+            if key == 'properties':
+                self.properties.update(value)
+            elif key == 'parent_offset':
+                self.parent_offset = tuple(value)
+            elif key == 'children':
+                self.children = list(value)
+            elif hasattr(self, key):
+                setattr(self, key, value)
+
     def get_property(self, name: str, current_time: float = 0.0) -> Any:
         """Get property value, including computed properties.
 

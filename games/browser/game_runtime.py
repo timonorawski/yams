@@ -46,6 +46,13 @@ class BrowserGameRuntime:
         Args:
             screen: Pygame display surface
         """
+        # Log build ID for cache verification
+        try:
+            build_id = open("build_id.txt").read().strip()
+            js_log(f"[BrowserGameRuntime] BUILD ID: {build_id}")
+        except:
+            js_log("[BrowserGameRuntime] BUILD ID: unknown")
+
         js_log("[BrowserGameRuntime] __init__ starting...")
         self.screen = screen
         self.width = screen.get_width()
@@ -96,8 +103,58 @@ class BrowserGameRuntime:
         # Import registry (deferred to avoid import issues during pygbag bundling)
         js_log(f"[BrowserGameRuntime] Loading game: {game_slug}")
         try:
+            import os
+            from ams.content_fs_browser import get_content_fs
             from games.registry import GameRegistry
-            registry = GameRegistry()
+            content_fs = get_content_fs()
+            js_log(f"[BrowserGameRuntime] ContentFS created: {content_fs.describe_layers()}")
+
+            # Debug: enumerate filesystem
+            js_log(f"[FS DEBUG] core_dir: {content_fs.core_dir}")
+            js_log(f"[FS DEBUG] cwd: {os.getcwd()}")
+            for root_item in ['/', '/data', '/data/data', '/data/data/web', '/data/data/web/assets']:
+                if os.path.exists(root_item):
+                    try:
+                        contents = os.listdir(root_item)[:15]
+                        js_log(f"[FS DEBUG] {root_item}/: {contents}")
+                    except Exception as e:
+                        js_log(f"[FS DEBUG] {root_item}/ error: {e}")
+
+            games_dir = content_fs.core_dir / 'games'
+            js_log(f"[FS DEBUG] games_dir: {games_dir}, exists: {games_dir.exists()}")
+            if games_dir.exists():
+                for item in games_dir.iterdir():
+                    if item.is_dir():
+                        try:
+                            contents = [f.name for f in list(item.iterdir())[:10]]
+                            js_log(f"[FS DEBUG]   {item.name}/: {contents}")
+
+                            # Test specific file existence for YAML games
+                            if item.name in ['BrickBreakerNG', 'LoveOMeterNG']:
+                                json_path = item / 'game.json'
+                                json_path_str = str(json_path)
+                                js_log(f"[FS DEBUG]   -> json_path: {json_path_str}")
+                                js_log(f"[FS DEBUG]   -> Path.exists(): {json_path.exists()}")
+                                js_log(f"[FS DEBUG]   -> os.path.exists(): {os.path.exists(json_path_str)}")
+                                js_log(f"[FS DEBUG]   -> os.path.isfile(): {os.path.isfile(json_path_str)}")
+                        except Exception as e:
+                            js_log(f"[FS DEBUG]   {item.name}/ error: {e}")
+
+            # Test: Try to register YAML game directly to see error
+            yaml_game_dir = games_dir / 'BrickBreakerNG'
+            json_path = yaml_game_dir / 'game.json'
+            js_log(f"[FS DEBUG] Trying to load GameEngine from {json_path}")
+            try:
+                from ams.games.game_engine import GameEngine
+                js_log(f"[FS DEBUG] GameEngine imported")
+                game_class = GameEngine.from_yaml(json_path)
+                js_log(f"[FS DEBUG] GameEngine.from_yaml succeeded: {game_class}")
+            except Exception as e:
+                import traceback
+                js_log(f"[FS DEBUG] GameEngine.from_yaml FAILED: {e}")
+                js_log(f"[FS DEBUG] Traceback: {traceback.format_exc()}")
+
+            registry = GameRegistry(content_fs)
             js_log(f"[BrowserGameRuntime] Registry loaded, available games: {list(registry._games.keys())}")
         except ImportError as e:
             self._load_error = f'Failed to load game registry: {e}'
@@ -150,6 +207,11 @@ class BrowserGameRuntime:
                 if event.type == pygame.QUIT:
                     self.running = False
                     continue
+
+                # Debug: log mouse events
+                if event.type in (pygame.MOUSEBUTTONDOWN, pygame.MOUSEMOTION):
+                    if frame_count % 60 == 0 or event.type == pygame.MOUSEBUTTONDOWN:
+                        js_log(f"[Runtime] pygame event: type={event.type} pos={getattr(event, 'pos', 'N/A')}")
 
                 # Let input adapter handle the event
                 self.input_adapter.handle_pygame_event(event)
@@ -206,6 +268,9 @@ class BrowserGameRuntime:
                         pass
         except Exception:
             pass
+
+        # Process WASMOON Lua results
+        self._process_lua_results()
 
     async def _handle_js_message(self, msg: dict):
         """
@@ -359,3 +424,94 @@ class BrowserGameRuntime:
             text = font.render("Loading...", True, (0, 217, 255))
             rect = text.get_rect(center=(self.width // 2, self.height // 2))
             self.screen.blit(text, rect)
+
+    def _process_lua_results(self):
+        """Process results from WASMOON Lua execution."""
+        if sys.platform != "emscripten":
+            return
+
+        try:
+            if not hasattr(browser_platform.window, 'luaResponses'):
+                return
+
+            responses = browser_platform.window.luaResponses
+            count = len(responses)
+            if count > 0:
+                # Log first few batches to verify flow
+                if hasattr(self, '_lua_result_count'):
+                    self._lua_result_count += count
+                else:
+                    self._lua_result_count = count
+                if self._lua_result_count <= 10:
+                    js_log(f"[Runtime] Processing {count} Lua responses (total: {self._lua_result_count})")
+            while len(responses) > 0:
+                resp_str = responses.pop(0)
+                try:
+                    resp = json.loads(resp_str)
+                    self._apply_lua_result(resp)
+                except json.JSONDecodeError:
+                    pass
+        except Exception as e:
+            js_log(f"[BrowserGameRuntime] Error processing Lua results: {e}")
+
+    def _apply_lua_result(self, result: dict):
+        """Apply a Lua execution result to the game state."""
+        result_type = result.get('type', '')
+        data = result.get('data', {})
+
+        if not self.game:
+            return
+
+        # Check if game has a behavior engine (YAML games)
+        if not hasattr(self.game, '_behavior_engine'):
+            return
+
+        engine = self.game._behavior_engine
+
+        # Check if it's a LuaEngineBrowser (has apply_lua_results)
+        if hasattr(engine, 'apply_lua_results'):
+            # Log occasionally to verify results are being applied
+            entity_changes = data.get('entities', {}) if data else {}
+            if entity_changes and engine.elapsed_time < 2.0:
+                js_log(f"[Runtime] Applying Lua results: {len(entity_changes)} entity changes")
+            engine.apply_lua_results(data)
+
+
+def inject_wasmoon_scripts():
+    """Inject WASMOON scripts into the page (called once at startup)."""
+    if sys.platform != "emscripten":
+        return
+
+    js_log("[BrowserGameRuntime] Injecting WASMOON scripts...")
+
+    try:
+        # Initialize response arrays
+        browser_platform.window.eval('''
+            if (!window.gameMessages) window.gameMessages = [];
+            if (!window.luaResponses) window.luaResponses = [];
+        ''')
+
+        # Load WASMOON bridge (will load wasmoon library itself)
+        browser_platform.window.eval('''
+            (function() {
+                if (window.wasmoonBridge) {
+                    console.log('[WASMOON] Already loaded');
+                    return;
+                }
+
+                // Load our bridge which handles wasmoon loading
+                var bridge = document.createElement('script');
+                bridge.src = 'wasmoon_bridge.js';
+                bridge.onload = function() {
+                    console.log('[WASMOON] Bridge script loaded');
+                };
+                bridge.onerror = function(e) {
+                    console.error('[WASMOON] Failed to load bridge:', e);
+                };
+                document.head.appendChild(bridge);
+            })();
+        ''')
+
+        js_log("[BrowserGameRuntime] WASMOON script injection initiated")
+    except Exception as e:
+        js_log(f"[BrowserGameRuntime] Error injecting WASMOON: {e}")

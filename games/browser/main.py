@@ -52,9 +52,25 @@ async def main():
 
     # Import runtime after pygame init
     try:
-        from game_runtime import BrowserGameRuntime
+        from game_runtime import BrowserGameRuntime, inject_wasmoon_scripts
         from platform_compat import get_url_param
         js_log("[main.py] Runtime modules imported")
+
+        # Inject WASMOON scripts for YAML game Lua support
+        inject_wasmoon_scripts()
+        js_log("[main.py] WASMOON injection initiated")
+
+        # Wait for WASMOON bridge to be ready before loading game
+        if sys.platform == "emscripten":
+            import platform as browser_platform
+            js_log("[main.py] Waiting for WASMOON bridge...")
+            for _ in range(100):  # Max 10 seconds
+                if getattr(browser_platform.window, 'wasmoonBridgeReady', False):
+                    js_log("[main.py] WASMOON bridge ready!")
+                    break
+                await asyncio.sleep(0.1)
+            else:
+                js_log("[main.py] WARNING: WASMOON bridge not ready after 10s")
     except Exception as e:
         js_log(f"[main.py] ERROR importing runtime: {e}")
         import traceback

@@ -82,6 +82,36 @@ class GameRegistry:
         self._game_classes: Dict[str, Type['BaseGame']] = {}
         self._discover_games()
 
+    def _debug_enumerate_fs(self) -> None:
+        """Debug: enumerate the filesystem to see what's available."""
+        import os
+        print(f"[Registry] === FILESYSTEM DEBUG ===")
+        print(f"[Registry] core_dir: {self._content_fs.core_dir}")
+        print(f"[Registry] cwd: {os.getcwd()}")
+
+        # List root directories
+        try:
+            for root_item in ['/', '/data', '/data/data', '/data/data/web']:
+                if os.path.exists(root_item):
+                    contents = os.listdir(root_item)[:20]  # Limit to 20 items
+                    print(f"[Registry] {root_item}/: {contents}")
+        except Exception as e:
+            print(f"[Registry] Error listing roots: {e}")
+
+        # List games directory contents
+        games_dir = self._content_fs.core_dir / 'games'
+        print(f"[Registry] games_dir: {games_dir}, exists: {games_dir.exists()}")
+        if games_dir.exists():
+            try:
+                for item in games_dir.iterdir():
+                    if item.is_dir():
+                        contents = list(item.iterdir())[:10]
+                        file_names = [f.name for f in contents]
+                        print(f"[Registry]   {item.name}/: {file_names}")
+            except Exception as e:
+                print(f"[Registry] Error listing games: {e}")
+        print(f"[Registry] === END DEBUG ===")
+
     def _discover_games(self) -> None:
         """Discover games from appropriate sources.
 
@@ -93,8 +123,12 @@ class GameRegistry:
         # Track discovered slugs to avoid duplicates
         discovered_slugs: set[str] = set()
 
+        # Debug: enumerate filesystem
+        self._debug_enumerate_fs()
+
         # 1. SECURITY: Python games only from core repo
         games_dir = self._content_fs.core_dir / 'games'
+        print(f"[Registry] Looking for games in: {games_dir}")
         if games_dir.exists():
             for game_dir in games_dir.iterdir():
                 if not game_dir.is_dir():
@@ -105,14 +139,21 @@ class GameRegistry:
                     continue
 
                 slug = game_dir.name.lower()
-                has_game_mode = (game_dir / 'game_mode.py').exists()
-                has_game_info = (game_dir / 'game_info.py').exists()
+                # Use os.path.exists for Emscripten compatibility
+                import os
+                has_game_mode = os.path.exists(str(game_dir / 'game_mode.py'))
+                has_game_info = os.path.exists(str(game_dir / 'game_info.py'))
+                has_game_yaml = os.path.exists(str(game_dir / 'game.yaml'))
+                has_game_json = os.path.exists(str(game_dir / 'game.json'))
+
+                print(f"[Registry] {game_dir.name}: mode={has_game_mode}, info={has_game_info}, yaml={has_game_yaml}, json={has_game_json}")
 
                 if has_game_mode or has_game_info:
                     self._register_game(game_dir)
                     discovered_slugs.add(slug)
-                elif (game_dir / 'game.yaml').exists():
-                    # YAML game in core repo
+                elif has_game_yaml or has_game_json:
+                    # YAML game in core repo (game.json for browser builds)
+                    print(f"[Registry] Registering YAML game: {game_dir}")
                     self._register_yaml_game(game_dir)
                     discovered_slugs.add(slug)
 
@@ -131,7 +172,10 @@ class GameRegistry:
                     continue
 
                 # Only YAML games from non-core layers (Python would be security risk)
-                if self._content_fs.exists(f'{game_path}/game.yaml'):
+                # Check for game.yaml or game.json (browser builds convert YAML to JSON)
+                has_yaml = self._content_fs.exists(f'{game_path}/game.yaml')
+                has_json = self._content_fs.exists(f'{game_path}/game.json')
+                if has_yaml or has_json:
                     try:
                         real_game_dir = Path(self._content_fs.getsyspath(game_path))
                         self._register_yaml_game(real_game_dir)
@@ -207,18 +251,22 @@ class GameRegistry:
         Register a YAML-only game (no Python boilerplate required).
 
         Uses GameEngine.from_yaml() factory to create a dynamic game class
-        from the game.yaml definition.
+        from the game.yaml (or game.json for browser builds) definition.
 
         Args:
-            game_dir: Path to game directory containing game.yaml
+            game_dir: Path to game directory containing game.yaml or game.json
         """
         slug = game_dir.name.lower()
+
+        # Check for game.yaml first, then game.json (browser builds)
         yaml_path = game_dir / 'game.yaml'
+        json_path = game_dir / 'game.json'
+        game_def_path = yaml_path if yaml_path.exists() else json_path
 
         try:
-            # Use GameEngine factory to create class from YAML
+            # Use GameEngine factory to create class from YAML/JSON
             from ams.games.game_engine import GameEngine
-            game_class = GameEngine.from_yaml(yaml_path)
+            game_class = GameEngine.from_yaml(game_def_path)
 
             # Extract metadata from class (set by factory)
             name = getattr(game_class, 'NAME', game_dir.name)
