@@ -1,0 +1,23 @@
+name: sprites
+description: |
+  DuckHunt sprite sheet containing all game graphics.
+  Layout: Dog animations (rows 0-1), then duck rows (green=2, blue=3, red=4).
+  Each duck row: 3 right-flight frames, 3 up-right frames, 1 hit, 2 falling frames.
+
+file: sprites.png
+width: 330
+height: 252
+
+tags:
+  - spritesheet
+  - duck
+  - dog
+  - retro
+
+provenance:
+  source: Nintendo Duck Hunt (NES, 1984)
+  license: proprietary
+  notes: |
+    Original sprites from Nintendo Duck Hunt.
+    Used for educational/demonstration purposes only.
+    For production use, replace with original artwork.
