@@ -167,7 +167,7 @@ async def http_clear_build_logs(request):
     return web.json_response({"status": "cleared", "build_id": build_id})
 
 
-async def start_servers(ws_port: int, http_port: int):
+async def start_servers(host: str, ws_port: int, http_port: int):
     """Start both WebSocket and HTTP servers."""
 
     # HTTP server for log retrieval
@@ -195,14 +195,14 @@ async def start_servers(ws_port: int, http_port: int):
 
     runner = web.AppRunner(app)
     await runner.setup()
-    http_site = web.TCPSite(runner, "localhost", http_port)
+    http_site = web.TCPSite(runner, host, http_port)
 
     # WebSocket server
-    ws_server = await websockets.serve(websocket_handler, "localhost", ws_port)
+    ws_server = await websockets.serve(websocket_handler, host, ws_port)
 
     print(f"Log Server Started")
-    print(f"  WebSocket: ws://localhost:{ws_port}")
-    print(f"  HTTP API:  http://localhost:{http_port}/logs")
+    print(f"  WebSocket: ws://{host}:{ws_port}")
+    print(f"  HTTP API:  http://{host}:{http_port}/logs")
     print(f"")
     print(f"Browser should connect to WebSocket and POST logs.")
     print(f"Fetch logs: GET http://localhost:{http_port}/logs/<build_id>")
@@ -219,6 +219,7 @@ def main():
         return 1
 
     parser = argparse.ArgumentParser(description="AMS Log Server")
+    parser.add_argument("--host", type=str, default="localhost", help="Host to bind to (use 0.0.0.0 for Docker)")
     parser.add_argument("--ws-port", type=int, default=8001, help="WebSocket port")
     parser.add_argument("--http-port", type=int, default=8002, help="HTTP API port")
     parser.add_argument(
@@ -239,7 +240,7 @@ def main():
         init_log_dir(args.log_dir)
 
     try:
-        asyncio.run(start_servers(args.ws_port, args.http_port))
+        asyncio.run(start_servers(args.host, args.ws_port, args.http_port))
     except KeyboardInterrupt:
         print("\nShutting down...")
 

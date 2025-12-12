@@ -10,9 +10,13 @@ build/
 
 # Virtual environments
 venv/
+.venv/
 env/
 ENV/
 node_modules/
+
+# Environment files
+.env
 
 # IDEs
 .vscode/
@@ -41,4 +45,3 @@ htmlcov/
 # Temporary files
 *.tmp
 *.bak
-41ba5b9f_20251212_044229.jsonl

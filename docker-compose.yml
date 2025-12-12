@@ -1,0 +1,54 @@
+# YAMS Local Development Environment
+#
+# Usage:
+#   docker compose up        # Start all services
+#   docker compose up -d     # Start in background
+#   docker compose logs -f   # Follow logs
+#   docker compose down      # Stop all services
+#
+# Access:
+#   http://localhost:8080    # Web app (via nginx)
+#   ws://localhost:8080/ws   # Log WebSocket (via nginx)
+#   http://localhost:8080/api/logs  # Log API (via nginx)
+
+services:
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "${NGINX_PORT:-8080}:80"
+    volumes:
+      - ./docker/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./docker/nginx/dev.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - web-server
+      - log-server
+    networks:
+      - yams-dev
+
+  web-server:
+    build:
+      context: .
+      dockerfile: docker/web-server/Dockerfile
+    volumes:
+      - .:/app:ro
+    environment:
+      - PYTHONUNBUFFERED=1
+    networks:
+      - yams-dev
+
+  log-server:
+    build:
+      context: .
+      dockerfile: docker/log-server/Dockerfile
+    volumes:
+      - .:/app:ro
+      - ${LOG_DIR:-./data/logs}:/app/data/logs
+    environment:
+      - PYTHONUNBUFFERED=1
+      - LOG_DIR=/app/data/logs/browser
+    networks:
+      - yams-dev
+
+networks:
+  yams-dev:
+    driver: bridge
