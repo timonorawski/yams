@@ -1,0 +1,221 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://yamplay.cc/schemas/lua_script.schema.json",
+  "title": "YAMS Lua Script",
+  "description": "Schema for YAMS Lua scripts with metadata",
+  "type": "object",
+  "required": ["type", "code"],
+  "properties": {
+    "type": {
+      "type": "string",
+      "enum": ["behavior", "collision_action", "generator", "input_action"],
+      "description": "Script type determines entry points and lifecycle"
+    },
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*$",
+      "description": "Script identifier (lowercase, underscores). Defaults to filename if omitted."
+    },
+    "description": {
+      "type": "string",
+      "description": "Human-readable description of what this script does"
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+(\\.\\d+)?$",
+      "description": "Semantic version (e.g., '1.0', '1.2.3')"
+    },
+    "author": {
+      "type": "string",
+      "description": "Script author"
+    },
+    "tags": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "Categorization tags for organization and filtering"
+    },
+    "config": {
+      "type": "object",
+      "description": "Configuration schema for behavior_config or modifier parameters",
+      "additionalProperties": {
+        "$ref": "#/$defs/configParam"
+      }
+    },
+    "args": {
+      "type": "object",
+      "description": "Arguments schema for generators and input actions",
+      "additionalProperties": {
+        "$ref": "#/$defs/configParam"
+      }
+    },
+    "requires": {
+      "type": "object",
+      "description": "Dependencies and requirements",
+      "properties": {
+        "behaviors": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "Other behaviors that must be attached to the entity"
+        },
+        "properties": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "Entity properties that must exist"
+        },
+        "api": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "ams.* API methods used by this script"
+        }
+      },
+      "additionalProperties": false
+    },
+    "provides": {
+      "type": "object",
+      "description": "What this script provides/implements",
+      "properties": {
+        "hooks": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["on_spawn", "on_update", "on_destroy", "on_hit", "execute", "generate"]
+          },
+          "description": "Lifecycle hooks implemented by this script. Auto-detected if omitted."
+        },
+        "properties": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "Entity properties created/managed by this script"
+        }
+      },
+      "additionalProperties": false
+    },
+    "examples": {
+      "type": "array",
+      "description": "Usage examples in YAML format",
+      "items": {
+        "type": "object",
+        "properties": {
+          "title": {"type": "string"},
+          "yaml": {"type": "string"}
+        },
+        "required": ["yaml"]
+      }
+    },
+    "code": {
+      "type": "string",
+      "description": "The Lua source code"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {"type": {"const": "behavior"}}
+      },
+      "then": {
+        "properties": {
+          "provides": {
+            "properties": {
+              "hooks": {
+                "items": {
+                  "enum": ["on_spawn", "on_update", "on_destroy", "on_hit"]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {"type": {"const": "collision_action"}}
+      },
+      "then": {
+        "properties": {
+          "provides": {
+            "properties": {
+              "hooks": {
+                "items": {"enum": ["execute"]}
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {"type": {"const": "generator"}}
+      },
+      "then": {
+        "properties": {
+          "provides": {
+            "properties": {
+              "hooks": {
+                "items": {"enum": ["generate"]}
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {"type": {"const": "input_action"}}
+      },
+      "then": {
+        "properties": {
+          "provides": {
+            "properties": {
+              "hooks": {
+                "items": {"enum": ["execute"]}
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "configParam": {
+      "type": "object",
+      "description": "Configuration parameter definition",
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["int", "float", "string", "bool", "array", "object"],
+          "description": "Parameter data type"
+        },
+        "description": {
+          "type": "string",
+          "description": "What this parameter controls"
+        },
+        "default": {
+          "description": "Default value if not specified"
+        },
+        "required": {
+          "type": "boolean",
+          "default": false,
+          "description": "Whether this parameter must be provided"
+        },
+        "min": {
+          "type": "number",
+          "description": "Minimum value (for int/float)"
+        },
+        "max": {
+          "type": "number",
+          "description": "Maximum value (for int/float)"
+        },
+        "enum": {
+          "type": "array",
+          "description": "Allowed values (for string)"
+        },
+        "items": {
+          "$ref": "#/$defs/configParam",
+          "description": "Item schema (for array type)"
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}
