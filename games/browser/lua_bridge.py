@@ -351,10 +351,10 @@ class LuaEngineBrowser:
             json_text = self._content_fs.readtext(content_path)
             data = json.loads(json_text)
 
-            # Extract the code field from the JSON wrapper
-            code = data.get('code')
+            # Extract the lua field from the JSON wrapper
+            code = data.get('lua')
             if not code:
-                js_log(f"[LuaEngineBrowser] No code field in {content_path}")
+                js_log(f"[LuaEngineBrowser] No lua field in {content_path}")
                 return False
 
             return self._send_subroutine_to_js(sub_type, name, code)

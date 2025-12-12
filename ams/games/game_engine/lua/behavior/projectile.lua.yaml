@@ -23,7 +23,7 @@ examples:
       vx: 0
       vy: -300
 
-code: |
+lua: |
   local projectile = {}
 
   function projectile.on_update(entity_id, dt)

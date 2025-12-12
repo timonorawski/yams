@@ -37,7 +37,7 @@ examples:
           speed: 60
           range: 100
 
-code: |
+lua: |
   local oscillate = {}
 
   function oscillate.on_spawn(entity_id)

@@ -41,7 +41,7 @@ examples:
           edges: bottom
           margin: 100
 
-code: |
+lua: |
   local destroy_offscreen = {}
 
   function destroy_offscreen.on_update(entity_id, dt)

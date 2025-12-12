@@ -43,7 +43,7 @@ examples:
         fade_out:
           duration: 2.0
 
-code: |
+lua: |
   local behavior = {}
 
   function behavior.on_spawn(entity_id)

@@ -55,7 +55,7 @@ examples:
         brick:
           indestructible: true
 
-code: |
+lua: |
   local brick = {}
 
   function brick.on_spawn(entity_id)

@@ -37,7 +37,7 @@ examples:
             modifier:
               max_angle: 60
 
-code: |
+lua: |
   local bounce_paddle = {}
 
   function bounce_paddle.execute(entity_a_id, entity_b_id, modifier)

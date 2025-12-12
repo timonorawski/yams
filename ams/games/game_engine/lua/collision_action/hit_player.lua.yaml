@@ -33,7 +33,7 @@ examples:
             modifier:
               play_sound: "hit"
 
-code: |
+lua: |
   local hit_player = {}
 
   function hit_player.execute(projectile_id, player_id, modifier)

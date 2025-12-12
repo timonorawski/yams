@@ -24,7 +24,7 @@ Usage:
     script = loader.load_inline(
         name='my_behavior',
         script_type='behavior',
-        definition={'code': '...', 'description': '...'}
+        definition={'lua': '...', 'description': '...'}
     )
 
 Integration with LuaEngine:
@@ -252,11 +252,11 @@ class ScriptLoader:
                 path=str(path)
             )
 
-        # Code is required
-        code = content.get('code')
+        # Lua code is required
+        code = content.get('lua')
         if not code:
             raise ScriptValidationError(
-                "Missing required field 'code'",
+                "Missing required field 'lua'",
                 path=str(path)
             )
 
@@ -364,7 +364,7 @@ class ScriptLoader:
         Args:
             name: Script name (from YAML key)
             script_type: One of behavior, collision_action, generator, input_action
-            definition: Dict with 'code' and optional metadata
+            definition: Dict with 'lua' and optional metadata
 
         Returns:
             ScriptMetadata with parsed content
@@ -374,10 +374,10 @@ class ScriptLoader:
                 f"Invalid type '{script_type}', must be one of {self.VALID_TYPES}"
             )
 
-        code = definition.get('code')
+        code = definition.get('lua')
         if not code:
             raise ScriptValidationError(
-                f"Inline script '{name}' missing required 'code' field"
+                f"Inline script '{name}' missing required 'lua' field"
             )
 
         return ScriptMetadata(

@@ -36,7 +36,7 @@ examples:
           offset_x: 0
           offset_y: 30
 
-code: |
+lua: |
   local behavior = {}
 
   function behavior.on_spawn(entity_id)

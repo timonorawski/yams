@@ -4,7 +4,7 @@
   "title": "YAMS Lua Script",
   "description": "Schema for YAMS Lua scripts with metadata",
   "type": "object",
-  "required": ["type", "code"],
+  "required": ["type", "lua"],
   "properties": {
     "type": {
       "type": "string",
@@ -102,7 +102,7 @@
         "required": ["yaml"]
       }
     },
-    "code": {
+    "lua": {
       "type": "string",
       "description": "The Lua source code"
     }

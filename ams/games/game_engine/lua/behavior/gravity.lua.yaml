@@ -38,7 +38,7 @@ examples:
         gravity:
           acceleration: 200
 
-code: |
+lua: |
   local gravity = {}
 
   function gravity.on_update(entity_id, dt)

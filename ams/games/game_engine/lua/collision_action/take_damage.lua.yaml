@@ -64,7 +64,7 @@ examples:
               hit_sound: crystal_crack
               destroy_sound: crystal_shatter
 
-code: |
+lua: |
   local take_damage = {}
 
   function take_damage.execute(entity_a_id, entity_b_id, modifier)

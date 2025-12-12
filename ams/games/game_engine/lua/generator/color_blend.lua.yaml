@@ -39,7 +39,7 @@ examples:
     yaml: |
       color: {call: "color_blend", args: {from: "blue", to: "white", factor: {lua: "ams.random()"}}}
 
-code: |
+lua: |
   local color_blend = {}
 
   -- Color name to RGB lookup

@@ -36,7 +36,7 @@
 ### Build Pipeline
 
 1. **Native (Python)**: `LuaEngine` loads `.lua.yaml` files directly via ScriptLoader
-2. **Browser (WebAssembly)**: `build.py` converts `.lua.yaml` → `.lua.json`, `LuaEngineBrowser` extracts `code` field
+2. **Browser (WebAssembly)**: `build.py` converts `.lua.yaml` → `.lua.json`, `LuaEngineBrowser` extracts `lua` field
 
 ---
 
@@ -49,7 +49,7 @@ This document specifies the YAML format for Lua scripts that includes machine-re
 1. **Self-documenting**: Scripts carry their own documentation, config schema, and usage examples
 2. **Validatable**: JSON Schema enables IDE autocompletion and CI validation
 3. **Discoverable**: Metadata enables tooling (script browsers, dependency graphs, API docs)
-4. **Backwards compatible**: The `code` field contains standard Lua that works unchanged
+4. **Backwards compatible**: The `lua` field contains standard Lua that works unchanged
 
 ## File Structure
 
@@ -95,7 +95,7 @@ examples:                   # Usage examples
         animate:
           frames: 3
 
-code: |                     # Required: the actual Lua code
+lua: |                     # Required: the actual Lua code
   local animate = {}
   function animate.on_spawn(entity_id)
     ...
@@ -214,7 +214,7 @@ For simple, game-specific scripts that don't warrant separate files, a subset sc
 |-------|------------------|-------------------|
 | `type` | Required | Inferred from context |
 | `name` | Optional (from filename) | Required |
-| `code` | Required | Required |
+| `lua` | Required | Required |
 | `description` | Optional | Optional |
 | `version` | Optional | Omitted |
 | `author` | Optional | Omitted |
@@ -244,7 +244,7 @@ inline_behaviors:
     description: Wobble side to side
     provides:
       hooks: [on_update]
-    code: |
+    lua: |
       local my_custom_behavior = {}
       function my_custom_behavior.on_update(entity_id, dt)
         local x = ams.get_x(entity_id)
@@ -267,7 +267,7 @@ inline_generators:
         default: 1.0
     provides:
       hooks: [generate]
-    code: |
+    lua: |
       local random_color = {}
       function random_color.generate(args)
         local s = args.saturation or 1.0
@@ -292,7 +292,7 @@ inline_collision_actions:
     description: Destroy both entities and spawn particles
     provides:
       hooks: [execute]
-    code: |
+    lua: |
       local explode_on_contact = {}
       function explode_on_contact.execute(a_id, b_id, modifier)
         local x = ams.get_x(a_id)
@@ -405,7 +405,7 @@ examples:
           acceleration: 60
           terminal_velocity: 200
 
-code: |
+lua: |
   local gravity = {}
 
   function gravity.on_update(entity_id, dt)

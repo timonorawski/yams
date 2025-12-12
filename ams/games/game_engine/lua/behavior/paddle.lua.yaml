@@ -39,7 +39,7 @@ examples:
         paddle:
           speed: 800
 
-code: |
+lua: |
   local paddle = {}
 
   function paddle.on_spawn(entity_id)

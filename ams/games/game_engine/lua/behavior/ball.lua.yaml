@@ -48,7 +48,7 @@ examples:
           speed: 300
           max_speed: 600
 
-code: |
+lua: |
   local ball = {}
 
   function ball.on_spawn(entity_id)

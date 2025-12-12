@@ -68,7 +68,7 @@ examples:
           projectile_speed: 400
           direction: up
 
-code: |
+lua: |
   local shoot = {}
 
   function shoot.on_spawn(entity_id)

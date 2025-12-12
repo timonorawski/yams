@@ -61,7 +61,7 @@ examples:
         - shape: sprite
           sprite: player_walk_{walk_frame}
 
-code: |
+lua: |
   local animate = {}
 
   function animate.on_spawn(entity_id)

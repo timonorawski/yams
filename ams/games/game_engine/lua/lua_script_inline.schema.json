@@ -4,7 +4,7 @@
   "title": "YAMS Inline Lua Script",
   "description": "Schema for inline Lua scripts embedded in game.yaml",
   "type": "object",
-  "required": ["code"],
+  "required": ["lua"],
   "properties": {
     "description": {
       "type": "string",
@@ -44,7 +44,7 @@
       },
       "additionalProperties": false
     },
-    "code": {
+    "lua": {
       "type": "string",
       "description": "The Lua source code"
     }

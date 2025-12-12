@@ -221,20 +221,7 @@
       },
       "required": ["lua"],
       "additionalProperties": false,
-      "description": "Inline Lua expression"
-    },
-
-    "lua_behavior": {
-      "type": "object",
-      "properties": {
-        "lua": {
-          "type": "string",
-          "description": "Multiline Lua behavior code returning a behavior table"
-        }
-      },
-      "required": ["lua"],
-      "additionalProperties": false,
-      "description": "Inline Lua behavior definition"
+      "description": "Inline Lua expression for dynamic values"
     },
 
     "call_generator": {
@@ -254,15 +241,37 @@
       "description": "Call a Lua property generator"
     },
 
+    "inline_generator": {
+      "type": "object",
+      "properties": {
+        "lua": {
+          "type": "string",
+          "description": "Lua generator code returning a table with generate(args) function"
+        },
+        "args": {
+          "type": "object",
+          "description": "Arguments to pass to the generator"
+        },
+        "description": {
+          "type": "string",
+          "description": "Optional description of the generator"
+        }
+      },
+      "required": ["lua"],
+      "additionalProperties": false,
+      "description": "Inline Lua generator definition with optional args"
+    },
+
     "dynamic_value": {
       "oneOf": [
         { "type": "string" },
         { "type": "number" },
         { "type": "boolean" },
         { "$ref": "#/$defs/lua_expression" },
-        { "$ref": "#/$defs/call_generator" }
+        { "$ref": "#/$defs/call_generator" },
+        { "$ref": "#/$defs/inline_generator" }
       ],
-      "description": "Static value, Lua expression, or generator call"
+      "description": "Static value, Lua expression, generator call, or inline generator"
     },
 
     "behavior_ref": {
@@ -271,9 +280,9 @@
           "type": "string",
           "description": "Name of a Lua behavior file"
         },
-        { "$ref": "#/$defs/lua_behavior" }
+        { "$ref": "../lua/lua_script_inline.schema.json" }
       ],
-      "description": "Behavior file reference or inline Lua"
+      "description": "Behavior file reference or inline script ({code: ...})"
     },
 
     "assets_config": {
@@ -715,7 +724,7 @@
           "type": "object",
           "properties": {
             "action": {
-              "$ref": "#/$defs/lua_behavior",
+              "$ref": "../lua/lua_script_inline.schema.json",
               "description": "Inline Lua collision action"
             },
             "modifier": {
@@ -748,8 +757,8 @@
               "description": "Built-in action name (e.g., 'play_sound') or Lua script name"
             },
             {
-              "$ref": "#/$defs/lua_behavior",
-              "description": "Inline Lua action code"
+              "$ref": "../lua/lua_script_inline.schema.json",
+              "description": "Inline Lua action"
             }
           ],
           "description": "Action to execute: 'play_sound', Lua script name, or inline Lua"

@@ -62,7 +62,7 @@ examples:
           pattern: wave
           wave_amplitude: 50
 
-code: |
+lua: |
   local descend = {}
 
   function descend.on_spawn(entity_id)

@@ -39,7 +39,7 @@ examples:
     yaml: |
       y: {call: "grid_position", args: {axis: "y", index: 2, start: 60, spacing: 30}}
 
-code: |
+lua: |
   local grid_position = {}
 
   function grid_position.generate(args)

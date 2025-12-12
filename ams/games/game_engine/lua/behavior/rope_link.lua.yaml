@@ -55,7 +55,7 @@ examples:
           rest_length: 35
           stiffness: 600
 
-code: |
+lua: |
   local rope_link = {}
 
   function rope_link.on_update(entity_id, dt)

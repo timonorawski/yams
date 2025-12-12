@@ -42,7 +42,7 @@ examples:
               speed_increase: 5
               max_speed: 600
 
-code: |
+lua: |
   local bounce_reflect = {}
 
   function bounce_reflect.execute(entity_a_id, entity_b_id, modifier)

@@ -46,7 +46,7 @@ examples:
           walls: top_sides
           max_y: 0.7
 
-code: |
+lua: |
   local bounce = {}
 
   function bounce.on_update(entity_id, dt)

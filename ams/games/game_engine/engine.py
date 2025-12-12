@@ -207,6 +207,7 @@ class GameEngine(BaseGame):
         self._inline_behavior_counter = 0
         self._inline_collision_action_counter = 0
         self._inline_input_action_counter = 0
+        self._inline_generator_counter = 0
 
         # Add game directory as ContentFS layer (higher priority than engine)
         # This allows games to override engine lua scripts at lua/{type}/
@@ -562,10 +563,10 @@ class GameEngine(BaseGame):
         """Load inline scripts from game.yaml.
 
         Looks for top-level keys:
-        - inline_behaviors: {name: {code: ..., description: ...}, ...}
-        - inline_collision_actions: {name: {code: ..., ...}, ...}
-        - inline_generators: {name: {code: ..., ...}, ...}
-        - inline_input_actions: {name: {code: ..., ...}, ...}
+        - inline_behaviors: {name: {lua: ..., description: ...}, ...}
+        - inline_collision_actions: {name: {lua: ..., ...}, ...}
+        - inline_generators: {name: {lua: ..., ...}, ...}
+        - inline_input_actions: {name: {lua: ..., ...}, ...}
 
         These are loaded AFTER file-based scripts, allowing game-specific
         overrides or one-off scripts without creating separate files.
@@ -591,13 +592,13 @@ class GameEngine(BaseGame):
                     print(f"[GameEngine] Invalid inline script '{name}': expected dict")
                     continue
 
-                code = script_def.get('code')
-                if not code:
-                    print(f"[GameEngine] Inline script '{name}' missing 'code' field")
+                lua_code = script_def.get('lua')
+                if not lua_code:
+                    print(f"[GameEngine] Inline script '{name}' missing 'lua' field")
                     continue
 
                 # Load via LuaEngine's inline loader
-                if self._behavior_engine.load_inline_subroutine(sub_type, name, code):
+                if self._behavior_engine.load_inline_subroutine(sub_type, name, lua_code):
                     desc = script_def.get('description', '')
                     if desc:
                         print(f"[GameEngine] Loaded inline {sub_type}: {name} - {desc[:50]}")
@@ -609,17 +610,19 @@ class GameEngine(BaseGame):
 
         Behaviors can be:
         - String: Reference to file in behaviors directory (e.g., "paddle")
-        - Dict with 'lua' key: Inline Lua code
+        - Dict with 'lua' key: Inline Lua script (lua_script_inline format)
 
         Example YAML:
             behaviors:
-              - paddle              # loads paddle.lua
-              - lua: |
-                  local b = {}
-                  function b.on_update(id, dt)
-                      ams.log("Custom behavior!")
+              - paddle              # loads paddle.lua.yaml
+              - lua: |              # inline script
+                  local wobble = {}
+                  function wobble.on_update(entity_id, dt)
+                      local x = ams.get_x(entity_id)
+                      ams.set_x(entity_id, x + math.sin(ams.get_time() * 5) * dt * 10)
                   end
-                  return b
+                  return wobble
+                description: Wobble side to side
 
         Returns list of behavior names (inline behaviors get generated names).
         """
@@ -630,7 +633,7 @@ class GameEngine(BaseGame):
                 # File-based behavior
                 behavior_names.append(item)
             elif isinstance(item, dict) and 'lua' in item:
-                # Inline Lua behavior
+                # Inline behavior with lua_script_inline format
                 lua_code = item['lua']
                 name = f"_inline_{entity_type}_{self._inline_behavior_counter}"
                 self._inline_behavior_counter += 1
@@ -638,6 +641,8 @@ class GameEngine(BaseGame):
                 # Register inline behavior with engine
                 if self._behavior_engine.load_inline_subroutine('behavior', name, lua_code):
                     behavior_names.append(name)
+                    if 'description' in item:
+                        print(f"[GameEngine] Loaded inline behavior: {item['description'][:50]}")
                 else:
                     print(f"[GameEngine] Failed to load inline behavior for {entity_type}")
 
@@ -654,7 +659,7 @@ class GameEngine(BaseGame):
             action_data: Can be:
                 - str: Action name (file reference)
                 - dict with 'action' key: File reference with modifier
-                - dict with 'action.lua' key: Inline Lua
+                - dict with 'action.lua' key: Inline Lua script
 
         Returns:
             Action name (inline actions get generated names).
@@ -671,7 +676,7 @@ class GameEngine(BaseGame):
                 modifier:
                   damage: 1
 
-            # Inline Lua
+            # Inline Lua script
             ball:
               powerup:
                 action:
@@ -682,6 +687,7 @@ class GameEngine(BaseGame):
                         ams.set_prop(a_id, "powered_up", true)
                     end
                     return a
+                  description: Collect powerup and activate
         """
         if isinstance(action_data, str):
             # Simple format: just action name string
@@ -713,7 +719,7 @@ class GameEngine(BaseGame):
 
         Action can be:
         - String: Built-in action name (e.g., 'play_sound') or Lua script name
-        - Dict with 'lua' key: Inline Lua code
+        - Dict with 'lua' key: Inline Lua script
         """
         transform_config = None
         when_condition = None
@@ -732,7 +738,7 @@ class GameEngine(BaseGame):
                 # File reference or built-in action
                 action_name = action_data
             elif isinstance(action_data, dict) and 'lua' in action_data:
-                # Inline Lua code - register it and use generated name
+                # Inline Lua script
                 lua_code = action_data['lua']
                 self._inline_input_action_counter += 1
                 name = f'_inline_input_action_{self._inline_input_action_counter}'
@@ -2174,14 +2180,32 @@ class GameEngine(BaseGame):
         - Literal: 100, "red", [1, 2, 3]
         - Lua expression: {lua: "ams.random_range(-60, -120)"}
         - Generator call: {call: "grid_position", args: {row: 1, col: 5}}
+        - Inline generator: {lua: "full generator code", args: {x: 10}}
 
         Generator scripts live in ams/behaviors/generators/ and expose a
         generate(args) function that returns the computed value.
         """
         if isinstance(value, dict):
-            if 'lua' in value:
+            if 'lua' in value and 'args' in value:
+                # Inline generator: register then call
+                lua_code = value['lua']
+                name = f'_inline_generator_{self._inline_generator_counter}'
+                self._inline_generator_counter += 1
+
+                if self._behavior_engine.load_inline_subroutine('generator', name, lua_code):
+                    args = value.get('args', {})
+                    evaluated_args = {}
+                    for k, v in args.items():
+                        evaluated_args[k] = self._evaluate_property_value(v)
+                    return self._behavior_engine.call_generator(name, evaluated_args)
+                else:
+                    print(f"[GameEngine] Failed to load inline generator")
+                    return None
+            elif 'lua' in value:
+                # Simple Lua expression
                 return self._behavior_engine.evaluate_expression(value['lua'])
             elif 'call' in value:
+                # Named generator call
                 script_name = value['call']
                 args = value.get('args', {})
                 # Recursively evaluate args (they may also contain {lua:...})
