@@ -19,7 +19,8 @@ Usage:
 from abc import abstractmethod
 import json
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Type, TYPE_CHECKING
+import time
+from typing import Any, Callable, Dict, List, Optional, Tuple, Type, TYPE_CHECKING
 import uuid
 
 import pygame
@@ -61,6 +62,7 @@ from ams.games.game_engine.config import (
     WhenCondition,
 )
 from ams.games.game_engine.renderer import GameEngineRenderer
+from ams.games.game_engine.rollback import RollbackStateManager, create_logger
 
 if TYPE_CHECKING:
     from ams.content_fs import ContentFS
@@ -74,14 +76,28 @@ class GameEngine(BaseGame):
     - YAML-based game definitions
     - Lua behavior scripting
     - Standard collision detection patterns
+    - Rollback/replay for CV latency compensation
+
+    Rollback System:
+        The engine captures state snapshots each frame, enabling rollback when
+        hits arrive with detection latency. Use process_delayed_hit() to handle
+        CV-detected hits that occurred in the past.
+
+        Hits within ROLLBACK_THRESHOLD (default 100ms) are processed immediately.
+        Older hits trigger rollback → apply hit → re-simulate to present.
+
+        Configure via __init__ kwargs:
+        - rollback_enabled: Enable/disable rollback (default: True)
+        - rollback_history: Seconds of history to keep (default: 2.0)
+        - rollback_threshold: Skip rollback for hits newer than this (default: 0.1)
 
     Subclasses must implement:
     - _get_skin(): Return rendering skin instance
-    - _handle_collision(): Game-specific collision logic
 
-    Can optionally implement:
+    Can optionally override:
     - _on_entity_destroyed(): Handle entity death
     - _spawn_initial_entities(): Create starting entities
+    - ROLLBACK_THRESHOLD: Latency threshold for immediate processing (default: 0.1s)
     """
 
     # Game definition file (override in subclass)
@@ -237,6 +253,26 @@ class GameEngine(BaseGame):
 
         # Call super init (may load levels)
         super().__init__(**kwargs)
+
+        # Initialize rollback system for CV latency compensation
+        # Can be disabled by passing rollback_enabled=False
+        self._rollback_enabled = kwargs.get('rollback_enabled', True)
+        if self._rollback_enabled:
+            self._rollback_manager = RollbackStateManager(
+                history_duration=kwargs.get('rollback_history', 2.0),
+                fps=kwargs.get('fps', 60),
+                snapshot_interval=kwargs.get('snapshot_interval', 1),
+            )
+            self._rollback_logger = create_logger(
+                session_name=kwargs.get('session_name', 'game'),
+                force=False,  # Respects AMS_LOGGING_ROLLBACK_ENABLED env var
+            )
+            # Allow overriding threshold via kwarg
+            if 'rollback_threshold' in kwargs:
+                self.ROLLBACK_THRESHOLD = kwargs['rollback_threshold']
+        else:
+            self._rollback_manager = None
+            self._rollback_logger = None
 
         # Spawn initial entities if no level loaded
         if not self._behavior_engine.entities:
@@ -1389,10 +1425,32 @@ class GameEngine(BaseGame):
         pass
 
     def update(self, dt: float) -> None:
-        """Update game state."""
+        """Update game state.
+
+        Captures state snapshot for rollback before running frame update.
+        """
         if self._internal_state != GameState.PLAYING:
             return
 
+        # Capture snapshot before update for rollback capability
+        if self._rollback_manager:
+            snapshot = self._rollback_manager.capture(self)
+            if snapshot and self._rollback_logger:
+                self._rollback_logger.log_snapshot(snapshot)
+
+        # Run the actual frame update
+        self._do_frame_update(dt)
+
+    def _do_frame_update(self, dt: float) -> None:
+        """Internal frame update logic.
+
+        This method contains the core game loop logic and is called:
+        - By update() during normal gameplay
+        - By RollbackStateManager during re-simulation
+
+        Args:
+            dt: Delta time since last frame
+        """
         # Update behavior engine (moves entities, fires callbacks)
         self._behavior_engine.update(dt)
 
@@ -1415,6 +1473,92 @@ class GameEngine(BaseGame):
         # Check win/lose conditions
         self._check_win_conditions()
         self._check_lose_conditions()
+
+    # Threshold below which we skip rollback and process hits immediately
+    ROLLBACK_THRESHOLD: float = 0.1  # 100ms default, configurable via subclass
+
+    def process_delayed_hit(
+        self,
+        x: float,
+        y: float,
+        hit_timestamp: float,
+        hit_applicator: Optional[Callable[[], None]] = None,
+    ) -> bool:
+        """Process a hit that may have arrived with latency.
+
+        If the hit is recent (within ROLLBACK_THRESHOLD), process immediately.
+        If older but within rollback window, rollback and re-simulate.
+        If too old, process at current time as fallback.
+
+        Args:
+            x: Hit x coordinate (screen pixels)
+            y: Hit y coordinate (screen pixels)
+            hit_timestamp: When the hit actually occurred (time.monotonic())
+            hit_applicator: Optional custom hit application function.
+                           If None, uses standard input mapping.
+
+        Returns:
+            True if hit was processed (via rollback or immediate),
+            False if rollback failed.
+        """
+        current_time = time.monotonic()
+        latency = current_time - hit_timestamp
+
+        # Recent hit - process immediately, no rollback needed
+        if latency <= self.ROLLBACK_THRESHOLD:
+            self._apply_input_mapping(InputEvent(
+                position=(x, y),
+                event_type='hit',
+                timestamp=hit_timestamp,
+            ))
+            return True
+
+        # No rollback manager - process immediately
+        if not self._rollback_manager:
+            self._apply_input_mapping(InputEvent(
+                position=(x, y),
+                event_type='hit',
+                timestamp=hit_timestamp,
+            ))
+            return True
+
+        # Check if we can rollback to the hit time
+        if not self._rollback_manager.can_rollback_to(hit_timestamp):
+            # Hit is too old - process at current time as fallback
+            self._apply_input_mapping(InputEvent(
+                position=(x, y),
+                event_type='hit',
+                timestamp=current_time,
+            ))
+            return True
+
+        # Create hit applicator if not provided
+        if hit_applicator is None:
+            def hit_applicator():
+                self._apply_input_mapping(InputEvent(
+                    position=(x, y),
+                    event_type='hit',
+                    timestamp=hit_timestamp,
+                ))
+
+        # Rollback and resimulate
+        result = self._rollback_manager.rollback_and_resimulate(
+            game_engine=self,
+            target_timestamp=hit_timestamp,
+            hit_applicator=hit_applicator,
+            current_timestamp=current_time,
+        )
+
+        # Log the rollback if enabled
+        if result.success and self._rollback_logger:
+            self._rollback_logger.log_rollback(
+                target_timestamp=hit_timestamp,
+                restored_frame=result.restored_frame,
+                frames_resimulated=result.frames_resimulated,
+                hit_position=(x, y),
+            )
+
+        return result.success
 
     def _check_on_update_transforms(self) -> None:
         """Check and apply on_update transforms based on conditions.
