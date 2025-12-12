@@ -68,7 +68,8 @@
     },
     "win_target_type": {
       "type": "string",
-      "description": "Entity base type that must be destroyed (for destroy_all)"
+      "description": "Entity base type that must be destroyed (for destroy_all)",
+      "x-content-type": "@ref:entity_type"
     },
     "lose_on_player_death": {
       "type": "boolean",
@@ -100,7 +101,10 @@
       "description": "Collision detection pairs",
       "items": {
         "type": "array",
-        "items": { "type": "string" },
+        "items": {
+          "type": "string",
+          "x-content-type": "@ref:entity_type"
+        },
         "minItems": 2,
         "maxItems": 2
       }
@@ -129,7 +133,8 @@
       "properties": {
         "type": {
           "type": "string",
-          "description": "Entity type for the player"
+          "description": "Entity type for the player",
+          "x-content-type": "@ref:entity_type"
         },
         "spawn": {
           "$ref": "#/$defs/point_2d",
@@ -216,7 +221,8 @@
       "properties": {
         "lua": {
           "type": "string",
-          "description": "Lua expression to evaluate"
+          "description": "Lua expression to evaluate",
+          "x-content-type": "lua"
         }
       },
       "required": ["lua"],
@@ -229,7 +235,8 @@
       "properties": {
         "call": {
           "type": "string",
-          "description": "Name of the generator to call"
+          "description": "Name of the generator to call",
+          "x-content-type": "@ref:generator"
         },
         "args": {
           "type": "object",
@@ -246,7 +253,8 @@
       "properties": {
         "lua": {
           "type": "string",
-          "description": "Lua generator code returning a table with generate(args) function"
+          "description": "Lua generator code returning a table with generate(args) function",
+          "x-content-type": "lua"
         },
         "args": {
           "type": "object",
@@ -278,7 +286,8 @@
       "oneOf": [
         {
           "type": "string",
-          "description": "Name of a Lua behavior file"
+          "description": "Name of a Lua behavior file",
+          "x-content-type": "@ref:behavior"
         },
         { "$ref": "../lua/lua_script_inline.schema.json" }
       ],
@@ -292,6 +301,7 @@
         "files": {
           "type": "object",
           "description": "Shared file references (name -> path or data URI)",
+          "x-content-type": "@ref:asset",
           "additionalProperties": {
             "type": "string"
           }
@@ -325,7 +335,8 @@
           "properties": {
             "file": {
               "type": "string",
-              "description": "File path or @reference"
+              "description": "File path or @reference",
+              "x-content-type": "@ref:asset:sound"
             },
             "data": {
               "type": "string",
@@ -342,23 +353,27 @@
       "oneOf": [
         {
           "type": "string",
-          "description": "File path, data URI, or @reference"
+          "description": "File path, data URI, or @reference",
+          "x-content-type": "@ref:asset:sound|data-uri"
         },
         {
           "type": "object",
           "properties": {
             "sprite": {
               "type": "string",
-              "description": "Inherit from another sprite definition, overriding specified fields"
+              "description": "Inherit from another sprite definition, overriding specified fields",
+              "x-content-type": "@ref:sprite"
             },
             "file": {
               "type": "string",
-              "description": "File path or @reference (e.g., @ducks_sheet)"
+              "description": "File path or @reference (e.g., @ducks_sheet)",
+              "x-content-type": "@ref:asset:image"
             },
             "data": {
               "type": "string",
               "pattern": "^data:image/",
-              "description": "Data URI (data:image/png;base64,...)"
+              "description": "Data URI (data:image/png;base64,...)",
+              "x-content-type": "data-uri"
             },
             "transparent": {
               "$ref": "#/$defs/rgb_color",
@@ -406,7 +421,8 @@
       "properties": {
         "extends": {
           "type": "string",
-          "description": "Base entity type to inherit from"
+          "description": "Base entity type to inherit from",
+          "x-content-type": "@ref:entity_type"
         },
         "width": {
           "type": "number",
@@ -424,7 +440,8 @@
         },
         "sprite": {
           "type": "string",
-          "description": "Sprite name from assets.sprites"
+          "description": "Sprite name from assets.sprites",
+          "x-content-type": "@ref:sprite"
         },
         "behaviors": {
           "type": "array",
@@ -458,7 +475,10 @@
         },
         "render_as": {
           "type": "array",
-          "items": { "type": "string" },
+          "items": {
+            "type": "string",
+            "x-content-type": "@ref:entity_type"
+          },
           "description": "Composite rendering from other entity types"
         },
         "render": {
@@ -539,11 +559,13 @@
         },
         "sprite_name": {
           "type": "string",
-          "description": "Sprite name for sprite shape (alias: sprite)"
+          "description": "Sprite name for sprite shape (alias: sprite)",
+          "x-content-type": "@ref:sprite"
         },
         "sprite": {
           "type": "string",
-          "description": "Sprite name for sprite shape (alias for sprite_name)"
+          "description": "Sprite name for sprite shape (alias for sprite_name)",
+          "x-content-type": "@ref:sprite"
         },
         "text": {
           "type": "string",
@@ -637,7 +659,8 @@
       "properties": {
         "type": {
           "type": "string",
-          "description": "Entity type to spawn"
+          "description": "Entity type to spawn",
+          "x-content-type": "@ref:entity_type"
         },
         "offset": {
           "$ref": "#/$defs/point_2d",
@@ -673,7 +696,8 @@
       "properties": {
         "type": {
           "type": "string",
-          "description": "'destroy' or entity type to transform into"
+          "description": "'destroy' or entity type to transform into",
+          "x-content-type": "@ref:entity_type"
         },
         "children": {
           "type": "array",
@@ -709,7 +733,8 @@
           "properties": {
             "action": {
               "type": "string",
-              "description": "Name of collision action Lua script"
+              "description": "Name of collision action Lua script",
+              "x-content-type": "@ref:collision_action"
             },
             "modifier": {
               "type": "object",
@@ -754,7 +779,8 @@
           "oneOf": [
             {
               "type": "string",
-              "description": "Built-in action name (e.g., 'play_sound') or Lua script name"
+              "description": "Built-in action name (e.g., 'play_sound') or Lua script name",
+              "x-content-type": "@ref:input_action"
             },
             {
               "$ref": "../lua/lua_script_inline.schema.json",
@@ -803,11 +829,13 @@
       "properties": {
         "entity_type": {
           "type": "string",
-          "description": "Entity type to transform"
+          "description": "Entity type to transform",
+          "x-content-type": "@ref:entity_type"
         },
         "type": {
           "type": "string",
-          "description": "Type to transform into"
+          "description": "Type to transform into",
+          "x-content-type": "@ref:entity_type"
         }
       },
       "additionalProperties": false
@@ -820,7 +848,8 @@
       "properties": {
         "entity_type": {
           "type": "string",
-          "description": "Entity type to watch"
+          "description": "Entity type to watch",
+          "x-content-type": "@ref:entity_type"
         },
         "event": {
           "type": "string",
@@ -848,7 +877,8 @@
           "properties": {
             "destroy": {
               "type": "string",
-              "description": "Entity type to destroy"
+              "description": "Entity type to destroy",
+              "x-content-type": "@ref:entity_type"
             },
             "clear_property": {
               "type": "string",

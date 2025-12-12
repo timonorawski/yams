@@ -46,7 +46,8 @@
     },
     "lua": {
       "type": "string",
-      "description": "The Lua source code"
+      "description": "The Lua source code",
+      "x-content-type": "lua"
     }
   },
   "additionalProperties": false,

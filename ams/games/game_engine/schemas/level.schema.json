@@ -25,7 +25,8 @@
       "properties": {
         "lua": {
           "type": "string",
-          "description": "Lua expression to evaluate"
+          "description": "Lua expression to evaluate",
+          "x-content-type": "lua"
         }
       },
       "required": ["lua"],
@@ -37,7 +38,8 @@
       "properties": {
         "call": {
           "type": "string",
-          "description": "Name of the generator to call"
+          "description": "Name of the generator to call",
+          "x-content-type": "@ref:generator"
         },
         "args": {
           "type": "object",
@@ -80,7 +82,10 @@
         },
         "levels": {
           "type": "array",
-          "items": { "type": "string" },
+          "items": {
+            "type": "string",
+            "x-content-type": "@ref:level"
+          },
           "minItems": 1,
           "description": "List of level file names (without .yaml)"
         },
@@ -229,7 +234,8 @@
         },
         "type": {
           "type": "string",
-          "description": "Entity type (overrides game default)"
+          "description": "Entity type (overrides game default)",
+          "x-content-type": "@ref:entity_type"
         },
         "width": {
           "type": "number",
@@ -267,7 +273,8 @@
         },
         "type": {
           "type": "string",
-          "description": "Entity type (overrides game default)"
+          "description": "Entity type (overrides game default)",
+          "x-content-type": "@ref:entity_type"
         },
         "behavior_config": {
           "type": "object",
@@ -288,7 +295,8 @@
       "properties": {
         "type": {
           "type": "string",
-          "description": "Entity type name"
+          "description": "Entity type name",
+          "x-content-type": "@ref:entity_type"
         },
         "x": {
           "oneOf": [
