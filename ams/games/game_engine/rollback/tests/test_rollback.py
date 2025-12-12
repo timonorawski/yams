@@ -749,49 +749,88 @@ from ams.games.game_engine.rollback import (
     load_log,
     summarize_log,
 )
+import ams.logging as ams_logging
+
+
+@pytest.fixture
+def clean_sinks():
+    """Clean up sinks before and after tests."""
+    ams_logging.close_all_sinks()
+    ams_logging._config['modules'] = {}
+    yield
+    ams_logging.close_all_sinks()
+    ams_logging._config['modules'] = {}
+
+
+@pytest.fixture
+def file_sink_for_test(tmp_path, clean_sinks):
+    """Set up a FileSink for testing."""
+    sink = ams_logging.FileSink(
+        log_dir=str(tmp_path),
+        session_name="test_session",
+    )
+    ams_logging.register_sink('rollback', sink)
+    yield sink
+    sink.close()
 
 
 class TestGameStateLogger:
     """Tests for GameStateLogger."""
 
-    def test_creates_log_file(self, tmp_path):
-        """Test logger creates a log file."""
-        logger = GameStateLogger(
-            output_dir=str(tmp_path),
-            session_name="test_session",
-        )
-
-        assert logger.log_path.exists()
-        assert logger.log_path.name == "test_session.jsonl"
-
+    def test_logs_to_sink(self, file_sink_for_test, game_engine, manager):
+        """Test logger emits records to sink."""
+        logger = GameStateLogger(session_name="test_session")
+        snapshot = manager.capture(game_engine, force=True)
+        logger.log_snapshot(snapshot)
         logger.close()
 
-    def test_writes_header(self, tmp_path):
-        """Test logger writes header as first line."""
-        with GameStateLogger(output_dir=str(tmp_path), session_name="test") as logger:
-            pass
+        # Check sink received records
+        file_sink_for_test.flush()
+        log_paths = file_sink_for_test.log_paths
+        assert 'rollback' in log_paths
 
-        records = load_log(logger.log_path)
-        assert len(records) >= 1
-        assert records[0]["type"] == "header"
-        assert records[0]["session_name"] == "test"
+    def test_writes_header(self, file_sink_for_test):
+        """Test logger writes header as first record."""
+        logger = GameStateLogger(session_name="test")
+        logger.close()
+        file_sink_for_test.close()
 
-    def test_writes_footer(self, tmp_path):
+        # Find the log file
+        log_dir = file_sink_for_test._log_dir
+        log_file = log_dir / "test_session_rollback.jsonl"
+
+        records = load_log(str(log_file))
+        # First record is sink header, second is logger header
+        headers = [r for r in records if r.get("type") == "header"]
+        assert len(headers) >= 1
+        logger_header = [h for h in headers if h.get("session_name") == "test"]
+        assert len(logger_header) == 1
+
+    def test_writes_footer(self, file_sink_for_test):
         """Test logger writes footer on close."""
-        with GameStateLogger(output_dir=str(tmp_path), session_name="test") as logger:
-            pass
+        logger = GameStateLogger(session_name="test")
+        logger.close()
+        file_sink_for_test.close()
 
-        records = load_log(logger.log_path)
-        assert records[-1]["type"] == "footer"
-        assert "total_snapshots" in records[-1]
+        log_dir = file_sink_for_test._log_dir
+        log_file = log_dir / "test_session_rollback.jsonl"
 
-    def test_log_snapshot(self, tmp_path, game_engine, manager):
+        records = load_log(str(log_file))
+        footers = [r for r in records if r.get("type") == "footer"]
+        assert len(footers) >= 1
+
+    def test_log_snapshot(self, file_sink_for_test, game_engine, manager):
         """Test logging a snapshot."""
-        with GameStateLogger(output_dir=str(tmp_path)) as logger:
-            snapshot = manager.capture(game_engine, force=True)
-            logger.log_snapshot(snapshot)
+        logger = GameStateLogger()
+        snapshot = manager.capture(game_engine, force=True)
+        logger.log_snapshot(snapshot)
+        logger.close()
+        file_sink_for_test.close()
 
-        records = load_log(logger.log_path)
+        log_dir = file_sink_for_test._log_dir
+        log_file = log_dir / "test_session_rollback.jsonl"
+
+        records = load_log(str(log_file))
         snapshots = [r for r in records if r.get("type") == "snapshot"]
 
         assert len(snapshots) == 1
@@ -799,64 +838,75 @@ class TestGameStateLogger:
         assert "elapsed_time" in snapshots[0]
         assert "score" in snapshots[0]
 
-    def test_log_interval(self, tmp_path, game_engine, manager):
+    def test_log_interval(self, file_sink_for_test, game_engine, manager):
         """Test log_interval skips snapshots."""
-        with GameStateLogger(
-            output_dir=str(tmp_path),
-            log_interval=3,  # Log every 3rd snapshot
-        ) as logger:
-            for _ in range(9):
-                snapshot = manager.capture(game_engine, force=True)
-                logger.log_snapshot(snapshot)
+        logger = GameStateLogger(log_interval=3)  # Log every 3rd snapshot
+        for _ in range(9):
+            snapshot = manager.capture(game_engine, force=True)
+            logger.log_snapshot(snapshot)
+        logger.close()
+        file_sink_for_test.close()
 
-        records = load_log(logger.log_path)
+        log_dir = file_sink_for_test._log_dir
+        log_file = log_dir / "test_session_rollback.jsonl"
+
+        records = load_log(str(log_file))
         snapshots = [r for r in records if r.get("type") == "snapshot"]
 
         # Should have logged snapshots 3, 6, 9 = 3 total
         assert len(snapshots) == 3
 
-    def test_log_entities(self, tmp_path, game_with_entities, manager):
+    def test_log_entities(self, file_sink_for_test, game_with_entities, manager):
         """Test entities are included in snapshot."""
-        with GameStateLogger(
-            output_dir=str(tmp_path),
-            include_entities=True,
-        ) as logger:
-            snapshot = manager.capture(game_with_entities, force=True)
-            logger.log_snapshot(snapshot)
+        logger = GameStateLogger(include_entities=True)
+        snapshot = manager.capture(game_with_entities, force=True)
+        logger.log_snapshot(snapshot)
+        logger.close()
+        file_sink_for_test.close()
 
-        records = load_log(logger.log_path)
+        log_dir = file_sink_for_test._log_dir
+        log_file = log_dir / "test_session_rollback.jsonl"
+
+        records = load_log(str(log_file))
         snapshots = [r for r in records if r.get("type") == "snapshot"]
 
         assert "entities" in snapshots[0]
         assert "player" in snapshots[0]["entities"]
         assert snapshots[0]["entities"]["player"]["x"] == 100.0
 
-    def test_log_without_entities(self, tmp_path, game_with_entities, manager):
+    def test_log_without_entities(self, file_sink_for_test, game_with_entities, manager):
         """Test entities can be excluded."""
-        with GameStateLogger(
-            output_dir=str(tmp_path),
-            include_entities=False,
-        ) as logger:
-            snapshot = manager.capture(game_with_entities, force=True)
-            logger.log_snapshot(snapshot)
+        logger = GameStateLogger(include_entities=False)
+        snapshot = manager.capture(game_with_entities, force=True)
+        logger.log_snapshot(snapshot)
+        logger.close()
+        file_sink_for_test.close()
 
-        records = load_log(logger.log_path)
+        log_dir = file_sink_for_test._log_dir
+        log_file = log_dir / "test_session_rollback.jsonl"
+
+        records = load_log(str(log_file))
         snapshots = [r for r in records if r.get("type") == "snapshot"]
 
         assert "entities" not in snapshots[0]
         assert "entity_count" in snapshots[0]  # Summary still present
 
-    def test_log_rollback_event(self, tmp_path):
+    def test_log_rollback_event(self, file_sink_for_test):
         """Test logging rollback events."""
-        with GameStateLogger(output_dir=str(tmp_path)) as logger:
-            logger.log_rollback(
-                target_timestamp=1000.0,
-                restored_frame=50,
-                frames_resimulated=30,
-                hit_position=(0.5, 0.5),
-            )
+        logger = GameStateLogger()
+        logger.log_rollback(
+            target_timestamp=1000.0,
+            restored_frame=50,
+            frames_resimulated=30,
+            hit_position=(0.5, 0.5),
+        )
+        logger.close()
+        file_sink_for_test.close()
 
-        records = load_log(logger.log_path)
+        log_dir = file_sink_for_test._log_dir
+        log_file = log_dir / "test_session_rollback.jsonl"
+
+        records = load_log(str(log_file))
         rollbacks = [r for r in records if r.get("type") == "rollback"]
 
         assert len(rollbacks) == 1
@@ -864,50 +914,63 @@ class TestGameStateLogger:
         assert rollbacks[0]["frames_resimulated"] == 30
         assert rollbacks[0]["hit_position"] == [0.5, 0.5]
 
-    def test_log_custom_event(self, tmp_path):
+    def test_log_custom_event(self, file_sink_for_test):
         """Test logging custom events."""
-        with GameStateLogger(output_dir=str(tmp_path)) as logger:
-            logger.log_event("hit_detected", {"x": 100, "y": 200, "entity": "brick_1"})
+        logger = GameStateLogger()
+        logger.log_event("hit_detected", {"x": 100, "y": 200, "entity": "brick_1"})
+        logger.close()
+        file_sink_for_test.close()
 
-        records = load_log(logger.log_path)
+        log_dir = file_sink_for_test._log_dir
+        log_file = log_dir / "test_session_rollback.jsonl"
+
+        records = load_log(str(log_file))
         custom = [r for r in records if r.get("type") == "hit_detected"]
 
         assert len(custom) == 1
         assert custom[0]["x"] == 100
         assert custom[0]["entity"] == "brick_1"
 
-    def test_stats(self, tmp_path, game_engine, manager):
+    def test_stats(self, file_sink_for_test, game_engine, manager):
         """Test stats property."""
-        with GameStateLogger(output_dir=str(tmp_path)) as logger:
-            for _ in range(5):
-                snapshot = manager.capture(game_engine, force=True)
-                logger.log_snapshot(snapshot)
+        logger = GameStateLogger()
+        for _ in range(5):
+            snapshot = manager.capture(game_engine, force=True)
+            logger.log_snapshot(snapshot)
 
-            stats = logger.stats
-            assert stats["total_snapshots"] == 5
-            assert stats["logged_snapshots"] == 5
+        stats = logger.stats
+        assert stats["total_snapshots"] == 5
+        assert stats["logged_snapshots"] == 5
+        logger.close()
 
 
 class TestLogAnalysis:
     """Tests for log analysis utilities."""
 
-    def test_summarize_log(self, tmp_path, game_with_entities, manager):
+    def test_summarize_log(self, file_sink_for_test, game_with_entities, manager):
         """Test log summary generation."""
-        with GameStateLogger(output_dir=str(tmp_path)) as logger:
-            # Log some snapshots
-            for i in range(10):
-                game_with_entities._behavior_engine.score = i * 10
-                snapshot = manager.capture(game_with_entities, force=True)
-                logger.log_snapshot(snapshot)
+        logger = GameStateLogger()
 
-            # Log a rollback
-            logger.log_rollback(
-                target_timestamp=1000.0,
-                restored_frame=5,
-                frames_resimulated=20,
-            )
+        # Log some snapshots
+        for i in range(10):
+            game_with_entities._behavior_engine.score = i * 10
+            snapshot = manager.capture(game_with_entities, force=True)
+            logger.log_snapshot(snapshot)
 
-        summary = summarize_log(logger.log_path)
+        # Log a rollback
+        logger.log_rollback(
+            target_timestamp=1000.0,
+            restored_frame=5,
+            frames_resimulated=20,
+        )
+
+        logger.close()
+        file_sink_for_test.close()
+
+        log_dir = file_sink_for_test._log_dir
+        log_file = log_dir / "test_session_rollback.jsonl"
+
+        summary = summarize_log(str(log_file))
 
         assert summary["logged_snapshots"] == 10
         assert summary["rollback_count"] == 1
@@ -946,41 +1009,144 @@ class TestNullLogger:
 class TestCreateLogger:
     """Tests for create_logger factory."""
 
-    def test_create_logger_disabled_by_default(self, tmp_path, monkeypatch):
+    def test_create_logger_disabled_by_default(self, clean_sinks):
         """Test create_logger returns NullLogger when not enabled."""
-        # Clear any rollback config
-        monkeypatch.delenv('AMS_LOGGING_ROLLBACK_ENABLED', raising=False)
-        # Force reload of config
-        import ams.logging as ams_logging
-        ams_logging._config['modules'] = {}
-
         logger = create_logger()
         assert isinstance(logger, NullLogger)
 
-    def test_create_logger_force_bypasses_config(self, tmp_path, monkeypatch):
+    def test_create_logger_force_bypasses_config(self, tmp_path, clean_sinks):
         """Test force=True creates logger even when disabled."""
-        monkeypatch.delenv('AMS_LOGGING_ROLLBACK_ENABLED', raising=False)
-        import ams.logging as ams_logging
-        ams_logging._config['modules'] = {}
+        # Set up a sink for the module
+        sink = ams_logging.FileSink(log_dir=str(tmp_path), session_name="test")
+        ams_logging.register_sink('rollback', sink)
 
-        logger = create_logger(output_dir=str(tmp_path), force=True)
+        logger = create_logger(force=True)
         try:
             assert isinstance(logger, GameStateLogger)
         finally:
             logger.close()
+            sink.close()
 
-    def test_create_logger_respects_interval_config(self, tmp_path, monkeypatch):
+    def test_create_logger_respects_interval_config(self, tmp_path, clean_sinks):
         """Test create_logger uses interval from config."""
-        import ams.logging as ams_logging
         ams_logging._config['modules']['rollback'] = {'enabled': True, 'interval': 5}
 
-        logger = create_logger(output_dir=str(tmp_path))
+        # Note: create_logger will create its own sink when enabled
+        logger = create_logger(session_name="test")
         try:
             assert isinstance(logger, GameStateLogger)
             assert logger.log_interval == 5
         finally:
             logger.close()
-            ams_logging._config['modules'] = {}
+            ams_logging.close_all_sinks()
+
+
+# =============================================================================
+# Sink Tests
+# =============================================================================
+
+class TestFileSink:
+    """Tests for FileSink."""
+
+    def test_creates_log_directory(self, tmp_path):
+        """Test FileSink creates log directory."""
+        log_dir = tmp_path / "logs"
+        sink = ams_logging.FileSink(log_dir=str(log_dir))
+
+        sink.emit("test_module", {"type": "test", "data": 123})
+        sink.close()
+
+        assert log_dir.exists()
+
+    def test_writes_jsonl(self, tmp_path):
+        """Test FileSink writes valid JSONL."""
+        sink = ams_logging.FileSink(log_dir=str(tmp_path), session_name="test")
+
+        sink.emit("mymodule", {"type": "event", "value": 42})
+        sink.emit("mymodule", {"type": "event", "value": 43})
+        sink.close()
+
+        log_file = tmp_path / "test_mymodule.jsonl"
+        assert log_file.exists()
+
+        records = load_log(str(log_file))
+        # Should have header, 2 events, footer
+        assert len(records) == 4
+        events = [r for r in records if r.get("type") == "event"]
+        assert len(events) == 2
+        assert events[0]["value"] == 42
+        assert events[1]["value"] == 43
+
+    def test_separate_files_per_module(self, tmp_path):
+        """Test different modules get separate files."""
+        sink = ams_logging.FileSink(log_dir=str(tmp_path), session_name="test")
+
+        sink.emit("module_a", {"type": "test"})
+        sink.emit("module_b", {"type": "test"})
+        sink.close()
+
+        assert (tmp_path / "test_module_a.jsonl").exists()
+        assert (tmp_path / "test_module_b.jsonl").exists()
+
+
+class TestNullSink:
+    """Tests for NullSink."""
+
+    def test_null_sink_is_noop(self):
+        """Test NullSink does nothing."""
+        sink = ams_logging.NullSink()
+
+        # These should all be no-ops
+        sink.emit("test", {"data": 123})
+        sink.flush()
+        sink.close()
+        # No assertions needed - just shouldn't raise
+
+
+class TestSinkRegistry:
+    """Tests for sink registry functions."""
+
+    def test_register_and_get_sink(self, tmp_path, clean_sinks):
+        """Test registering and retrieving sinks."""
+        sink = ams_logging.FileSink(log_dir=str(tmp_path))
+        ams_logging.register_sink("test_module", sink)
+
+        retrieved = ams_logging.get_sink("test_module")
+        assert retrieved is sink
+
+        sink.close()
+
+    def test_default_sink(self, tmp_path, clean_sinks):
+        """Test default sink fallback."""
+        default_sink = ams_logging.FileSink(log_dir=str(tmp_path))
+        ams_logging.set_default_sink(default_sink)
+
+        # Should get default for unknown module
+        retrieved = ams_logging.get_sink("unknown_module")
+        assert retrieved is default_sink
+
+        default_sink.close()
+
+    def test_emit_record(self, tmp_path, clean_sinks):
+        """Test emit_record dispatches to correct sink."""
+        sink = ams_logging.FileSink(log_dir=str(tmp_path), session_name="test")
+        ams_logging.register_sink("test_module", sink)
+
+        result = ams_logging.emit_record("test_module", {"type": "test", "value": 99})
+        assert result is True
+
+        sink.close()
+
+        log_file = tmp_path / "test_test_module.jsonl"
+        records = load_log(str(log_file))
+        test_records = [r for r in records if r.get("type") == "test"]
+        assert len(test_records) == 1
+        assert test_records[0]["value"] == 99
+
+    def test_emit_record_no_sink(self, clean_sinks):
+        """Test emit_record returns False when no sink available."""
+        result = ams_logging.emit_record("no_sink_module", {"data": 123})
+        assert result is False
 
 
 # =============================================================================

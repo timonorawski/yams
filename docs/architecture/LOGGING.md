@@ -1,302 +1,400 @@
 # AMS Logging Architecture
 
-Unified logging system for the Arcade Management System that works consistently across native Python and browser (WebAssembly) environments.
+The AMS logging system provides unified logging across native Python and browser (WebAssembly) environments. It consists of two complementary subsystems designed for different use cases.
 
-## Overview
+## Design Goals
 
-The AMS logging system provides:
-- **Cross-runtime support**: Same API works in native Python and browser (Emscripten/WASM)
-- **Per-module log levels**: Fine-grained control over what gets logged
-- **Lua execution tracing**: Special support for debugging Lua scripts and ams.* API calls
-- **Exception handling**: Integrated traceback logging
-- **Zero dependencies**: Uses only Python stdlib
+1. **Cross-runtime transparency**: Same API works identically in native Python and browser/WASM
+2. **Zero runtime cost when disabled**: No string formatting or I/O when logging is off
+3. **Environment-aware output routing**: Automatic selection of appropriate output (terminal, browser console, file, WebSocket)
+4. **Structured data support**: High-volume structured logging (snapshots, telemetry) alongside text messages
+5. **Minimal dependencies**: Core system uses only Python stdlib
 
-## Architecture
+## System Overview
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│                         Application Code                             │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐              │
-│  │ GameEngine   │  │  LuaBridge   │  │  ContentFS   │  ...         │
-│  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘              │
-│         │                 │                 │                        │
-│         └─────────────────┼─────────────────┘                        │
-│                           │                                          │
-│                           ▼                                          │
-│  ┌─────────────────────────────────────────────────────────────┐   │
-│  │                     ams.logging                              │   │
-│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────┐  │   │
-│  │  │ AMSLogger   │  │   Config    │  │  Output Adapters    │  │   │
-│  │  │  .debug()   │  │  - levels   │  │  - print() native   │  │   │
-│  │  │  .info()    │  │  - modules  │  │  - console.log()    │  │   │
-│  │  │  .error()   │  │  - lua_*    │  │    browser          │  │   │
-│  │  │  .lua_call()│  │             │  │                     │  │   │
-│  │  └─────────────┘  └─────────────┘  └─────────────────────┘  │   │
-│  └─────────────────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────────────┘
-                                │
-                ┌───────────────┴───────────────┐
-                ▼                               ▼
-        ┌───────────────┐               ┌───────────────┐
-        │    Native     │               │    Browser    │
-        │   Terminal    │               │    Console    │
-        │   stdout      │               │  DevTools     │
-        └───────────────┘               └───────────────┘
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                              Application Code                                │
+│  ┌────────────────┐  ┌────────────────┐  ┌────────────────────────────────┐│
+│  │  GameEngine    │  │   LuaBridge    │  │  RollbackStateManager          ││
+│  │  log.info()    │  │  log.lua_call()│  │  logger.log_snapshot()         ││
+│  └───────┬────────┘  └───────┬────────┘  └───────────────┬────────────────┘│
+│          │                   │                           │                  │
+│          │ Text Logging      │                           │ Structured       │
+│          │                   │                           │ Records          │
+│          ▼                   ▼                           ▼                  │
+│  ┌─────────────────────────────────────┐  ┌────────────────────────────────┐│
+│  │         AMSLogger (Text)            │  │     Sink System (Structured)   ││
+│  │  • Per-module log levels            │  │  • emit_record() dispatch      ││
+│  │  • Lazy message formatting          │  │  • Per-module sink registry    ││
+│  │  • Lua execution tracing            │  │  • Environment-aware routing   ││
+│  │  • Exception/traceback support      │  │  • JSONL serialization         ││
+│  └───────────────┬─────────────────────┘  └───────────────┬────────────────┘│
+│                  │                                        │                  │
+└──────────────────┼────────────────────────────────────────┼──────────────────┘
+                   │                                        │
+       ┌───────────┴───────────┐            ┌───────────────┼───────────────┐
+       ▼                       ▼            ▼               ▼               ▼
+┌─────────────┐        ┌─────────────┐ ┌─────────┐  ┌─────────────┐ ┌───────────┐
+│   Native    │        │   Browser   │ │ FileSink│  │WebSocketSink│ │ NullSink  │
+│   stdout    │        │console.log()│ │  JSONL  │  │  Streaming  │ │  No-op    │
+└─────────────┘        └─────────────┘ └─────────┘  └─────────────┘ └───────────┘
 ```
 
-## Usage
+## Two Logging Subsystems
 
-### Basic Usage
+### 1. Text Logging (AMSLogger)
+
+**Purpose**: Human-readable debug messages, warnings, errors, and Lua execution tracing.
+
+**Use when**:
+- Debugging application flow
+- Logging errors and exceptions
+- Tracing Lua script execution
+- Operational status messages
+
+**Output**: Formatted text to stdout (native) or browser console (WASM)
 
 ```python
 from ams.logging import get_logger
 
 log = get_logger('game_engine')
+log.debug("Processing frame %d", frame)
+log.error("Entity %s not found", entity_id)
+log.lua_call("ams.get_x", entity_id)
+```
 
-log.debug("Processing frame %d", frame_count)
-log.info("Game started: %s", game_name)
-log.warning("Low FPS detected: %d", fps)
-log.error("Failed to load level: %s", level_name)
+### 2. Structured Record Logging (Sink System)
+
+**Purpose**: High-volume structured data for analysis, replay, and debugging.
+
+**Use when**:
+- Logging game state snapshots
+- Recording rollback events
+- Capturing telemetry data
+- Any data that will be programmatically analyzed
+
+**Output**: JSONL to files (native) or WebSocket stream (browser)
+
+```python
+from ams.logging import emit_record
+
+emit_record('rollback', {
+    'type': 'snapshot',
+    'frame_number': 100,
+    'entities': {...},
+})
+```
+
+## Text Logging Architecture
+
+### AMSLogger
+
+Each module gets a cached logger instance via `get_logger()`:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                         AMSLogger                                │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────────┐ │
+│  │   Module    │  │  Effective  │  │    Output Adapter       │ │
+│  │   Name      │  │   Level     │  │  (auto-detected)        │ │
+│  └─────────────┘  └─────────────┘  └─────────────────────────┘ │
+│                                                                  │
+│  Methods:                                                        │
+│  • trace/debug/info/warning/error/critical - Standard levels    │
+│  • exception() - Error + traceback                              │
+│  • lua_call/lua_result/lua_script - Lua tracing                 │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 ### Log Levels
 
-| Level | Value | Use Case |
-|-------|-------|----------|
-| TRACE | 5 | Very verbose, per-frame data |
+| Level | Value | Purpose |
+|-------|-------|---------|
+| TRACE | 5 | Per-frame data, very verbose |
 | DEBUG | 10 | Development debugging |
-| INFO | 20 | Normal operational messages |
+| INFO | 20 | Normal operations |
 | WARNING | 30 | Potential issues |
-| ERROR | 40 | Errors that don't crash |
+| ERROR | 40 | Recoverable errors |
 | CRITICAL | 50 | Fatal errors |
 | OFF | 100 | Disable logging |
 
-### Exception Logging
+### Output Format
 
-```python
-try:
-    risky_operation()
-except Exception as e:
-    log.exception("Operation failed")  # Includes traceback
-    # or
-    log.error("Operation failed: %s", e)
-    log.log_traceback(e)  # Explicit traceback
+```
+[module_name] LEVEL: message
+[game_engine] INFO: Game started
+[lua_bridge] LUA→: ams.get_x("entity_123")
+[lua_bridge] LUA←: ams.get_x = 150.5
 ```
 
-### Lua Execution Tracing
+### Configuration Hierarchy
 
-Special methods for debugging Lua script execution:
-
-```python
-# Log ams.* API calls from Lua
-log.lua_call("ams.get_x", entity_id)  # Logs: [module] LUA→: ams.get_x("entity_123")
-log.lua_result("ams.get_x", 150.5)    # Logs: [module] LUA←: ams.get_x = 150.5
-
-# Log script execution
-log.lua_script("behavior", "paddle", "on_update")  # Logs: [module] LUA: on_update behavior/paddle
 ```
-
-These only log when `lua_calls` or `lua_scripts` tracing is enabled.
-
-## Configuration
+Environment Variables          Programmatic Config
+       │                              │
+       ▼                              ▼
+┌──────────────────────────────────────────────┐
+│              Global _config Dict              │
+│  ┌────────────────┐  ┌────────────────────┐ │
+│  │ default_level  │  │  module_levels{}   │ │
+│  │    (INFO)      │  │  game_engine: DEBUG│ │
+│  └────────────────┘  └────────────────────┘ │
+│  ┌────────────────┐  ┌────────────────────┐ │
+│  │  lua_calls     │  │  lua_scripts       │ │
+│  │   (False)      │  │    (False)         │ │
+│  └────────────────┘  └────────────────────┘ │
+└──────────────────────────────────────────────┘
+                    │
+                    ▼
+            AMSLogger.level property
+            (checks module_levels first,
+             falls back to default_level)
+```
 
 ### Environment Variables
 
+| Variable | Purpose | Example |
+|----------|---------|---------|
+| `AMS_LOG_LEVEL` | Global default level | `DEBUG` |
+| `AMS_LOG_<MODULE>` | Per-module level | `AMS_LOG_GAME_ENGINE=DEBUG` |
+| `AMS_LOG_LUA_CALLS` | Enable Lua API tracing | `1` or `true` |
+| `AMS_LOG_LUA_SCRIPTS` | Enable script execution logging | `1` or `true` |
+| `AMS_LOG_DIR` | Override log directory | `./debug_logs` |
+
+## Structured Logging Architecture
+
+### Sink System
+
+The sink system routes structured records to environment-appropriate destinations:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                        Sink Registry                             │
+│                                                                  │
+│  _sinks: Dict[str, LogSink]     _default_sink: Optional[LogSink]│
+│  ┌─────────────────────────┐    ┌─────────────────────────────┐ │
+│  │ 'rollback' → FileSink   │    │     (fallback for unknown   │ │
+│  │ 'telemetry' → FileSink  │    │      modules)               │ │
+│  └─────────────────────────┘    └─────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────────┘
+                           │
+                           ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                      emit_record(module, record)                 │
+│  1. Look up sink in _sinks[module]                              │
+│  2. Fall back to _default_sink                                  │
+│  3. Call sink.emit(module, record)                              │
+│  4. Return True if emitted, False if no sink                    │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### LogSink Abstract Base Class
+
+```python
+class LogSink(ABC):
+    @abstractmethod
+    def emit(self, module: str, record: Dict[str, Any]) -> None:
+        """Write a structured record."""
+
+    @abstractmethod
+    def flush(self) -> None:
+        """Flush buffered records."""
+
+    @abstractmethod
+    def close(self) -> None:
+        """Close and release resources."""
+```
+
+### Sink Implementations
+
+| Sink | Environment | Behavior |
+|------|-------------|----------|
+| **FileSink** | Native Python | Writes JSONL files, one per module. Lazy directory/file creation. Adds header/footer records. |
+| **WebSocketSink** | Browser/WASM | Streams to WebSocket server. Buffers if disconnected. Auto-reconnect. |
+| **NullSink** | Any | No-op. Used when module logging is disabled. |
+
+### FileSink Architecture
+
+```
+FileSink
+  │
+  ├── _log_dir: Path (lazy-initialized)
+  ├── _session_name: str
+  ├── _files: Dict[module, file_handle]
+  │
+  └── emit(module, record)
+        │
+        ├── Ensure directory exists
+        ├── Get/create file for module
+        ├── Add wall_time if missing
+        └── Write JSON + newline
+```
+
+**File naming**: `{session_name}_{module}.jsonl`
+
+**Record format (JSONL)**:
+```jsonl
+{"type": "header", "module": "rollback", "session_name": "debug", "start_time": 1702368000.0}
+{"type": "snapshot", "wall_time": 1702368001.0, "frame_number": 0, "score": 0}
+{"type": "snapshot", "wall_time": 1702368002.0, "frame_number": 60, "score": 100}
+{"type": "footer", "module": "rollback", "end_time": 1702368120.0}
+```
+
+### Module Configuration
+
+Modules can have hierarchical settings via environment variables:
+
 ```bash
-# Global default level
-export AMS_LOG_LEVEL=DEBUG
-
-# Per-module levels (module name after AMS_LOG_)
-export AMS_LOG_GAME_ENGINE=DEBUG
-export AMS_LOG_LUA_BRIDGE=INFO
-export AMS_LOG_WASMOON=WARNING
-
-# Lua tracing
-export AMS_LOG_LUA_CALLS=1      # Trace ams.* API calls
-export AMS_LOG_LUA_SCRIPTS=1    # Log script execution
+AMS_LOGGING_ROLLBACK_ENABLED=true
+AMS_LOGGING_ROLLBACK_INTERVAL=5
 ```
 
-### Programmatic Configuration
-
+Parsed into:
 ```python
-from ams.logging import configure_logging
-
-# Simple: set global level
-configure_logging(level='DEBUG')
-
-# Advanced: per-module levels + Lua tracing
-configure_logging(
-    level='INFO',
-    modules={
-        'game_engine': 'DEBUG',
-        'lua_bridge': 'DEBUG',
-        'content_fs': 'WARNING',
-    },
-    lua_calls=True,
-    lua_scripts=True,
-)
+_config['modules']['rollback'] = {
+    'enabled': True,
+    'interval': 5
+}
 ```
 
-### Quick Helpers
-
+Retrieved via:
 ```python
-from ams.logging import enable_all_logging, disable_logging
-
-# Enable everything for debugging
-enable_all_logging()
-
-# Disable all logging (production)
-disable_logging()
+from ams.logging import get_module_config
+config = get_module_config('rollback')
+# {'enabled': True, 'interval': 5}
 ```
 
-## Cross-Runtime Support
-
-### Native Python
-
-In native Python, logs go to `stdout` via `print()`:
-
-```
-[game_engine] INFO: Game started: BrickBreaker
-[lua_bridge] DEBUG: Loading behavior/paddle
-[game_engine] LUA→: ams.get_x("paddle_001")
-```
-
-### Browser (Emscripten/WASM)
-
-In the browser, logs go to both Python's stdout (visible in terminal if running pygbag locally) AND the browser's `console.log()`:
-
-```javascript
-// Browser DevTools Console:
-[game_engine] INFO: Game started: BrickBreaker
-[lua_bridge] DEBUG: Loading behavior/paddle
-```
-
-The runtime detection is automatic:
+### Environment Detection
 
 ```python
 def _is_browser() -> bool:
     return sys.platform == 'emscripten'
+
+def create_sink_for_environment(module, session_name=None) -> LogSink:
+    config = get_module_config(module)
+    if not config.get('enabled', False):
+        return NullSink()
+
+    if _is_browser():
+        return WebSocketSink(url=config.get('websocket_url', 'ws://localhost:8765'))
+    else:
+        return FileSink(session_name=session_name)
 ```
 
-## Module Naming Conventions
+## Cross-Runtime Behavior
 
-| Module | Logger Name | Description |
-|--------|-------------|-------------|
-| GameEngine | `game_engine` | Core game loop, entity management |
-| LuaEngine (native) | `lua_engine` | Native lupa-based Lua execution |
-| LuaBridge (browser) | `lua_bridge` | Browser WASMOON bridge |
-| WASMOON JS | `wasmoon` | JavaScript-side Lua execution |
-| ContentFS | `content_fs` | Virtual filesystem |
-| InputAdapter | `input_adapter` | Input event handling |
-| GameRuntime | `game_runtime` | Browser game loop wrapper |
+### Native Python
 
-## Integration Examples
+| Subsystem | Output |
+|-----------|--------|
+| Text logging | `print()` to stdout |
+| Structured logging | JSONL files in log directory |
 
-### Game Engine Integration
+### Browser (Emscripten/WASM)
+
+| Subsystem | Output |
+|-----------|--------|
+| Text logging | `print()` + `console.log()` |
+| Structured logging | WebSocket stream to dev server |
+
+### Log Directory Resolution
+
+Priority order:
+1. `AMS_LOG_DIR` environment variable
+2. Programmatic `_config['log_dir']`
+3. Platform default:
+   - macOS: `~/Library/Application Support/AMS/logs`
+   - Windows: `%APPDATA%/AMS/logs`
+   - Linux: `~/.local/share/ams/logs`
+
+## Performance Characteristics
+
+### Text Logging
+
+| Operation | Cost |
+|-----------|------|
+| Level check | O(1) dict lookup |
+| Disabled message | Zero cost (no formatting) |
+| Logger lookup | O(1) with LRU cache |
+| Message formatting | Lazy (only if will be logged) |
+
+### Structured Logging
+
+| Operation | Cost |
+|-----------|------|
+| No sink registered | O(1) dict lookup, returns False |
+| NullSink | O(1) no-op |
+| FileSink emit | O(n) JSON serialization + file write |
+| WebSocketSink emit | O(n) JSON serialization + network I/O (or buffer) |
+
+## Extension Points
+
+### Adding a New Sink Type
+
+1. Subclass `LogSink`
+2. Implement `emit()`, `flush()`, `close()`
+3. Register via `register_sink(module, sink)`
 
 ```python
-# ams/games/game_engine/engine.py
-from ams.logging import get_logger
+class CloudSink(LogSink):
+    def __init__(self, endpoint: str):
+        self._endpoint = endpoint
+        self._batch = []
 
-log = get_logger('game_engine')
+    def emit(self, module: str, record: Dict[str, Any]) -> None:
+        self._batch.append({'module': module, **record})
+        if len(self._batch) >= 100:
+            self._flush_batch()
 
-class GameEngine:
-    def update(self, dt: float) -> None:
-        log.trace("update(dt=%f)", dt)
+    def flush(self) -> None:
+        self._flush_batch()
 
-        for entity in self.entities:
-            try:
-                self._update_entity(entity, dt)
-            except Exception as e:
-                log.exception("Failed to update entity %s", entity.id)
+    def close(self) -> None:
+        self._flush_batch()
 ```
 
-### Lua Bridge Integration
+### Adding Module-Specific Configuration
 
-```python
-# games/browser/lua_bridge.py
-from ams.logging import get_logger
+1. Set via environment variable: `AMS_LOGGING_<MODULE>_<KEY>=value`
+2. Retrieve via `get_module_config(module)`
 
-log = get_logger('lua_bridge')
+## File Reference
 
-class LuaEngineBrowser:
-    def load_subroutine(self, sub_type: str, name: str, path: str) -> bool:
-        log.lua_script(sub_type, name, "load")
+| File | Purpose |
+|------|---------|
+| `ams/logging.py` | Core logging module (AMSLogger + Sink system) |
+| `ams/games/game_engine/rollback/logger.py` | GameStateLogger using sink system |
+| `games/browser/log_server.py` | WebSocket server for browser log streaming |
+| `docs/architecture/LOGGING.md` | This document |
+| `docs/guides/LOGGING_GUIDE.md` | Developer guide with usage examples |
 
-        try:
-            code = self._content_fs.readtext(path)
-            self._send_to_js('lua_load_subroutine', {...})
-            log.debug("Loaded %s/%s", sub_type, name)
-            return True
-        except Exception as e:
-            log.exception("Failed to load %s/%s", sub_type, name)
-            return False
-```
+## Design Decisions
 
-### JavaScript (WASMOON) Integration
+### Why Two Subsystems?
 
-For JavaScript-side logging, use a similar pattern:
+Text logging and structured logging have different requirements:
 
-```javascript
-// wasmoon_bridge.js
-const LOG_LEVEL = {
-    TRACE: 5, DEBUG: 10, INFO: 20, WARNING: 30, ERROR: 40
-};
+| Aspect | Text Logging | Structured Logging |
+|--------|--------------|-------------------|
+| Volume | Low-medium | Potentially very high |
+| Format | Human-readable | Machine-parseable |
+| Filtering | By log level | By module enablement |
+| Output | Console/terminal | Files/streams |
+| Analysis | Read by humans | Processed by tools |
 
-let currentLogLevel = LOG_LEVEL.INFO;
+Combining them would compromise both.
 
-function log(level, module, msg, ...args) {
-    if (level < currentLogLevel) return;
-    const levelName = Object.keys(LOG_LEVEL).find(k => LOG_LEVEL[k] === level);
-    console.log(`[${module}] ${levelName}: ${msg}`, ...args);
-}
+### Why Sink Registry Instead of Direct File Handles?
 
-// Usage
-log(LOG_LEVEL.DEBUG, 'wasmoon', 'Executing behavior/%s.on_update', behaviorName);
-```
+1. **Environment transparency**: Code doesn't know if it's writing to file or WebSocket
+2. **Testability**: Can inject NullSink or mock sink in tests
+3. **Flexibility**: Can add new sink types without changing application code
+4. **Resource management**: Centralized cleanup via `close_all_sinks()`
 
-## Output Format
+### Why JSONL Instead of JSON Arrays?
 
-All log messages follow a consistent format:
-
-```
-[module_name] LEVEL: message
-```
-
-For Lua tracing:
-```
-[module_name] LUA→: function_name(args)     # Call into Lua
-[module_name] LUA←: function_name = result  # Return from Lua
-[module_name] LUA: action type/name         # Script execution
-```
-
-For tracebacks:
-```
-[module_name] ERROR: Operation failed
-[module_name] TRACE: Traceback (most recent call last):
-[module_name] TRACE:   File "engine.py", line 123, in update
-[module_name] TRACE:     entity.process()
-[module_name] TRACE: ValueError: Invalid state
-```
-
-## Performance Considerations
-
-1. **Level checking is fast**: `if level >= self.level` is O(1)
-2. **Message formatting is lazy**: String formatting only happens if the message will be logged
-3. **Logger instances are cached**: `get_logger()` uses `@lru_cache`
-4. **No I/O overhead when disabled**: Setting level to OFF skips all processing
-
-## Files
-
-| File | Description |
-|------|-------------|
-| `ams/logging.py` | Core logging module |
-| `docs/architecture/LOGGING.md` | This documentation |
-
-## Future Enhancements
-
-- [ ] Log to file in addition to console
-- [ ] Structured JSON logging for log aggregation
-- [ ] Log sampling for high-frequency messages
-- [ ] Remote logging endpoint for browser builds
-- [ ] Log viewer UI in web controller
+1. **Streaming**: Can append records without loading entire file
+2. **Crash resilience**: Partial files are still parseable
+3. **Memory efficiency**: Process one record at a time
+4. **Tool compatibility**: Works with `jq`, `grep`, streaming parsers

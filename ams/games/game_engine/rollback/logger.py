@@ -1,8 +1,10 @@
 """
-Game State Logger - Write snapshots to disk for debugging.
+Game State Logger - Log snapshots for debugging via central sink system.
 
-Serializes GameSnapshots to JSONL files for post-mortem analysis,
-replay debugging, and understanding rollback behavior.
+Serializes GameSnapshots for post-mortem analysis, replay debugging, and
+understanding rollback behavior. Output is routed through ams.logging sinks:
+- Native Python: FileSink writes JSONL to disk
+- Browser/WASM: WebSocketSink streams to dev server
 
 DISABLED BY DEFAULT - Enable via environment variable or programmatic config.
 
@@ -16,7 +18,6 @@ Example .env:
     AMS_LOGGING_ROLLBACK_INTERVAL=1
 """
 
-import json
 import time
 from pathlib import Path
 from typing import Any, Dict, Optional, TYPE_CHECKING, Union
@@ -26,64 +27,49 @@ from .snapshot import GameSnapshot, EntitySnapshot
 if TYPE_CHECKING:
     from .manager import RollbackStateManager
 
+# Module name for sink registry
+ROLLBACK_MODULE = 'rollback'
+
 
 def _get_rollback_config() -> Dict[str, Any]:
     """Get rollback module config from central logging system."""
     from ams.logging import get_module_config
-    return get_module_config('rollback')
-
-
-def _get_log_dir() -> Path:
-    """Get log directory from central logging system."""
-    from ams.logging import get_log_dir
-    return Path(get_log_dir())
+    return get_module_config(ROLLBACK_MODULE)
 
 
 class GameStateLogger:
     """
-    Logs game state snapshots to disk for debugging.
+    Logs game state snapshots via the central ams.logging sink system.
 
-    Writes snapshots as JSON Lines (one JSON object per line) for easy
-    streaming and analysis. Each line is a complete snapshot that can
-    be loaded independently.
+    Records are emitted through emit_record() which routes to the appropriate
+    sink for the environment (FileSink for native, WebSocketSink for browser).
 
     DISABLED BY DEFAULT. Use create_logger() factory which respects
-    AMS_LOG_SNAPSHOTS environment variable.
+    AMS_LOGGING_ROLLBACK_ENABLED environment variable.
 
     Args:
-        output_dir: Directory to write log files (default: from env/platform)
         session_name: Optional name for this session (default: timestamp)
         log_interval: Only log every N snapshots (default: 1 = every snapshot)
         include_entities: Whether to include full entity data (default: True)
 
     Example:
-        # Preferred: Use factory (returns None if disabled)
+        # Preferred: Use factory (respects config)
         logger = create_logger(session_name="debug_run")
-        if logger:
-            snapshot = rollback_manager.capture(game_engine)
-            logger.log_snapshot(snapshot)
-            logger.close()
+        snapshot = rollback_manager.capture(game_engine)
+        logger.log_snapshot(snapshot)
+        logger.close()
 
         # Or with context manager:
         with create_logger() as logger:
-            if logger:
-                logger.log_snapshot(snapshot)
+            logger.log_snapshot(snapshot)
     """
 
     def __init__(
         self,
-        output_dir: Optional[str] = None,
         session_name: Optional[str] = None,
         log_interval: int = 1,
         include_entities: bool = True,
     ):
-        # Use provided dir, or fall back to central logging config
-        if output_dir is not None:
-            self.output_dir = Path(output_dir)
-        else:
-            self.output_dir = _get_log_dir()
-        self.output_dir.mkdir(parents=True, exist_ok=True)
-
         # Generate session name from timestamp if not provided
         if session_name is None:
             session_name = time.strftime("%Y%m%d_%H%M%S")
@@ -92,30 +78,27 @@ class GameStateLogger:
         self.log_interval = log_interval
         self.include_entities = include_entities
 
-        # Create log file
-        self._log_path = self.output_dir / f"{session_name}.jsonl"
-        self._file = open(self._log_path, 'w')
         self._snapshot_count = 0
         self._logged_count = 0
+        self._closed = False
 
-        # Write header as first line
-        self._write_header()
-
-    def _write_header(self) -> None:
-        """Write session metadata as first line."""
-        header = {
+        # Emit header record
+        self._emit({
             "type": "header",
             "session_name": self.session_name,
             "start_time": time.time(),
             "start_time_iso": time.strftime("%Y-%m-%dT%H:%M:%S"),
             "log_interval": self.log_interval,
             "include_entities": self.include_entities,
-        }
-        self._file.write(json.dumps(header) + "\n")
-        self._file.flush()
+        })
+
+    def _emit(self, record: Dict[str, Any]) -> bool:
+        """Emit a record through the central logging system."""
+        from ams.logging import emit_record
+        return emit_record(ROLLBACK_MODULE, record)
 
     def log_snapshot(self, snapshot: GameSnapshot) -> bool:
-        """Log a snapshot to disk.
+        """Log a snapshot.
 
         Args:
             snapshot: The game snapshot to log
@@ -133,7 +116,7 @@ class GameStateLogger:
         record["type"] = "snapshot"
         record["log_index"] = self._logged_count
 
-        self._file.write(json.dumps(record) + "\n")
+        self._emit(record)
         self._logged_count += 1
 
         return True
@@ -153,7 +136,7 @@ class GameStateLogger:
             frames_resimulated: Number of frames re-simulated
             hit_position: Optional (x, y) of the hit that triggered rollback
         """
-        record = {
+        self._emit({
             "type": "rollback",
             "wall_time": time.time(),
             "target_timestamp": target_timestamp,
@@ -161,8 +144,7 @@ class GameStateLogger:
             "frames_resimulated": frames_resimulated,
             "hit_position": hit_position,
             "log_index": self._logged_count,
-        }
-        self._file.write(json.dumps(record) + "\n")
+        })
         self._logged_count += 1
 
     def log_event(self, event_type: str, data: Dict[str, Any]) -> None:
@@ -172,13 +154,12 @@ class GameStateLogger:
             event_type: Type identifier for the event
             data: Event data to log
         """
-        record = {
+        self._emit({
             "type": event_type,
             "wall_time": time.time(),
             "log_index": self._logged_count,
             **data,
-        }
-        self._file.write(json.dumps(record) + "\n")
+        })
         self._logged_count += 1
 
     def _snapshot_to_dict(self, snapshot: GameSnapshot) -> Dict[str, Any]:
@@ -236,34 +217,48 @@ class GameStateLogger:
         }
 
     def flush(self) -> None:
-        """Flush buffered data to disk."""
-        self._file.flush()
+        """Flush buffered data."""
+        from ams.logging import get_sink
+        sink = get_sink(ROLLBACK_MODULE)
+        if sink:
+            sink.flush()
 
     def close(self) -> None:
-        """Close the log file and write footer."""
-        footer = {
+        """Close the logger and write footer."""
+        if self._closed:
+            return
+
+        self._emit({
             "type": "footer",
             "end_time": time.time(),
             "end_time_iso": time.strftime("%Y-%m-%dT%H:%M:%S"),
             "total_snapshots": self._snapshot_count,
             "logged_snapshots": self._logged_count,
-        }
-        self._file.write(json.dumps(footer) + "\n")
-        self._file.close()
+        })
+
+        # Flush the sink but don't close it (other loggers may share it)
+        self.flush()
+        self._closed = True
 
     @property
-    def log_path(self) -> Path:
-        """Path to the current log file."""
-        return self._log_path
+    def log_path(self) -> Optional[Path]:
+        """Path to the current log file (if using FileSink)."""
+        from ams.logging import get_sink, FileSink
+        sink = get_sink(ROLLBACK_MODULE)
+        if isinstance(sink, FileSink):
+            paths = sink.log_paths
+            return paths.get(ROLLBACK_MODULE)
+        return None
 
     @property
     def stats(self) -> Dict[str, Any]:
         """Get logging statistics."""
         return {
-            "log_path": str(self._log_path),
+            "session_name": self.session_name,
             "total_snapshots": self._snapshot_count,
             "logged_snapshots": self._logged_count,
             "log_interval": self.log_interval,
+            "log_path": str(self.log_path) if self.log_path else None,
         }
 
     def __enter__(self) -> 'GameStateLogger':
@@ -271,6 +266,101 @@ class GameStateLogger:
 
     def __exit__(self, exc_type, exc_val, exc_tb) -> None:
         self.close()
+
+
+class NullLogger:
+    """No-op logger when logging is disabled.
+
+    Provides the same interface as GameStateLogger but does nothing.
+    Allows code to call logger methods without checking if logger is None.
+    """
+
+    def log_snapshot(self, snapshot: GameSnapshot) -> bool:
+        return False
+
+    def log_rollback(self, *args, **kwargs) -> None:
+        pass
+
+    def log_event(self, *args, **kwargs) -> None:
+        pass
+
+    def flush(self) -> None:
+        pass
+
+    def close(self) -> None:
+        pass
+
+    @property
+    def log_path(self) -> Optional[Path]:
+        return None
+
+    @property
+    def stats(self) -> Dict[str, Any]:
+        return {"enabled": False}
+
+    def __enter__(self) -> 'NullLogger':
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+        pass
+
+
+def create_logger(
+    session_name: Optional[str] = None,
+    log_interval: Optional[int] = None,
+    include_entities: bool = True,
+    force: bool = False,
+) -> Union['GameStateLogger', 'NullLogger']:
+    """Factory to create a logger, respecting central logging config.
+
+    Returns a real GameStateLogger if logging is enabled, otherwise
+    returns a NullLogger that does nothing. Automatically sets up the
+    appropriate sink for the environment.
+
+    Configuration via env vars:
+        AMS_LOGGING_ROLLBACK_ENABLED=true
+        AMS_LOGGING_ROLLBACK_INTERVAL=5
+
+    Args:
+        session_name: Optional name for this session
+        log_interval: Log every N snapshots (default from config, or 1)
+        include_entities: Include full entity data
+        force: Create real logger even if not enabled in config
+
+    Returns:
+        GameStateLogger if enabled, NullLogger if disabled
+
+    Example:
+        # In .env:
+        # AMS_LOGGING_ROLLBACK_ENABLED=true
+
+        logger = create_logger(session_name="debug")
+        logger.log_snapshot(snapshot)  # Works whether enabled or not
+        logger.close()
+    """
+    config = _get_rollback_config()
+    enabled = config.get('enabled', False)
+
+    if force or enabled:
+        # Ensure sink is registered for rollback module
+        from ams.logging import (
+            get_sink, register_sink, create_sink_for_environment
+        )
+        if get_sink(ROLLBACK_MODULE) is None:
+            sink = create_sink_for_environment(ROLLBACK_MODULE, session_name)
+            register_sink(ROLLBACK_MODULE, sink)
+
+        # Get interval from config if not explicitly provided
+        if log_interval is None:
+            log_interval = config.get('interval', 1)
+
+        return GameStateLogger(
+            session_name=session_name,
+            log_interval=log_interval,
+            include_entities=include_entities,
+        )
+    else:
+        return NullLogger()
 
 
 def load_log(log_path: str) -> list:
@@ -282,6 +372,7 @@ def load_log(log_path: str) -> list:
     Returns:
         List of parsed JSON records
     """
+    import json
     records = []
     with open(log_path, 'r') as f:
         for line in f:
@@ -332,92 +423,3 @@ def summarize_log(log_path: str) -> Dict[str, Any]:
         )
 
     return summary
-
-
-class NullLogger:
-    """No-op logger when logging is disabled.
-
-    Provides the same interface as GameStateLogger but does nothing.
-    Allows code to call logger methods without checking if logger is None.
-    """
-
-    def log_snapshot(self, snapshot: GameSnapshot) -> bool:
-        return False
-
-    def log_rollback(self, *args, **kwargs) -> None:
-        pass
-
-    def log_event(self, *args, **kwargs) -> None:
-        pass
-
-    def flush(self) -> None:
-        pass
-
-    def close(self) -> None:
-        pass
-
-    @property
-    def log_path(self) -> Optional[Path]:
-        return None
-
-    @property
-    def stats(self) -> Dict[str, Any]:
-        return {"enabled": False}
-
-    def __enter__(self) -> 'NullLogger':
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
-        pass
-
-
-def create_logger(
-    session_name: Optional[str] = None,
-    output_dir: Optional[str] = None,
-    log_interval: Optional[int] = None,
-    include_entities: bool = True,
-    force: bool = False,
-) -> Union['GameStateLogger', 'NullLogger']:
-    """Factory to create a logger, respecting central logging config.
-
-    Returns a real GameStateLogger if logging is enabled, otherwise
-    returns a NullLogger that does nothing.
-
-    Configuration via env vars:
-        AMS_LOGGING_ROLLBACK_ENABLED=true
-        AMS_LOGGING_ROLLBACK_INTERVAL=5
-
-    Args:
-        session_name: Optional name for this session
-        output_dir: Override log directory
-        log_interval: Log every N snapshots (default from config, or 1)
-        include_entities: Include full entity data
-        force: Create real logger even if not enabled in config
-
-    Returns:
-        GameStateLogger if enabled, NullLogger if disabled
-
-    Example:
-        # In .env:
-        # AMS_LOGGING_ROLLBACK_ENABLED=true
-
-        logger = create_logger(session_name="debug")
-        logger.log_snapshot(snapshot)  # Works whether enabled or not
-        logger.close()
-    """
-    config = _get_rollback_config()
-    enabled = config.get('enabled', False)
-
-    if force or enabled:
-        # Get interval from config if not explicitly provided
-        if log_interval is None:
-            log_interval = config.get('interval', 1)
-
-        return GameStateLogger(
-            output_dir=output_dir,
-            session_name=session_name,
-            log_interval=log_interval,
-            include_entities=include_entities,
-        )
-    else:
-        return NullLogger()

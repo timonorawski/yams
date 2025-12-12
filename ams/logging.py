@@ -4,6 +4,12 @@ AMS Unified Logging System
 Provides consistent logging across native Python and browser (WASM) environments.
 Supports per-module log levels and special tracing for Lua execution.
 
+Structured Record Logging:
+    The system supports structured log records that can be routed to different
+    sinks depending on environment:
+    - Native Python: FileSink writes JSONL to disk
+    - Browser/WASM: WebSocketSink streams to dev server
+
 Usage:
     from ams.logging import get_logger
 
@@ -11,6 +17,10 @@ Usage:
     log.debug("Processing entity")
     log.info("Game started")
     log.lua_call("ams.get_x", entity_id)  # Special Lua tracing
+
+    # Structured record logging (for rollback snapshots, etc.)
+    from ams.logging import emit_record
+    emit_record('rollback', {'type': 'snapshot', 'frame': 100, ...})
 
 Configuration:
     Environment variables:
@@ -20,15 +30,23 @@ Configuration:
         AMS_LOG_LUA_CALLS=1           # Enable Lua API call tracing
         AMS_LOG_LUA_SCRIPTS=1         # Log script execution
 
+        # Module-specific structured logging
+        AMS_LOGGING_ROLLBACK_ENABLED=true
+        AMS_LOGGING_ROLLBACK_INTERVAL=5
+
     Or programmatically:
         from ams.logging import configure_logging
         configure_logging(level='DEBUG', modules={'lua_bridge': 'INFO'})
 """
 
+import json
 import os
 import sys
+import time
+from abc import ABC, abstractmethod
 from enum import IntEnum
-from typing import Any, Dict, Optional
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 from functools import lru_cache
 
 
@@ -42,6 +60,326 @@ class LogLevel(IntEnum):
     CRITICAL = 50
     OFF = 100      # Disable logging
 
+
+# =============================================================================
+# Sink-Based Structured Logging
+# =============================================================================
+
+class LogSink(ABC):
+    """
+    Abstract base class for log record sinks.
+
+    Sinks receive structured log records and write them to their destination.
+    Different sinks handle different environments (file, websocket, etc.).
+    """
+
+    @abstractmethod
+    def emit(self, module: str, record: Dict[str, Any]) -> None:
+        """
+        Emit a structured log record.
+
+        Args:
+            module: Module name (e.g., 'rollback', 'game_engine')
+            record: Structured data to log (must be JSON-serializable)
+        """
+        pass
+
+    @abstractmethod
+    def flush(self) -> None:
+        """Flush any buffered records."""
+        pass
+
+    @abstractmethod
+    def close(self) -> None:
+        """Close the sink and release resources."""
+        pass
+
+    def __enter__(self) -> 'LogSink':
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+        self.close()
+
+
+class FileSink(LogSink):
+    """
+    Writes structured log records to JSONL files.
+
+    Each module gets its own file in the log directory. Records are written
+    as JSON Lines (one JSON object per line) for easy streaming and parsing.
+
+    Args:
+        log_dir: Directory for log files (default: from get_log_dir())
+        session_name: Session identifier for file naming (default: timestamp)
+    """
+
+    def __init__(
+        self,
+        log_dir: Optional[str] = None,
+        session_name: Optional[str] = None,
+    ):
+        self._log_dir = Path(log_dir) if log_dir else None
+        self._session_name = session_name or time.strftime("%Y%m%d_%H%M%S")
+        self._files: Dict[str, Any] = {}  # module -> file handle
+        self._initialized = False
+
+    def _ensure_dir(self) -> Path:
+        """Lazily initialize log directory."""
+        if self._log_dir is None:
+            self._log_dir = Path(get_log_dir())
+        self._log_dir.mkdir(parents=True, exist_ok=True)
+        return self._log_dir
+
+    def _get_file(self, module: str):
+        """Get or create file handle for module."""
+        if module not in self._files:
+            log_dir = self._ensure_dir()
+            path = log_dir / f"{self._session_name}_{module}.jsonl"
+            self._files[module] = open(path, 'a')
+
+            # Write header on new file
+            header = {
+                "type": "header",
+                "module": module,
+                "session_name": self._session_name,
+                "start_time": time.time(),
+                "start_time_iso": time.strftime("%Y-%m-%dT%H:%M:%S"),
+            }
+            self._files[module].write(json.dumps(header) + "\n")
+
+        return self._files[module]
+
+    def emit(self, module: str, record: Dict[str, Any]) -> None:
+        """Write record to module's JSONL file."""
+        f = self._get_file(module)
+        # Add timestamp if not present
+        if 'wall_time' not in record:
+            record = {'wall_time': time.time(), **record}
+        f.write(json.dumps(record) + "\n")
+
+    def flush(self) -> None:
+        """Flush all open files."""
+        for f in self._files.values():
+            f.flush()
+
+    def close(self) -> None:
+        """Close all open files."""
+        for module, f in self._files.items():
+            # Write footer
+            footer = {
+                "type": "footer",
+                "module": module,
+                "end_time": time.time(),
+                "end_time_iso": time.strftime("%Y-%m-%dT%H:%M:%S"),
+            }
+            f.write(json.dumps(footer) + "\n")
+            f.close()
+        self._files.clear()
+
+    @property
+    def log_paths(self) -> Dict[str, Path]:
+        """Get paths to all log files."""
+        log_dir = self._ensure_dir()
+        return {
+            module: log_dir / f"{self._session_name}_{module}.jsonl"
+            for module in self._files
+        }
+
+
+class WebSocketSink(LogSink):
+    """
+    Streams structured log records to a WebSocket server.
+
+    Used in browser/WASM environments to send logs to a development server
+    for real-time debugging.
+
+    Args:
+        url: WebSocket server URL (default: ws://localhost:8765)
+        buffer_size: Max records to buffer if disconnected (default: 100)
+    """
+
+    def __init__(
+        self,
+        url: str = "ws://localhost:8765",
+        buffer_size: int = 100,
+    ):
+        self._url = url
+        self._buffer_size = buffer_size
+        self._buffer: List[Dict[str, Any]] = []
+        self._connected = False
+        self._ws = None
+
+    def _ensure_connected(self) -> bool:
+        """Attempt to establish WebSocket connection."""
+        if self._connected:
+            return True
+
+        if _is_browser():
+            try:
+                # Browser WebSocket via Pyodide/Emscripten
+                import platform
+                self._ws = platform.window.WebSocket.new(self._url)
+                self._connected = True
+                # Flush buffered records
+                self._flush_buffer()
+                return True
+            except Exception:
+                return False
+        else:
+            # Native Python - try websockets library
+            try:
+                import asyncio
+                import websockets
+                # For native, we'd need async handling
+                # For now, just buffer and skip
+                return False
+            except ImportError:
+                return False
+
+    def _flush_buffer(self) -> None:
+        """Send buffered records."""
+        if not self._connected or not self._ws:
+            return
+
+        for record in self._buffer:
+            try:
+                self._ws.send(json.dumps(record))
+            except Exception:
+                break
+        self._buffer.clear()
+
+    def emit(self, module: str, record: Dict[str, Any]) -> None:
+        """Send record to WebSocket or buffer if disconnected."""
+        record = {'module': module, 'wall_time': time.time(), **record}
+
+        if self._ensure_connected() and self._ws:
+            try:
+                self._ws.send(json.dumps(record))
+                return
+            except Exception:
+                self._connected = False
+
+        # Buffer if not connected
+        self._buffer.append(record)
+        if len(self._buffer) > self._buffer_size:
+            self._buffer.pop(0)  # Drop oldest
+
+    def flush(self) -> None:
+        """Attempt to flush buffer to WebSocket."""
+        self._flush_buffer()
+
+    def close(self) -> None:
+        """Close WebSocket connection."""
+        if self._ws and self._connected:
+            try:
+                self._ws.close()
+            except Exception:
+                pass
+        self._ws = None
+        self._connected = False
+        self._buffer.clear()
+
+
+class NullSink(LogSink):
+    """No-op sink when logging is disabled."""
+
+    def emit(self, module: str, record: Dict[str, Any]) -> None:
+        pass
+
+    def flush(self) -> None:
+        pass
+
+    def close(self) -> None:
+        pass
+
+
+# Sink registry - active sinks by module
+_sinks: Dict[str, LogSink] = {}
+_default_sink: Optional[LogSink] = None
+
+
+def register_sink(module: str, sink: LogSink) -> None:
+    """
+    Register a sink for a specific module.
+
+    Args:
+        module: Module name (e.g., 'rollback')
+        sink: Sink instance to receive records
+    """
+    _sinks[module] = sink
+
+
+def set_default_sink(sink: LogSink) -> None:
+    """Set the default sink for modules without specific sinks."""
+    global _default_sink
+    _default_sink = sink
+
+
+def get_sink(module: str) -> Optional[LogSink]:
+    """Get the sink for a module, or default sink."""
+    return _sinks.get(module, _default_sink)
+
+
+def emit_record(module: str, record: Dict[str, Any]) -> bool:
+    """
+    Emit a structured log record to the appropriate sink.
+
+    Args:
+        module: Module name (e.g., 'rollback', 'game_engine')
+        record: Structured data to log (must be JSON-serializable)
+
+    Returns:
+        True if record was emitted, False if no sink available
+    """
+    sink = get_sink(module)
+    if sink:
+        sink.emit(module, record)
+        return True
+    return False
+
+
+def close_all_sinks() -> None:
+    """Close all registered sinks."""
+    global _default_sink
+    for sink in _sinks.values():
+        sink.close()
+    _sinks.clear()
+    if _default_sink:
+        _default_sink.close()
+        _default_sink = None
+
+
+def create_sink_for_environment(
+    module: str,
+    session_name: Optional[str] = None,
+) -> LogSink:
+    """
+    Create appropriate sink for current environment.
+
+    In browser/WASM: WebSocketSink
+    In native Python: FileSink
+
+    Args:
+        module: Module name for configuration lookup
+        session_name: Optional session identifier
+
+    Returns:
+        Appropriate LogSink for the environment
+    """
+    config = get_module_config(module)
+    if not config.get('enabled', False):
+        return NullSink()
+
+    if _is_browser():
+        ws_url = config.get('websocket_url', 'ws://localhost:8765')
+        return WebSocketSink(url=ws_url)
+    else:
+        return FileSink(session_name=session_name)
+
+
+# =============================================================================
+# Global configuration
+# =============================================================================
 
 # Global configuration
 _config: Dict[str, Any] = {
