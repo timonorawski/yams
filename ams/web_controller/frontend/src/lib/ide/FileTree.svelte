@@ -50,7 +50,7 @@
             <span class="flex-1 truncate">{file.name}</span>
           </button>
           {#if expandedFolders.has(file.name) && file.children}
-            <div class="pl-4">
+            <div class="ml-4 border-l border-base-300 pl-2">
               {#each file.children as child}
                 {#if child.type === 'folder'}
                   <button
@@ -60,6 +60,19 @@
                     <span class="text-sm w-4 text-center">{getIcon(child)}</span>
                     <span class="flex-1 truncate">{child.name}</span>
                   </button>
+                  {#if expandedFolders.has(child.name) && child.children}
+                    <div class="ml-4 border-l border-base-300 pl-2">
+                      {#each child.children as grandchild}
+                        <button
+                          class="flex items-center gap-1.5 w-full px-2 py-1 bg-transparent text-base-content text-sm text-left cursor-pointer rounded hover:bg-base-300"
+                          on:click={() => selectFile(`${file.name}${child.name}${grandchild.name}`)}
+                        >
+                          <span class="text-sm w-4 text-center">{getIcon(grandchild)}</span>
+                          <span class="flex-1 truncate">{grandchild.name}</span>
+                        </button>
+                      {/each}
+                    </div>
+                  {/if}
                 {:else}
                   <button
                     class="flex items-center gap-1.5 w-full px-2 py-1 bg-transparent text-base-content text-sm text-left cursor-pointer rounded hover:bg-base-300"
