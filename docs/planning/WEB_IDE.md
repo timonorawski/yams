@@ -357,10 +357,12 @@ npm run dev
 # Open http://localhost:5173/author.html
 
 # Docker (full stack with persistence)
-npm run build                      # Build frontend first
 docker compose up --build
-# Open http://localhost:8080/author
+# Open http://localhost:8000/author
 # Projects save to ./data/projects/
+
+# Port 8000 is required for pygbag CDN compatibility
+# nginx proxies /archives/* to pygame-web.github.io
 ```
 
 ### Success Criteria
@@ -730,11 +732,12 @@ docker compose up                   # Triggers fresh build
 # Or set environment variable
 FORCE_REBUILD=1 docker compose up
 
-# Access points
-# http://localhost:8080/author    - IDE
-# http://localhost:8080/          - Game launcher
-# http://localhost:8080/pygbag/   - Game runtime (preview iframe target)
-# http://localhost:8080/api/projects - Projects API
+# Access points (port 8000 for pygbag CDN compatibility)
+# http://localhost:8000/author    - IDE
+# http://localhost:8000/          - Game launcher
+# http://localhost:8000/pygbag/   - Game runtime (preview iframe target)
+# http://localhost:8000/api/projects - Projects API
+# http://localhost:8000/archives/ - Pygame CDN proxy (wheel downloads)
 
 # Persistence locations
 # ./data/projects/      - User projects (host volume)
@@ -742,9 +745,9 @@ FORCE_REBUILD=1 docker compose up
 ```
 
 Services:
-- **nginx** (port 8080) - Reverse proxy, routes to all services
+- **nginx** (port 8000) - Reverse proxy, routes to all services, proxies /archives to pygame CDN
 - **ide-server** (port 8003) - FastAPI file API, serves IDE frontend
-- **web-server** (port 8000) - pygbag game server (auto-builds on first start)
+- **web-server** (port 8000 internal) - pygbag game server (auto-builds on first start)
 - **log-server** (ports 8001-8002) - WebSocket log streaming
 
 ### Auto-build Flow

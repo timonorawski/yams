@@ -7,16 +7,19 @@
 
 | Component | Status | Notes |
 |-----------|--------|-------|
-| Monaco Editor | Working | YAML/Lua syntax, themes |
-| Split-pane layout | Working | Resizable editor/preview |
-| File tree | Partial | UI exists, file loading not wired |
-| Preview iframe | Working | Hot reload via postMessage |
-| JSON schemas | Complete | game, level, lua_script schemas |
+| Monaco Editor | ✅ Working | YAML/Lua syntax, themes |
+| Split-pane layout | ✅ Working | Resizable editor/preview |
+| File tree | 🚧 Partial | UI exists, API not wired |
+| Preview iframe | ✅ Working | IDE bridge + postMessage |
+| IDE ↔ Engine bridge | ✅ Working | `ide_bridge.js` + `ide_bridge.py` |
+| Engine ready signal | ✅ Working | Hides loading overlay when game starts |
+| JSON schemas | ✅ Complete | game, level, lua_script schemas |
 | Schema validation | Not wired | Schemas exist but Monaco not configured |
 | Config auto-generation | Not started | No UI generator from schemas |
 | Log streaming | Not started | WebSocket exists but no log forwarding |
 | Profiler UI | Not started | No flame graph components |
 | Debugger UI | Not started | No breakpoints/stepping UI |
+| Tailwind/DaisyUI | 🚧 In progress | Migration from vanilla CSS |
 
 ## 2. Tech Stack
 
@@ -33,6 +36,7 @@
 ```json
 {
   "dependencies": {
+    "js-yaml": "^4.1.0",
     "monaco-editor": "^0.52.0"
   },
   "devDependencies": {
@@ -42,6 +46,8 @@
   }
 }
 ```
+
+> **Note:** `js-yaml` is required because PyYAML doesn't work in WASM. Monaco parses YAML and converts to JSON before sending to the engine.
 
 **To add for styling:**
 ```bash
@@ -572,18 +578,20 @@ build: {
 ## 10. Development
 
 ```bash
-# Start frontend dev server
+# Option 1: Docker (recommended - full stack)
+docker compose up --build
+open http://localhost:8000/author
+
+# Option 2: Standalone frontend dev
 cd ams/web_controller/frontend
 npm run dev
-
-# In another terminal, start backend
-python -m ams.web_controller.server
-
-# Access IDE
 open http://localhost:5173/author.html
+# Note: Preview won't work without Docker backend
 ```
 
-Vite proxies:
-- `/api` → `http://localhost:8080`
-- `/ws` → `ws://localhost:8080`
+Docker serves on port 8000 (required for pygbag CDN compatibility).
+
+Vite dev proxies (for standalone mode):
+- `/api` → `http://localhost:8000`
+- `/ws` → `ws://localhost:8000`
 - `/pygbag` → `http://localhost:8000`

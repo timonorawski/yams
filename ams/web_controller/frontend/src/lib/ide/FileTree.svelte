@@ -13,7 +13,7 @@
     } else {
       expandedFolders.add(path);
     }
-    expandedFolders = expandedFolders; // trigger reactivity
+    expandedFolders = expandedFolders;
   }
 
   function selectFile(path) {
@@ -34,37 +34,39 @@
   }
 </script>
 
-<div class="file-tree">
-  <div class="tree-header">Explorer</div>
-  <div class="tree-content">
+<div class="h-full flex flex-col">
+  <div class="p-2 text-xs uppercase text-base-content/50 font-semibold">
+    Explorer
+  </div>
+  <div class="flex-1 overflow-y-auto px-1">
     {#each files as file}
-      <div class="tree-item">
+      <div class="select-none">
         {#if file.type === 'folder'}
           <button
-            class="folder-btn"
+            class="flex items-center gap-1.5 w-full px-2 py-1 bg-transparent text-base-content text-sm text-left cursor-pointer rounded hover:bg-base-300"
             on:click={() => toggleFolder(file.name)}
           >
-            <span class="icon">{getIcon(file)}</span>
-            <span class="name">{file.name}</span>
+            <span class="text-sm w-4 text-center">{getIcon(file)}</span>
+            <span class="flex-1 truncate">{file.name}</span>
           </button>
           {#if expandedFolders.has(file.name) && file.children}
-            <div class="children">
+            <div class="pl-4">
               {#each file.children as child}
                 {#if child.type === 'folder'}
                   <button
-                    class="folder-btn"
+                    class="flex items-center gap-1.5 w-full px-2 py-1 bg-transparent text-base-content text-sm text-left cursor-pointer rounded hover:bg-base-300"
                     on:click={() => toggleFolder(child.name)}
                   >
-                    <span class="icon">{getIcon(child)}</span>
-                    <span class="name">{child.name}</span>
+                    <span class="text-sm w-4 text-center">{getIcon(child)}</span>
+                    <span class="flex-1 truncate">{child.name}</span>
                   </button>
                 {:else}
                   <button
-                    class="file-btn"
+                    class="flex items-center gap-1.5 w-full px-2 py-1 bg-transparent text-base-content text-sm text-left cursor-pointer rounded hover:bg-base-300"
                     on:click={() => selectFile(`${file.name}${child.name}`)}
                   >
-                    <span class="icon">{getIcon(child)}</span>
-                    <span class="name">{child.name}</span>
+                    <span class="text-sm w-4 text-center">{getIcon(child)}</span>
+                    <span class="flex-1 truncate">{child.name}</span>
                   </button>
                 {/if}
               {/each}
@@ -72,76 +74,14 @@
           {/if}
         {:else}
           <button
-            class="file-btn"
+            class="flex items-center gap-1.5 w-full px-2 py-1 bg-transparent text-base-content text-sm text-left cursor-pointer rounded hover:bg-base-300"
             on:click={() => selectFile(file.name)}
           >
-            <span class="icon">{getIcon(file)}</span>
-            <span class="name">{file.name}</span>
+            <span class="text-sm w-4 text-center">{getIcon(file)}</span>
+            <span class="flex-1 truncate">{file.name}</span>
           </button>
         {/if}
       </div>
     {/each}
   </div>
 </div>
-
-<style>
-  .file-tree {
-    height: 100%;
-    display: flex;
-    flex-direction: column;
-  }
-
-  .tree-header {
-    padding: 0.5rem;
-    font-size: 0.75rem;
-    text-transform: uppercase;
-    color: #6d6d6d;
-    font-weight: 600;
-  }
-
-  .tree-content {
-    flex: 1;
-    overflow-y: auto;
-    padding: 0 0.25rem;
-  }
-
-  .tree-item {
-    user-select: none;
-  }
-
-  .folder-btn, .file-btn {
-    display: flex;
-    align-items: center;
-    gap: 0.375rem;
-    width: 100%;
-    padding: 0.25rem 0.5rem;
-    border: none;
-    background: transparent;
-    color: #cccccc;
-    font-size: 0.8125rem;
-    text-align: left;
-    cursor: pointer;
-    border-radius: 3px;
-  }
-
-  .folder-btn:hover, .file-btn:hover {
-    background: #2a2d2e;
-  }
-
-  .icon {
-    font-size: 0.875rem;
-    width: 1rem;
-    text-align: center;
-  }
-
-  .name {
-    flex: 1;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .children {
-    padding-left: 1rem;
-  }
-</style>

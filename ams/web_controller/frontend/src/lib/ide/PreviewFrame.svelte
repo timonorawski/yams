@@ -5,11 +5,7 @@
 
   const dispatch = createEventDispatcher();
 
-  // Project files as YAML strings (keyed by path)
-  // e.g., { 'game.yaml': '...', 'levels/level1.yaml': '...' }
   export let projectFiles = {};
-
-  // Static engine URL (CDN or local build)
   export let engineUrl = '/pygbag/';
 
   let iframe;
@@ -18,7 +14,6 @@
   let error = null;
   let reloadTimeout;
 
-  // Debounced send when projectFiles changes
   $: if (projectFiles && iframe && engineReady) {
     clearTimeout(reloadTimeout);
     reloadTimeout = setTimeout(() => {
@@ -26,18 +21,13 @@
     }, 500);
   }
 
-  /**
-   * Convert YAML files to JSON and send to engine
-   */
   function sendProjectFiles() {
     if (!iframe?.contentWindow) return;
 
     try {
-      // Convert YAML files to JSON objects
       const jsonFiles = {};
       for (const [path, content] of Object.entries(projectFiles)) {
         if (path.endsWith('.yaml') || path.endsWith('.yml')) {
-          // Parse YAML and store as JSON
           const jsonPath = path.replace(/\.ya?ml$/, '.json');
           try {
             const parsed = yaml.load(content);
@@ -48,12 +38,10 @@
             continue;
           }
         } else {
-          // Non-YAML files (like .lua) pass through as strings
           jsonFiles[path] = content;
         }
       }
 
-      // Send to engine via postMessage
       iframe.contentWindow.postMessage({
         source: 'ams_ide',
         type: 'project_files',
@@ -67,55 +55,41 @@
     }
   }
 
-  /**
-   * Send reload request to engine
-   */
   function requestReload() {
     if (!iframe?.contentWindow) return;
-
     iframe.contentWindow.postMessage({
       source: 'ams_ide',
       type: 'reload'
     }, '*');
   }
 
-  /**
-   * Handle messages from the game engine
-   */
   function handleMessage(event) {
     const msg = event.data;
     if (!msg || typeof msg !== 'object') return;
-
-    // Only handle messages from our engine
     if (msg.source !== 'ams_engine') return;
 
     console.log('[PreviewFrame] Engine message:', msg.type);
 
     switch (msg.type) {
       case 'ready':
-        // Engine is ready to receive files
         engineReady = true;
         isLoading = false;
-        // Send initial project files
         if (Object.keys(projectFiles).length > 0) {
           sendProjectFiles();
         }
         break;
 
       case 'files_received':
-        // Files were written, trigger reload
         console.log('[PreviewFrame] Files received:', msg.filesWritten);
         requestReload();
         break;
 
       case 'reloaded':
-        // Game reloaded successfully
         error = null;
         dispatch('reloaded');
         break;
 
       case 'error':
-        // Engine reported an error
         error = msg.message;
         dispatch('error', {
           message: msg.message,
@@ -125,19 +99,16 @@
         break;
 
       case 'log':
-        // Forward logs to parent
         dispatch('log', { level: msg.level, message: msg.message });
         break;
 
       case 'pong':
-        // Health check response
         console.log('[PreviewFrame] Engine alive, IDE mode:', msg.ideMode);
         break;
     }
   }
 
   function handleLoad() {
-    // iframe loaded, but engine might not be ready yet
     console.log('[PreviewFrame] iframe loaded');
   }
 
@@ -165,46 +136,53 @@
   });
 </script>
 
-<div class="preview-container">
-  <div class="preview-toolbar">
-    <span class="preview-title">Preview</span>
-    <div class="preview-status">
+<div class="flex flex-col h-full bg-base-100">
+  <!-- Toolbar -->
+  <div class="flex items-center justify-between px-3 py-1.5 bg-base-200 border-b border-base-300 gap-4">
+    <span class="text-xs uppercase font-medium text-base-content/60">Preview</span>
+    <div class="flex items-center gap-1.5 text-xs text-base-content/60">
       {#if engineReady}
-        <span class="status-dot ready"></span>
+        <span class="w-2 h-2 rounded-full bg-success"></span>
         <span>Ready</span>
       {:else if isLoading}
-        <span class="status-dot loading"></span>
+        <span class="w-2 h-2 rounded-full bg-warning animate-pulse"></span>
         <span>Loading...</span>
       {:else}
-        <span class="status-dot disconnected"></span>
+        <span class="w-2 h-2 rounded-full bg-error"></span>
         <span>Disconnected</span>
       {/if}
     </div>
-    <div class="preview-actions">
-      <button class="preview-btn" on:click={sendProjectFiles} title="Send Files" disabled={!engineReady}>
+    <div class="flex gap-2">
+      <button
+        class="btn btn-xs btn-ghost"
+        on:click={sendProjectFiles}
+        title="Send Files"
+        disabled={!engineReady}
+      >
         Send
       </button>
-      <button class="preview-btn" on:click={reload} title="Reload">
+      <button class="btn btn-xs btn-ghost" on:click={reload} title="Reload">
         Reload
       </button>
     </div>
   </div>
 
-  <div class="preview-content">
+  <!-- Content -->
+  <div class="flex-1 relative overflow-hidden">
     {#if error}
-      <div class="error-overlay">
-        <div class="error-message">
-          <h3>Error</h3>
-          <pre>{error}</pre>
-          <button class="btn" on:click={reload}>Retry</button>
+      <div class="absolute inset-0 flex flex-col items-center justify-center bg-base-100/95 z-10">
+        <div class="text-center p-8 max-w-md">
+          <h3 class="text-error font-semibold mb-4">Error</h3>
+          <pre class="bg-base-200 p-4 rounded text-left overflow-x-auto mb-4 text-sm text-base-content">{error}</pre>
+          <button class="btn btn-sm btn-outline" on:click={reload}>Retry</button>
         </div>
       </div>
     {/if}
 
     {#if isLoading && !engineReady}
-      <div class="loading-overlay">
-        <div class="spinner"></div>
-        <p>Loading game engine...</p>
+      <div class="absolute inset-0 flex flex-col items-center justify-center bg-base-100/95 z-10">
+        <span class="loading loading-spinner loading-lg text-primary"></span>
+        <p class="mt-4 text-base-content/60">Loading game engine...</p>
       </div>
     {/if}
 
@@ -215,166 +193,7 @@
       on:load={handleLoad}
       on:error={handleError}
       sandbox="allow-scripts allow-same-origin"
+      class="w-full h-full border-0 bg-black"
     ></iframe>
   </div>
 </div>
-
-<style>
-  .preview-container {
-    display: flex;
-    flex-direction: column;
-    height: 100%;
-    background: #1e1e1e;
-  }
-
-  .preview-toolbar {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 0.375rem 0.75rem;
-    background: #2d2d2d;
-    border-bottom: 1px solid #3d3d3d;
-    gap: 1rem;
-  }
-
-  .preview-title {
-    font-size: 0.8125rem;
-    color: #9d9d9d;
-    text-transform: uppercase;
-    font-weight: 500;
-  }
-
-  .preview-status {
-    display: flex;
-    align-items: center;
-    gap: 0.375rem;
-    font-size: 0.75rem;
-    color: #9d9d9d;
-  }
-
-  .status-dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-  }
-
-  .status-dot.ready {
-    background: #4ec9b0;
-  }
-
-  .status-dot.loading {
-    background: #dcdcaa;
-    animation: pulse 1s ease-in-out infinite;
-  }
-
-  .status-dot.disconnected {
-    background: #f14c4c;
-  }
-
-  @keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.5; }
-  }
-
-  .preview-actions {
-    display: flex;
-    gap: 0.5rem;
-  }
-
-  .preview-btn {
-    padding: 0.25rem 0.5rem;
-    border: none;
-    background: transparent;
-    color: #9d9d9d;
-    font-size: 0.75rem;
-    cursor: pointer;
-    border-radius: 3px;
-  }
-
-  .preview-btn:hover:not(:disabled) {
-    background: #3d3d3d;
-    color: #d4d4d4;
-  }
-
-  .preview-btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .preview-content {
-    flex: 1;
-    position: relative;
-    overflow: hidden;
-  }
-
-  iframe {
-    width: 100%;
-    height: 100%;
-    border: none;
-    background: #000;
-  }
-
-  .loading-overlay, .error-overlay {
-    position: absolute;
-    inset: 0;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    background: rgba(30, 30, 30, 0.95);
-    z-index: 10;
-  }
-
-  .loading-overlay p {
-    margin-top: 1rem;
-    color: #9d9d9d;
-  }
-
-  .spinner {
-    width: 32px;
-    height: 32px;
-    border: 3px solid #3d3d3d;
-    border-top-color: #0e639c;
-    border-radius: 50%;
-    animation: spin 1s linear infinite;
-  }
-
-  @keyframes spin {
-    to { transform: rotate(360deg); }
-  }
-
-  .error-message {
-    text-align: center;
-    padding: 2rem;
-    max-width: 400px;
-  }
-
-  .error-message h3 {
-    color: #f14c4c;
-    margin-bottom: 1rem;
-  }
-
-  .error-message pre {
-    background: #2d2d2d;
-    padding: 1rem;
-    border-radius: 4px;
-    text-align: left;
-    overflow-x: auto;
-    margin-bottom: 1rem;
-    font-size: 0.8125rem;
-    color: #d4d4d4;
-  }
-
-  .btn {
-    padding: 0.5rem 1rem;
-    border: 1px solid #3d3d3d;
-    background: #2d2d2d;
-    color: #d4d4d4;
-    border-radius: 4px;
-    cursor: pointer;
-  }
-
-  .btn:hover {
-    background: #3d3d3d;
-  }
-</style>

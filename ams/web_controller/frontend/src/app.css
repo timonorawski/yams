@@ -1,0 +1,39 @@
+@import "tailwindcss";
+@plugin "daisyui";
+
+/* DaisyUI theme configuration */
+@plugin "daisyui" {
+  themes: dark;
+}
+
+/* Global styles for the IDE */
+html, body {
+  height: 100%;
+  overflow: hidden;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+/* Monaco editor container needs explicit sizing */
+.monaco-container {
+  height: 100%;
+  width: 100%;
+}
+
+/* Scrollbar styling for VS Code-like appearance */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: oklch(var(--b2));
+}
+
+::-webkit-scrollbar-thumb {
+  background: oklch(var(--b3));
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: oklch(var(--n));
+}

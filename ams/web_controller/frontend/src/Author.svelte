@@ -1,7 +1,6 @@
 <script>
   import { onMount } from 'svelte';
 
-  // Components (to be created)
   import MonacoEditor from './lib/ide/MonacoEditor.svelte';
   import FileTree from './lib/ide/FileTree.svelte';
   import PreviewFrame from './lib/ide/PreviewFrame.svelte';
@@ -51,14 +50,12 @@ default_layout:
   let isDragging = false;
 
   function handleEditorChange(event) {
-    // Update projectFiles with new content for current file
     projectFiles[currentFile] = event.detail.value;
     projectFiles = projectFiles; // Trigger reactivity
   }
 
   function handleFileSelect(event) {
     currentFile = event.detail.path;
-    // TODO: Load file content
   }
 
   function handleDragStart(e) {
@@ -82,23 +79,36 @@ default_layout:
   }
 </script>
 
-<div class="ide-container">
-  <header class="toolbar">
-    <div class="logo">AMS Editor</div>
-    <div class="file-info">{currentFile}</div>
-    <div class="actions">
-      <button class="btn" on:click={() => console.log('Run')}>Run</button>
-      <button class="btn btn-primary" on:click={() => console.log('Save')}>Save</button>
+<div class="flex flex-col h-screen bg-base-100" data-theme="dark">
+  <!-- Toolbar -->
+  <header class="navbar bg-base-200 border-b border-base-300 min-h-0 px-4 py-2">
+    <div class="flex-none">
+      <span class="text-secondary font-semibold">AMS Editor</span>
+    </div>
+    <div class="flex-1 px-4">
+      <span class="text-base-content/60 text-sm">{currentFile}</span>
+    </div>
+    <div class="flex-none flex gap-2">
+      <button class="btn btn-sm btn-ghost" on:click={() => console.log('Run')}>
+        Run
+      </button>
+      <button class="btn btn-sm btn-primary" on:click={() => console.log('Save')}>
+        Save
+      </button>
     </div>
   </header>
 
-  <div class="main-content">
-    <aside class="sidebar">
+  <!-- Main content -->
+  <div class="flex flex-1 overflow-hidden">
+    <!-- Sidebar -->
+    <aside class="w-52 bg-base-200 border-r border-base-300 overflow-y-auto">
       <FileTree {files} on:select={handleFileSelect} />
     </aside>
 
-    <div class="editor-container">
-      <div class="editor-pane" style="width: {splitPosition}%">
+    <!-- Editor + Preview -->
+    <div class="editor-container flex flex-1 overflow-hidden">
+      <!-- Editor pane -->
+      <div class="flex flex-col overflow-hidden" style="width: {splitPosition}%">
         <MonacoEditor
           value={editorContent}
           language="yaml"
@@ -106,130 +116,25 @@ default_layout:
         />
       </div>
 
+      <!-- Divider -->
       <div
-        class="divider"
-        class:dragging={isDragging}
+        class="w-1 bg-base-300 cursor-col-resize transition-colors hover:bg-primary {isDragging ? 'bg-primary' : ''}"
         on:mousedown={handleDragStart}
         role="separator"
         aria-orientation="vertical"
-        tabindex="0"
       ></div>
 
-      <div class="preview-pane" style="width: {100 - splitPosition}%">
+      <!-- Preview pane -->
+      <div class="flex flex-col overflow-hidden" style="width: {100 - splitPosition}%">
         <PreviewFrame {projectFiles} />
       </div>
     </div>
   </div>
 
-  <footer class="statusbar">
-    <span class="status-item">Ready</span>
-    <span class="status-item">YAML</span>
-    <span class="status-item">UTF-8</span>
+  <!-- Status bar -->
+  <footer class="bg-primary text-primary-content text-xs px-4 py-1 flex items-center gap-4">
+    <span class="opacity-90">Ready</span>
+    <span class="opacity-90">YAML</span>
+    <span class="opacity-90">UTF-8</span>
   </footer>
 </div>
-
-<style>
-  .ide-container {
-    display: flex;
-    flex-direction: column;
-    height: 100vh;
-    background: #1e1e1e;
-  }
-
-  .toolbar {
-    display: flex;
-    align-items: center;
-    padding: 0.5rem 1rem;
-    background: #2d2d2d;
-    border-bottom: 1px solid #3d3d3d;
-    gap: 1rem;
-  }
-
-  .logo {
-    font-weight: 600;
-    color: #4ec9b0;
-  }
-
-  .file-info {
-    flex: 1;
-    color: #9d9d9d;
-    font-size: 0.875rem;
-  }
-
-  .actions {
-    display: flex;
-    gap: 0.5rem;
-  }
-
-  .btn {
-    padding: 0.375rem 0.75rem;
-    border: 1px solid #3d3d3d;
-    background: #2d2d2d;
-    color: #d4d4d4;
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 0.875rem;
-  }
-
-  .btn:hover {
-    background: #3d3d3d;
-  }
-
-  .btn-primary {
-    background: #0e639c;
-    border-color: #0e639c;
-  }
-
-  .btn-primary:hover {
-    background: #1177bb;
-  }
-
-  .main-content {
-    display: flex;
-    flex: 1;
-    overflow: hidden;
-  }
-
-  .sidebar {
-    width: 200px;
-    background: #252526;
-    border-right: 1px solid #3d3d3d;
-    overflow-y: auto;
-  }
-
-  .editor-container {
-    flex: 1;
-    display: flex;
-    overflow: hidden;
-  }
-
-  .editor-pane, .preview-pane {
-    overflow: hidden;
-    display: flex;
-    flex-direction: column;
-  }
-
-  .divider {
-    width: 4px;
-    background: #3d3d3d;
-    cursor: col-resize;
-    transition: background 0.2s;
-  }
-
-  .divider:hover, .divider.dragging {
-    background: #0e639c;
-  }
-
-  .statusbar {
-    display: flex;
-    padding: 0.25rem 1rem;
-    background: #007acc;
-    color: white;
-    font-size: 0.75rem;
-    gap: 1rem;
-  }
-
-  .status-item {
-    opacity: 0.9;
-  }
-</style>

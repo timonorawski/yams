@@ -1,3 +1,4 @@
+import './app.css'
 import Author from './Author.svelte'
 
 const app = new Author({
