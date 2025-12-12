@@ -2,7 +2,7 @@
 
 Last updated: December 2024
 
-This document tracks known technical debt and improvement opportunities in the ArcheryGame codebase. Items are prioritized by impact and effort.
+This document tracks known technical debt and improvement opportunities in the YAMS codebase. Items are prioritized by impact and effort.
 
 ## High Priority (Fix Soon)
 

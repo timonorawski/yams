@@ -1,4 +1,6 @@
-# ArcheryGame – Arcade joy for everyone, everywhere
+# YAMS – Arcade joy for everyone, everywhere
+
+**YAMS: YAML Arcade Management System** | https://yamplay.cc
 
 A complete, free, and open platform that brings real arcade magic back and makes it even better – without the downsides of modern gaming or the risk of running untrusted binary code.
 
@@ -43,7 +45,7 @@ The result is a platform where:
 
 - A rock-solid data-driven 2D arcade engine (pure YAML + optional tiny Lua scripts)
 - Full browser deployment via pygame-wasm / pygbag (playable right now)
-- AMS – the physical-input layer that turns projectors + cameras into interactive walls
+- YAMS – the physical-input layer that turns projectors + cameras into interactive walls
 - a web interface to control your projected game system from your phone
 - DuckHunt, Brick Breaker, Balloon Pop, and more – all running with real arrows or in your browser
 - Temporal hit compensation (computer vision pipeline has latency? the duck still gets hit at the right moment)
@@ -57,9 +59,9 @@ The result is a platform where:
 
 (Links coming the second the first live web demo is up – literally days away)
 
-In the meantime:  
-`git clone https://github.com/timonorawski/ArcheryGame`  
-`python ams_game.py --game brickbreaker --backend mouse`  
+In the meantime:
+`git clone https://github.com/timonorawski/yams`
+`python ams_game.py --game brickbreaker --backend mouse`
 or just wait for the browser version and play with your finger.
 
 Made with love by one dad who got fed up, for his kids and for yours.
@@ -83,7 +85,7 @@ Welcome to your arcade renaissance.
 
 ## Documentation
 
-- See `docs/AMS_ARCHITECTURE.md` for architecture overview
+- See `docs/architecture/` for architecture overview
 - See `docs/guides/` for setup guides
 - See `docs/history/` for design rationale
 

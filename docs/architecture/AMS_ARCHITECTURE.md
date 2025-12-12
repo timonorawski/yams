@@ -1,6 +1,6 @@
-# AMS Architecture & Design Decisions
+# YAMS Architecture & Design Decisions
 
-This document captures architectural decisions and serves as a guide for working on the Arcade Management System.
+This document captures architectural decisions and serves as a guide for working on the YAML Arcade Management System (YAMS).
 
 ## System Overview
 

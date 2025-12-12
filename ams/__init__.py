@@ -1,5 +1,5 @@
 """
-Arcade Management System (AMS)
+YAML Arcade Management System (YAMS)
 
 Abstraction layer between detection hardware and games.
 See docs/architecture/AMS_ARCHITECTURE.md for design details.

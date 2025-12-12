@@ -1,6 +1,6 @@
-# AMS Future Improvements
+# YAMS Future Improvements
 
-This document captures planned improvements and design ideas for the Arcade Management System.
+This document captures planned improvements and design ideas for the YAML Arcade Management System (YAMS).
 
 ## 1. Game Modality Declarations
 

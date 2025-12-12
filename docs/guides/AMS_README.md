@@ -1,14 +1,14 @@
 
 
-# Arcade Management System (AMS)
+# YAML Arcade Management System (YAMS)
 
 **Status**: ✅ Initial Implementation Complete
 
-The AMS is an abstraction layer between detection hardware and games, enabling games to work across different input methods and deployment platforms without modification.
+YAMS is an abstraction layer between detection hardware and games, enabling games to work across different input methods and deployment platforms without modification.
 
 ## Overview
 
-The AMS provides the foundation for building projection-based interactive games where physical actions (thrown objects, laser pointers, arrows, mouse clicks) create coordinate-based input events.
+YAMS provides the foundation for building projection-based interactive games where physical actions (thrown objects, laser pointers, arrows, mouse clicks) create coordinate-based input events.
 
 ### Core Philosophy
 

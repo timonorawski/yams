@@ -1,6 +1,6 @@
-# AMS Developer Guide
+# YAMS Developer Guide
 
-A practical guide for developers working on the Arcade Management System.
+A practical guide for developers working on the YAML Arcade Management System (YAMS).
 
 ## Getting Started
 

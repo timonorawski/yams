@@ -1,7 +1,7 @@
 """
-AMS Event Types
+YAMS Event Types
 
-Defines the core event types that flow through the Arcade Management System:
+Defines the core event types that flow through the YAML Arcade Management System:
 - PlaneHitEvent: Standard format for all detection events
 - HitResult: What games return when queried about hits
 - EventMetadata: Additional detection information

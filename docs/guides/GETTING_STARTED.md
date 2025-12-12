@@ -226,7 +226,7 @@ Once calibrated, you can:
 After calibration, you'll have:
 
 ```
-ArcheryGame/
+yams/
 ├── calibration_data/
 │   ├── calibration_20251025_143000.json  # Calibration data
 │   ├── calibration_frame_20251025_143000.png  # Reference image

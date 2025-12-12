@@ -4,7 +4,9 @@ This file provides guidance to Claude Code when working with this repository.
 
 ## Project Overview
 
-**AMS (Arcade Management System)** is an interactive projection targeting platform that uses computer vision to create engaging games for any projectile-based activity. A projector displays targets on a surface, a camera detects impacts, and the system provides real-time feedback.
+**YAMS (YAML Arcade Management System)** is an interactive projection targeting platform that uses computer vision to create engaging games for any projectile-based activity. A projector displays targets on a surface, a camera detects impacts, and the system provides real-time feedback.
+
+**Website**: https://yamplay.cc
 
 ### Use Cases
 
@@ -34,7 +36,7 @@ The core tech - projector/camera coordinate mapping with occlusion detection - e
 
 **Code is not the asset, the developer is**: Build clean abstractions that enable rapid iteration.
 
-**Games work standalone**: Games should be playable with mouse/keyboard without requiring AMS or hardware. AMS integration is additive.
+**Games work standalone**: Games should be playable with mouse/keyboard without requiring YAMS or hardware. YAMS integration is additive.
 
 ## Architecture
 
@@ -69,13 +71,13 @@ The core tech - projector/camera coordinate mapping with occlusion detection - e
 │                                                              │
 │  Uses: InputManager + InputSource (unified interface)       │
 │  Receives: InputEvent (pixel coordinates)                   │
-│  Same code works standalone OR with AMS                     │
+│  Same code works standalone OR with YAMS                    │
 └─────────────────────────────────────────────────────────────┘
 ```
 
 ### Input Abstraction
 
-Games use a unified input system that works identically in standalone and AMS modes:
+Games use a unified input system that works identically in standalone and YAMS modes:
 
 ```python
 # Standalone mode (development)
@@ -83,7 +85,7 @@ from input.input_manager import InputManager
 from input.sources.mouse import MouseInputSource
 input_manager = InputManager(MouseInputSource())
 
-# AMS mode (production)
+# YAMS mode (production)
 from ams.game_adapter import AMSInputAdapter
 input_manager = InputManager(AMSInputAdapter(ams_session, width, height))
 
@@ -101,7 +103,7 @@ Key files:
 
 | Directory | Purpose |
 |-----------|---------|
-| `/ams/` | Core AMS system - detection backends, calibration, events, temporal state |
+| `/ams/` | Core YAMS system - detection backends, calibration, events, temporal state |
 | `/calibration/` | ArUco-based geometric calibration system |
 | `/models/` | Unified Pydantic data models |
 | `/games/` | Game implementations (Simple Targets, Duck Hunt) |
@@ -109,12 +111,12 @@ Key files:
 
 ## Running the System
 
-### Standalone Games (No AMS)
+### Standalone Games (No YAMS)
 
 Games can run independently with mouse/keyboard input for development and testing:
 
 ```bash
-# Duck Hunt standalone (mouse input, no AMS required)
+# Duck Hunt standalone (mouse input, no YAMS required)
 cd games/DuckHunt && python main.py
 ```
 
@@ -123,12 +125,12 @@ This is useful for:
 - Testing game mechanics in isolation
 - UI/UX iteration
 
-### With AMS (Detection Backends)
+### With YAMS (Detection Backends)
 
 For projection setups with camera-based detection:
 
 ```bash
-# Simple targets with mouse (testing AMS integration)
+# Simple targets with mouse (testing YAMS integration)
 python ams_game.py --game simple_targets --backend mouse
 
 # Duck Hunt with laser pointer
@@ -214,8 +216,8 @@ This allows accurate hit detection even with 100-200ms detection latency.
    - Use `InputManager` + `MouseInputSource` for mouse input
    - Game receives `InputEvent` with pixel coordinates
    - Create a `main.py` entry point for standalone testing
-3. Add AMS integration (automatic if using InputManager):
-   - In `ams_game.py`, create `AMSInputAdapter` wrapping the AMS session
+3. Add YAMS integration (automatic if using InputManager):
+   - In `ams_game.py`, create `AMSInputAdapter` wrapping the YAMS session
    - Pass adapter to `InputManager` instead of `MouseInputSource`
    - Game code remains unchanged - same `InputEvent` interface
 4. Optionally add temporal state management for latency compensation:
@@ -233,10 +235,10 @@ This allows accurate hit detection even with 100-200ms detection latency.
 
 ```
 ArcheryGame/
-├── ams/                      # Core AMS system
-│   ├── session.py           # Main AMS interface
+├── ams/                      # Core YAMS system
+│   ├── session.py           # Main YAMS interface
 │   ├── detection_backend.py # Backend interface
-│   ├── game_adapter.py      # AMSInputAdapter (AMS → game input bridge)
+│   ├── game_adapter.py      # AMSInputAdapter (YAMS → game input bridge)
 │   ├── laser_detection_backend.py
 │   ├── object_detection_backend.py
 │   ├── temporal_state.py    # TemporalGameState base class
@@ -291,8 +293,8 @@ ArcheryGame/
 | File | Purpose |
 |------|---------|
 | `ams_game.py` | **Start here** - unified launcher |
-| `ams/session.py` | Main AMS class, ties everything together |
-| `ams/game_adapter.py` | **AMSInputAdapter** - bridges AMS to game input |
+| `ams/session.py` | Main YAMS class, ties everything together |
+| `ams/game_adapter.py` | **AMSInputAdapter** - bridges YAMS to game input |
 | `ams/temporal_state.py` | Temporal queries for latency handling |
 | `calibration/calibration_manager.py` | Calibration API |
 | `games/DuckHunt/input/` | Input abstraction (InputManager, InputSource, InputEvent) |

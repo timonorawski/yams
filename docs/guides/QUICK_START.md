@@ -27,8 +27,8 @@ For development, you only need a computer with a mouse. The full AMS setup (proj
 
 1. **Clone the repository:**
    ```bash
-   git clone https://github.com/yourusername/ArcheryGame.git
-   cd ArcheryGame
+   git clone https://github.com/yourusername/yams.git
+   cd yams
    ```
 
 2. **Install dependencies:**
@@ -236,7 +236,7 @@ player:
 ### Step 3: Run Your Game!
 
 ```bash
-cd ../..  # Back to ArcheryGame root directory
+cd ../..  # Back to yams root directory
 python3 ams_game.py --game myfirstgame --backend mouse
 ```
 
