@@ -97,14 +97,19 @@
         "type": "object",
         "properties": {
           "title": {"type": "string"},
-          "yaml": {"type": "string"}
+          "yaml": {
+            "type": "string",
+            "x-content-type": "yaml",
+            "description": "YAML code example"
+          }
         },
         "required": ["yaml"]
       }
     },
     "lua": {
       "type": "string",
-      "description": "The Lua source code"
+      "description": "The Lua source code",
+      "x-content-type": "lua"
     }
   },
   "allOf": [

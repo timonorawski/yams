@@ -1,9 +1,11 @@
 <script>
   import { onMount } from 'svelte';
+  import yaml from 'js-yaml';
 
   import MonacoEditor from './lib/ide/MonacoEditor.svelte';
   import FileTree from './lib/ide/FileTree.svelte';
   import PreviewFrame from './lib/ide/PreviewFrame.svelte';
+  import EmbeddedCodeEditor from './lib/ide/EmbeddedCodeEditor.svelte';
 
   // Project config
   let projectName = 'default';
@@ -33,6 +35,13 @@
   let expandedBuiltins = new Set();
   let viewingBuiltin = null;  // { category, filename, content }
 
+  // Embedded code editor (for lua/yaml keys)
+  let embeddedEditorOpen = false;
+  let embeddedEditorLanguage = 'lua';
+  let embeddedEditorTitle = 'Edit Lua';
+  let embeddedEditorKey = '';  // The YAML key being edited (e.g., 'lua')
+  let embeddedEditorValue = '';
+
   // Project files as YAML strings (keyed by path)
   let projectFiles = {};
 
@@ -41,6 +50,17 @@
   // Reactive getter for current file content
   $: editorContent = viewingBuiltin ? viewingBuiltin.content : (projectFiles[currentFile] || '');
   $: isReadOnly = !!viewingBuiltin;
+
+  // Detect if current file is a Lua script with editable code blocks
+  $: isLuaScript = (currentFile?.endsWith('.lua.yaml') || viewingBuiltin?.filename?.endsWith('.lua.yaml'));
+  $: parsedYaml = (() => {
+    try {
+      return yaml.load(editorContent);
+    } catch (e) {
+      return null;
+    }
+  })();
+  $: hasLuaCode = parsedYaml?.lua !== undefined;
 
   // File tree structure (will be populated from API)
   let files = [];
@@ -110,6 +130,54 @@
   function closeBuiltinView() {
     viewingBuiltin = null;
     currentFile = 'game.yaml';
+  }
+
+  function openEmbeddedEditor(key, language, title) {
+    if (!parsedYaml || parsedYaml[key] === undefined) return;
+
+    embeddedEditorKey = key;
+    embeddedEditorLanguage = language;
+    embeddedEditorTitle = title;
+    embeddedEditorValue = parsedYaml[key];
+    embeddedEditorOpen = true;
+  }
+
+  function handleEmbeddedEditorSave(event) {
+    const newValue = event.detail.value;
+
+    // Update the parsed YAML
+    const updated = { ...parsedYaml, [embeddedEditorKey]: newValue };
+
+    // Re-serialize to YAML, preserving block scalar style for code
+    const newContent = yaml.dump(updated, {
+      lineWidth: -1,  // Don't wrap lines
+      noRefs: true,
+      quotingType: '"',
+      forceQuotes: false,
+    });
+
+    // Update the editor content
+    if (viewingBuiltin) {
+      // Read-only - shouldn't happen but just in case
+      embeddedEditorOpen = false;
+      return;
+    }
+
+    projectFiles[currentFile] = newContent;
+    projectFiles = projectFiles;
+    isDirty = true;
+
+    embeddedEditorOpen = false;
+
+    // Trigger auto-save
+    clearTimeout(autoSaveTimeout);
+    autoSaveTimeout = setTimeout(() => {
+      saveCurrentFile();
+    }, 2000);
+  }
+
+  function handleEmbeddedEditorCancel() {
+    embeddedEditorOpen = false;
   }
 
   async function loadProjectList() {
@@ -459,6 +527,16 @@
       {:else}
         <span class="text-base-content/60 text-sm">{currentFile}</span>
       {/if}
+      {#if isLuaScript && hasLuaCode}
+        <button
+          class="btn btn-xs btn-outline btn-accent gap-1"
+          on:click={() => openEmbeddedEditor('lua', 'lua', 'Edit Lua Code')}
+          title="Edit Lua code with syntax highlighting"
+        >
+          <span>🌙</span>
+          <span>Edit Lua</span>
+        </button>
+      {/if}
     </div>
     <div class="flex-none flex items-center gap-3 pr-2">
       <button class="btn btn-sm btn-ghost px-4" on:click={() => console.log('Run')}>
@@ -717,4 +795,14 @@
       <div class="modal-backdrop" on:click={() => showNewFileModal = false} on:keydown={() => {}}></div>
     </div>
   {/if}
+
+  <!-- Embedded Code Editor Modal -->
+  <EmbeddedCodeEditor
+    isOpen={embeddedEditorOpen}
+    language={embeddedEditorLanguage}
+    title={embeddedEditorTitle}
+    value={embeddedEditorValue}
+    on:save={handleEmbeddedEditorSave}
+    on:cancel={handleEmbeddedEditorCancel}
+  />
 </div>
