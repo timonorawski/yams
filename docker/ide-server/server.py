@@ -50,16 +50,41 @@ class ProjectCreate(BaseModel):
 # Schema API
 # ============================================================================
 
-@app.get("/api/schemas/{schema_name}")
+@app.get("/api/schemas/{schema_name:path}")
 async def get_schema(schema_name: str):
-    """Serve JSON schemas for Monaco validation."""
+    """Serve JSON schemas for Monaco validation.
+
+    Supports fragment references like 'assets.schema.json#sprite' which returns
+    the subschema at $defs/sprite wrapped as a standalone schema.
+    """
+    # Handle fragment references (e.g., assets.schema.json#sprite)
+    fragment = None
+    if '#' in schema_name:
+        schema_name, fragment = schema_name.split('#', 1)
+
     schema_path = SCHEMAS_DIR / schema_name
 
     if not schema_path.exists():
         raise HTTPException(status_code=404, detail=f"Schema not found: {schema_name}")
 
+    schema = json.loads(schema_path.read_text())
+
+    # If fragment specified, extract the subschema
+    if fragment:
+        defs = schema.get('$defs', schema.get('definitions', {}))
+        if fragment not in defs:
+            raise HTTPException(status_code=404, detail=f"Schema fragment not found: #{fragment}")
+
+        # Return subschema with $defs included for internal references
+        subschema = defs[fragment].copy()
+        subschema['$schema'] = schema.get('$schema', 'http://json-schema.org/draft-07/schema#')
+        subschema['$id'] = f"{schema.get('$id', '')}#{fragment}"
+        if '$defs' not in subschema and defs:
+            subschema['$defs'] = defs
+        schema = subschema
+
     return JSONResponse(
-        content=json.loads(schema_path.read_text()),
+        content=schema,
         media_type="application/schema+json"
     )
 

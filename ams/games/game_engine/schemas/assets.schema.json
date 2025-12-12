@@ -1,0 +1,305 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://ams.games/schemas/assets.schema.json",
+  "title": "AMS Asset Definitions",
+  "description": "Schema for standalone asset definition files (sprites, sounds, images)",
+
+  "$defs": {
+    "rgb_color": {
+      "type": "array",
+      "items": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 255
+      },
+      "minItems": 3,
+      "maxItems": 3,
+      "description": "RGB color as [R, G, B] array"
+    },
+
+    "provenance": {
+      "type": "object",
+      "description": "Asset provenance and licensing information",
+      "properties": {
+        "author": {
+          "type": "string",
+          "description": "Original creator/artist name"
+        },
+        "source": {
+          "type": "string",
+          "description": "URL or description of where the asset came from"
+        },
+        "license": {
+          "type": "string",
+          "description": "License identifier (e.g., CC0, CC-BY-4.0, MIT, proprietary)"
+        },
+        "license_url": {
+          "type": "string",
+          "format": "uri",
+          "description": "URL to full license text"
+        },
+        "attribution": {
+          "type": "string",
+          "description": "Required attribution text (if license requires it)"
+        },
+        "created": {
+          "type": "string",
+          "format": "date",
+          "description": "Date asset was created (YYYY-MM-DD)"
+        },
+        "modified": {
+          "type": "string",
+          "format": "date",
+          "description": "Date asset was last modified"
+        },
+        "notes": {
+          "type": "string",
+          "description": "Additional provenance notes"
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "sprite": {
+      "type": "object",
+      "description": "Sprite asset definition",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Sprite identifier (defaults to filename)"
+        },
+        "description": {
+          "type": "string",
+          "description": "Human-readable description"
+        },
+        "extends": {
+          "type": "string",
+          "description": "Inherit from another sprite definition",
+          "x-content-type": "@ref:sprite"
+        },
+        "file": {
+          "type": "string",
+          "description": "Path to image file (relative to assets/images/)",
+          "x-content-type": "@ref:asset:image"
+        },
+        "data": {
+          "type": "string",
+          "pattern": "^data:image/",
+          "description": "Inline image as data URI (data:image/png;base64,...)",
+          "x-content-type": "data-uri"
+        },
+        "transparent": {
+          "$ref": "#/$defs/rgb_color",
+          "description": "Color key for transparency"
+        },
+        "x": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "X offset in sprite sheet (pixels)"
+        },
+        "y": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Y offset in sprite sheet (pixels)"
+        },
+        "width": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Sprite width (pixels)"
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Sprite height (pixels)"
+        },
+        "flip_x": {
+          "type": "boolean",
+          "default": false,
+          "description": "Flip sprite horizontally"
+        },
+        "flip_y": {
+          "type": "boolean",
+          "default": false,
+          "description": "Flip sprite vertically"
+        },
+        "anchor": {
+          "type": "array",
+          "items": { "type": "number" },
+          "minItems": 2,
+          "maxItems": 2,
+          "description": "Anchor point as [x, y] normalized (0-1), default [0.5, 0.5]"
+        },
+        "frames": {
+          "type": "array",
+          "description": "Animation frames (for animated sprites)",
+          "items": {
+            "$ref": "#/$defs/sprite_frame"
+          }
+        },
+        "frame_duration": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Default frame duration in seconds (for animation)"
+        },
+        "loop": {
+          "type": "boolean",
+          "default": true,
+          "description": "Whether animation loops"
+        },
+        "provenance": {
+          "$ref": "#/$defs/provenance",
+          "description": "Asset provenance and licensing"
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "sprite_frame": {
+      "type": "object",
+      "description": "Single animation frame",
+      "properties": {
+        "x": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Frame X offset in sprite sheet"
+        },
+        "y": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Frame Y offset in sprite sheet"
+        },
+        "width": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Frame width (if different from sprite)"
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Frame height (if different from sprite)"
+        },
+        "duration": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Frame duration override (seconds)"
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "sound": {
+      "type": "object",
+      "description": "Sound asset definition",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Sound identifier (defaults to filename)"
+        },
+        "description": {
+          "type": "string",
+          "description": "Human-readable description"
+        },
+        "file": {
+          "type": "string",
+          "description": "Path to audio file (relative to assets/sounds/)",
+          "x-content-type": "@ref:asset:sound"
+        },
+        "data": {
+          "type": "string",
+          "pattern": "^data:audio/",
+          "description": "Inline audio as data URI (data:audio/wav;base64,...)",
+          "x-content-type": "data-uri"
+        },
+        "volume": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "default": 1,
+          "description": "Default volume (0-1)"
+        },
+        "loop": {
+          "type": "boolean",
+          "default": false,
+          "description": "Whether sound loops by default"
+        },
+        "pitch": {
+          "type": "number",
+          "minimum": 0.1,
+          "maximum": 4,
+          "default": 1,
+          "description": "Playback pitch/speed multiplier"
+        },
+        "spatial": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable spatial/positional audio"
+        },
+        "variants": {
+          "type": "array",
+          "description": "Alternative sound files (randomly selected)",
+          "items": {
+            "type": "string",
+            "x-content-type": "@ref:asset:sound"
+          }
+        },
+        "provenance": {
+          "$ref": "#/$defs/provenance",
+          "description": "Asset provenance and licensing"
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "image": {
+      "type": "object",
+      "description": "Raw image asset definition",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Image identifier (defaults to filename)"
+        },
+        "description": {
+          "type": "string",
+          "description": "Human-readable description"
+        },
+        "file": {
+          "type": "string",
+          "description": "Path to image file",
+          "x-content-type": "@ref:asset:image"
+        },
+        "data": {
+          "type": "string",
+          "pattern": "^data:image/",
+          "description": "Inline image as data URI (data:image/png;base64,...)",
+          "x-content-type": "data-uri"
+        },
+        "width": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Image width (for documentation, auto-detected from file)"
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Image height (for documentation, auto-detected from file)"
+        },
+        "tags": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Tags for categorization"
+        },
+        "provenance": {
+          "$ref": "#/$defs/provenance",
+          "description": "Asset provenance and licensing"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+
+  "oneOf": [
+    { "$ref": "#/$defs/sprite" },
+    { "$ref": "#/$defs/sound" },
+    { "$ref": "#/$defs/image" }
+  ]
+}

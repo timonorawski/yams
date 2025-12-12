@@ -79,6 +79,45 @@
       "fileMatch": ["**/lua/input_actions/*.lua.yaml"],
       "singleton": false,
       "template": "type: input_action\nname: {name}\ndescription: |\n  Handle user input (click/hit) events.\nversion: \"1.0\"\ntags: []\n\nargs:\n  entity_type:\n    type: string\n    description: Type of entity to spawn\n    default: particle\n\nprovides:\n  hooks:\n    - execute\n\nrequires:\n  api: [spawn]\n\nlua: |\n  local {name} = {}\n\n  function {name}.execute(x, y, args)\n    -- Called when user clicks/hits at (x, y)\n    local entity_type = args.entity_type or \"particle\"\n    ams.spawn(entity_type, x, y)\n  end\n\n  return {name}\n"
+    },
+    {
+      "id": "sprite",
+      "name": "Sprite",
+      "description": "A Sprite Asset Definition",
+      "icon": "image",
+      "filename": "{name}.yaml",
+      "folder": "assets/sprites/",
+      "language": "yaml",
+      "schema": "/api/schemas/assets.schema.json#sprite",
+      "fileMatch": ["**/assets/sprites/*.yaml"],
+      "singleton": false,
+      "template": "name: {name}\ndescription: Sprite description\n\n# Reference an image file\nfile: ../images/{name}.png\n\n# Or use a region from a sprite sheet:\n# file: ../images/spritesheet.png\n# x: 0\n# y: 0\n# width: 32\n# height: 32\n\n# Optional: transparency color key\n# transparent: [255, 0, 255]\n\n# Optional: flip sprite\n# flip_x: false\n# flip_y: false\n\n# Optional: animation frames\n# frames:\n#   - { x: 0, y: 0 }\n#   - { x: 32, y: 0 }\n#   - { x: 64, y: 0 }\n# frame_duration: 0.1\n# loop: true\n\n# Optional: provenance\n# provenance:\n#   author: Artist Name\n#   license: CC0\n"
+    },
+    {
+      "id": "sound",
+      "name": "Sound",
+      "description": "A Sound Asset Definition",
+      "icon": "speaker",
+      "filename": "{name}.yaml",
+      "folder": "assets/sounds/",
+      "language": "yaml",
+      "schema": "/api/schemas/assets.schema.json#sound",
+      "fileMatch": ["**/assets/sounds/*.yaml"],
+      "singleton": false,
+      "template": "name: {name}\ndescription: Sound description\n\n# Reference an audio file\nfile: {name}.wav\n\n# Optional: playback settings\nvolume: 1.0\nloop: false\n# pitch: 1.0\n\n# Optional: random variants\n# variants:\n#   - {name}_1.wav\n#   - {name}_2.wav\n#   - {name}_3.wav\n\n# Optional: provenance\n# provenance:\n#   author: Sound Artist\n#   license: CC0\n"
+    },
+    {
+      "id": "image",
+      "name": "Image",
+      "description": "An Image Asset Definition",
+      "icon": "image",
+      "filename": "{name}.yaml",
+      "folder": "assets/images/",
+      "language": "yaml",
+      "schema": "/api/schemas/assets.schema.json#image",
+      "fileMatch": ["**/assets/images/*.yaml"],
+      "singleton": false,
+      "template": "name: {name}\ndescription: Image description\n\n# Reference an image file (place the actual file alongside this yaml)\nfile: {name}.png\n\n# Optional: metadata\n# width: 128\n# height: 128\n# tags: [background, tileset]\n\n# Optional: provenance information\n# provenance:\n#   author: Artist Name\n#   source: https://example.com/asset\n#   license: CC0\n#   license_url: https://creativecommons.org/publicdomain/zero/1.0/\n"
     }
   ]
 }
