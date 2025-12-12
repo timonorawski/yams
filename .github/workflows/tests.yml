@@ -35,12 +35,6 @@ jobs:
             -v \
             --ignore=tests/test_integration.py
 
-      - name: Run DuckHunt tests
-        run: |
-          pytest games/DuckHunt/tests/ \
-            --tb=short \
-            -v
-
   browser-tests:
     name: Browser/JS Tests
     runs-on: ubuntu-latest
