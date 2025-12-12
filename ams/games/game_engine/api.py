@@ -14,6 +14,7 @@ Extends LuaAPIBase with game entity operations:
 from typing import Any, Callable, Optional, TYPE_CHECKING
 
 from ams.lua.api import LuaAPIBase, lua_safe_return
+from ams import profiling
 
 if TYPE_CHECKING:
     from ams.lua.engine import LuaEngine
@@ -195,6 +196,7 @@ class GameLuaAPI(LuaAPIBase):
         entity = self._engine.get_entity(entity_id)
         return entity.alive if entity else False
 
+    @profiling.profile("lua_api", "ams.destroy")
     def destroy(self, entity_id: str) -> None:
         """Mark entity for destruction."""
         entity = self._engine.get_entity(entity_id)
@@ -205,6 +207,7 @@ class GameLuaAPI(LuaAPIBase):
     # Entity Spawning
     # =========================================================================
 
+    @profiling.profile("lua_api", "ams.spawn")
     def spawn(self, entity_type: str, x: float, y: float,
               vx: float = 0.0, vy: float = 0.0,
               width: float = 32.0, height: float = 32.0,
@@ -286,10 +289,12 @@ class GameLuaAPI(LuaAPIBase):
     # Events (deferred actions)
     # =========================================================================
 
+    @profiling.profile("lua_api", "ams.play_sound")
     def play_sound(self, sound_name: str) -> None:
         """Request a sound to be played."""
         self._engine.queue_sound(sound_name)
 
+    @profiling.profile("lua_api", "ams.schedule")
     def schedule(self, delay: float, callback_name: str, entity_id: str) -> None:
         """Schedule a callback after delay seconds."""
         self._engine.schedule_callback(delay, callback_name, entity_id)

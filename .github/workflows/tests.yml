@@ -34,7 +34,15 @@ jobs:
             ams/games/game_engine/rollback/tests/ \
             --tb=short \
             -v \
-            --ignore=tests/test_integration.py
+            --ignore=tests/test_integration.py \
+            --ignore=tests/profiling/test_profiling_performance.py
+
+      - name: Run profiling performance tests
+        run: |
+          pytest tests/profiling/test_profiling_performance.py \
+            --tb=short \
+            -v \
+            -x
 
   browser-tests:
     name: Browser/JS Tests

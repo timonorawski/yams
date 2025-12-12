@@ -24,6 +24,7 @@ from lupa import LuaRuntime
 
 from .entity import Entity
 from .api import LuaAPIBase
+from ams import profiling
 
 if TYPE_CHECKING:
     from ams.content_fs import ContentFS
@@ -527,6 +528,7 @@ class LuaEngine:
     # Subroutine Execution (collision actions, input actions, generators)
     # =========================================================================
 
+    @profiling.profile("lua_engine", "Collision Action")
     def execute_collision_action(
         self,
         action_name: str,
@@ -576,6 +578,7 @@ class LuaEngine:
             print(f"[LuaEngine] Error executing collision action {action_name}: {e}")
             return False
 
+    @profiling.profile("lua_engine", "Input Action")
     def execute_input_action(
         self,
         action_name: str,
@@ -753,6 +756,7 @@ class LuaEngine:
         """
         self._lua.globals()[name] = value
 
+    @profiling.profile("lua_engine", "Lua Entity Updates")
     def update(self, dt: float) -> None:
         """
         Update all entities and their behaviors.

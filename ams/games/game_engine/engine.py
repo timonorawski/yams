@@ -63,6 +63,7 @@ from ams.games.game_engine.config import (
 )
 from ams.games.game_engine.renderer import GameEngineRenderer
 from ams.games.game_engine.rollback import RollbackStateManager, create_logger
+from ams import profiling
 
 if TYPE_CHECKING:
     from ams.content_fs import ContentFS
@@ -1490,6 +1491,9 @@ class GameEngine(BaseGame):
         if self._internal_state != GameState.PLAYING:
             return
 
+        # Begin profiling frame
+        profiling.begin_frame(self._frame_count)
+
         # Capture snapshot before update for rollback capability
         if self._rollback_manager:
             snapshot = self._rollback_manager.capture(self)
@@ -1499,6 +1503,10 @@ class GameEngine(BaseGame):
         # Run the actual frame update
         self._do_frame_update(dt)
 
+        # End profiling frame
+        profiling.end_frame()
+
+    @profiling.profile("game_engine", "Frame Update")
     def _do_frame_update(self, dt: float) -> None:
         """Internal frame update logic.
 
@@ -1670,6 +1678,7 @@ class GameEngine(BaseGame):
                 if not entity.alive:
                     break
 
+    @profiling.profile("game_engine", "Check Collisions")
     def _check_collisions(self) -> None:
         """Check collisions based on rules defined in game.yaml.
 
