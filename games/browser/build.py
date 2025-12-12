@@ -5,12 +5,14 @@ Pygbag Build Script for AMS Games
 Builds pygame games for browser deployment via WebAssembly.
 
 Usage:
-    python games/browser/build.py [--dev] [--output DIR]
+    python games/browser/build.py [--dev] [--output DIR] [--static]
 
 Options:
     --dev       Start development server (auto-reload)
     --output    Output directory (default: build/web)
     --port      Dev server port (default: 8000)
+    --static    Build for static deployment (GitHub Pages)
+                Creates per-game landing pages + shared WASM build
 """
 import argparse
 import json
@@ -466,6 +468,87 @@ def build_production(output_dir: Path):
         sys.exit(1)
 
 
+def build_static(output_dir: Path):
+    """Build for static deployment (GitHub Pages).
+
+    Creates:
+    - {output_dir}/wasm/ - Shared pygbag WASM build
+    - {output_dir}/index.html - Game selector page
+    - {output_dir}/{slug}/index.html - Per-game landing pages
+    """
+    import tempfile
+
+    print("\n" + "=" * 60)
+    print("  STATIC DEPLOYMENT BUILD")
+    print("=" * 60 + "\n")
+
+    # Create output directory
+    if output_dir.exists():
+        shutil.rmtree(output_dir)
+    output_dir.mkdir(parents=True)
+
+    # Step 1: Build WASM to temporary directory, then move to output/wasm/
+    print("Step 1: Building WASM bundle...")
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmp_build = Path(tmpdir) / "build"
+
+        # Generate build ID
+        build_id = uuid.uuid4().hex[:8]
+        print(f"  Build ID: {build_id}")
+
+        # Prepare build directory
+        prepare_build_dir(tmp_build)
+        (tmp_build / "build_id.txt").write_text(build_id)
+
+        # Create launcher.html (for dev compatibility, not used in static)
+        create_index_html(tmp_build, build_id)
+
+        # Run pygbag build
+        pygbag = find_pygbag()
+        cmd = f"{pygbag} --build --app_name ams_games {tmp_build}"
+        result = subprocess.run(cmd, shell=True, cwd=PROJECT_ROOT)
+
+        if result.returncode != 0:
+            print(f"\nPygbag build failed with code {result.returncode}")
+            sys.exit(1)
+
+        # Copy static assets to build output
+        _copy_static_assets(tmp_build, build_id)
+
+        # Move pygbag output to wasm/
+        pygbag_output = tmp_build / "build" / "web"
+        wasm_dir = output_dir / "wasm"
+        shutil.copytree(pygbag_output, wasm_dir)
+        print(f"  WASM bundle: {wasm_dir}")
+
+    # Step 2: Generate static game pages
+    print("\nStep 2: Generating static pages...")
+    from generate_pages import generate_all_pages
+    generate_all_pages(output_dir, wasm_path="wasm")
+
+    # Step 3: Summary
+    print("\n" + "=" * 60)
+    print("  STATIC BUILD COMPLETE")
+    print("=" * 60)
+    print(f"\nOutput directory: {output_dir}")
+    print("\nStructure:")
+    print(f"  {output_dir}/")
+    print(f"  ├── index.html          (game selector)")
+    print(f"  ├── wasm/               (shared WASM build)")
+
+    # List generated game pages
+    from game_metadata import GAME_METADATA
+    for slug in list(GAME_METADATA.keys())[:3]:
+        print(f"  ├── {slug}/")
+        print(f"  │   └── index.html")
+    if len(GAME_METADATA) > 3:
+        print(f"  └── ... ({len(GAME_METADATA) - 3} more games)")
+
+    print("\nTo deploy to GitHub Pages:")
+    print("  1. Copy contents to your gh-pages branch")
+    print("  2. Or configure GitHub Actions to run this build")
+
+
 # Game metadata for launcher (slug -> display info)
 GAME_INFO = {
     # Python/BaseGame games
@@ -649,6 +732,11 @@ def main():
         help="Start development server",
     )
     parser.add_argument(
+        "--static",
+        action="store_true",
+        help="Build for static deployment (GitHub Pages)",
+    )
+    parser.add_argument(
         "--output",
         type=Path,
         default=BUILD_DIR,
@@ -661,6 +749,11 @@ def main():
         help="Development server port",
     )
     args = parser.parse_args()
+
+    # Static deployment build (GitHub Pages)
+    if args.static:
+        build_static(args.output)
+        return
 
     # Generate build ID for cache validation
     build_id = uuid.uuid4().hex[:8]
