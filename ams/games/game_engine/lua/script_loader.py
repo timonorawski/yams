@@ -118,12 +118,10 @@ class ScriptValidationError(Exception):
         self.errors = errors or []
         super().__init__(message)
 
-VALID_SUBROUTINE_TYPES = {'behavior', 'collision_action', 'generator', 'input_action', 'interaction_action'}
+VALID_SUBROUTINE_TYPES = {'action', 'generator'}
 VALID_HOOK_TYPES = {
-    'behavior': {'on_spawn', 'on_update', 'on_destroy', 'on_hit'},
-    'collision_action': {'execute'},
+    'action': {'execute'},
     'generator': {'generate'},
-    'input_action': {'execute'},
 }
 class ScriptLoader:
     """

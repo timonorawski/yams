@@ -591,12 +591,12 @@ class LuaEngine:
             True if action executed successfully
         """
         # Load action if not already loaded
-        if not self.has_subroutine('interaction_action', action_name):
-            yaml_path = f'lua/interaction_action/{action_name}.lua.yaml'
-            if not self._load_yaml_subroutine('interaction_action', action_name, yaml_path):
+        if not self.has_subroutine('action', action_name):
+            yaml_path = f'lua/actions/{action_name}.lua.yaml'
+            if not self._load_yaml_subroutine('action', action_name, yaml_path):
                 return False
 
-        action = self.get_subroutine('interaction_action', action_name)
+        action = self.get_subroutine('action', action_name)
         if not action:
             return False
 

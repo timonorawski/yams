@@ -62,6 +62,7 @@ class LuaActionHandler:
         context = {
             "trigger": interaction.get("trigger", "enter"),
             "target": target,
+            "dt": interaction.get("dt", 0.016),
         }
 
         # Add computed values if present

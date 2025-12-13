@@ -143,13 +143,17 @@ entity_types:
           max_speed: 600
 
       screen:
-        - edges: [bottom]
+        - when:
+            distance: 1
+          because: exit
           action: ball_lost
 
-        - edges: [left, right]
+        - when:
+            edges: [left, right]
           action: bounce_horizontal
 
-        - edges: [top]
+        - when:
+            edges: [top]
           action: bounce_vertical
 
   brick:

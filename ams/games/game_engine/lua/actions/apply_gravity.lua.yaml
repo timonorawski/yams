@@ -1,0 +1,32 @@
+# yaml-language-server: $schema=../lua_script.schema.json
+type: action
+name: apply_gravity
+description: |
+  Apply gravitational acceleration and velocity-based movement.
+  Adds acceleration to vy, then moves entity by velocity.
+
+lua: |
+  local action = {}
+
+  function action.execute(entity_id, other_id, modifier, context)
+      local accel = modifier.acceleration or 600
+      local dt = context.dt or 0.016
+
+      -- Apply gravity to vertical velocity
+      local vy = ams.get_vy(entity_id)
+      vy = vy + accel * dt
+      ams.set_vy(entity_id, vy)
+
+      -- Move by velocity
+      local x = ams.get_x(entity_id)
+      local y = ams.get_y(entity_id)
+      local vx = ams.get_vx(entity_id)
+
+      x = x + vx * dt
+      y = y + vy * dt
+
+      ams.set_x(entity_id, x)
+      ams.set_y(entity_id, y)
+  end
+
+  return action

@@ -38,6 +38,7 @@ from ams.lua import LuaEngine, Entity
 from ams.games.game_engine.api import GameLuaAPI
 from ams.games.game_engine.entity import GameEntity
 from ams.games.game_engine.schema import SchemaValidationError, validate_game_yaml
+from ams.games.game_engine.lua.behavior_loader import BehaviorLoader
 from ams.games.game_engine.config import (
     AssetsConfig,
     CollisionAction,
@@ -231,6 +232,9 @@ class GameEngine(BaseGame):
         # Wire action handler to Lua engine
         self._lua_action_handler = LuaActionHandler(self._behavior_engine)
         self._interaction_engine.set_default_handler(self._lua_action_handler)
+
+        # Create behavior loader for YAML behavior bundles
+        self._behavior_loader = BehaviorLoader(content_fs=self._content_fs)
 
         # Create system entities for Lua access (pointer, screen, etc.)
         from ams.games.game_engine.entity import SystemEntity
@@ -432,6 +436,9 @@ class GameEngine(BaseGame):
 
         # Second pass: resolve inheritance
         self._resolve_entity_inheritance(game_def)
+
+        # Third pass: expand behaviors into interactions
+        self._expand_behavior_interactions(game_def)
 
         # Parse collision rules (legacy format)
         for collision in data.get('collisions', []):
@@ -1083,6 +1090,43 @@ class GameEngine(BaseGame):
             else:
                 # No extends - this type is its own base
                 config.base_type = name
+
+    def _expand_behavior_interactions(self, game_def: GameDefinition) -> None:
+        """Expand behaviors into interactions for all entity types.
+
+        Behaviors are YAML bundles that define collections of interactions.
+        This method expands them and merges with entity's own interactions.
+        """
+        for name, config in game_def.entity_types.items():
+            if not config.behaviors:
+                continue
+
+            # Filter to named behaviors (skip inline Lua which will be legacy)
+            behavior_names = [b for b in config.behaviors if isinstance(b, str)]
+            if not behavior_names:
+                continue
+
+            # Expand behaviors into interactions
+            behavior_interactions = self._behavior_loader.expand_behaviors(
+                behaviors=behavior_names,
+                behavior_config=config.behavior_config
+            )
+
+            # Merge with entity's own interactions (entity's take precedence)
+            merged = dict(behavior_interactions)
+            for target, interactions in config.interactions.items():
+                if target not in merged:
+                    merged[target] = interactions
+                else:
+                    # Entity has interactions for same target - merge
+                    existing = merged[target]
+                    if not isinstance(existing, list):
+                        existing = [existing]
+                    if not isinstance(interactions, list):
+                        interactions = [interactions]
+                    merged[target] = existing + interactions
+
+            config.interactions = merged
 
     @abstractmethod
     def _get_skin(self, skin_name: str) -> GameEngineRenderer:
@@ -2019,6 +2063,7 @@ class GameEngine(BaseGame):
                 attributes=entity.properties,
             )
 
+    @profiling.profile("game_engine", "Apply Physics")
     def _apply_physics(self, dt: float) -> None:
         """Apply velocity to position for all entities.
 

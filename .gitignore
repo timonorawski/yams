@@ -45,3 +45,10 @@ htmlcov/
 # Temporary files
 *.tmp
 *.bak
+
+# Pasture Files
+pasture/
+
+# Experimental/WIP
+site/play/
+games/browser/package*.json

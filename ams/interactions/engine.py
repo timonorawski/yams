@@ -345,6 +345,9 @@ class InteractionEngine:
         Returns:
             List of trigger events that fired
         """
+        # Store dt for dispatch phase
+        self._current_dt = dt
+
         # Update time-based system entities
         self.system.update(dt)
 
@@ -473,6 +476,7 @@ class InteractionEngine:
                 "modifier": event.interaction.modifier,
                 "action": action,
                 "target": event.interaction.target,
+                "dt": getattr(self, '_current_dt', 0.016),
             }
 
             handler.execute(

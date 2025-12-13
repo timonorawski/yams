@@ -1,0 +1,14 @@
+name: gravity
+description: Apply gravity acceleration and velocity-based movement
+
+config:
+  acceleration:
+    type: number
+    default: 600
+
+interactions:
+  level:
+    because: continuous
+    action: apply_gravity
+    modifier:
+      acceleration: $config.acceleration
