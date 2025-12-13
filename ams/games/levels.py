@@ -34,6 +34,9 @@ from ams.yaml import (
     SKIP_VALIDATION,
     SchemaValidationError,
 )
+from ams.logging import get_logger
+
+log = get_logger('levels')
 
 # =============================================================================
 # Schema Validation
@@ -67,7 +70,7 @@ def validate_level_yaml(data: Dict[str, Any], source_path: Optional[Path] = None
     if schema is None:
         error_msg = f"Schema file not found: {_SCHEMAS_DIR / 'level.schema.json'}"
         if SKIP_VALIDATION:
-            print(f"[LevelLoader] Warning: {error_msg}")
+            log.warning(error_msg)
             return
         raise SchemaValidationError(error_msg)
 
@@ -76,7 +79,7 @@ def validate_level_yaml(data: Dict[str, Any], source_path: Optional[Path] = None
         path_str = f" in {source_path}" if source_path else ""
         error_msg = f"Schema validation error{path_str}: {errors[0]}"
         if SKIP_VALIDATION:
-            print(f"[LevelLoader] Warning: {error_msg}")
+            log.warning(error_msg)
         else:
             raise SchemaValidationError(error_msg, errors=errors, path=source_path)
 
@@ -576,7 +579,7 @@ class LevelSupportMixin:
             self._apply_level_config(self._current_level_data)
             return True
         except (FileNotFoundError, ValueError) as e:
-            print(f"Failed to load level '{slug}': {e}")
+            log.error(f"Failed to load level '{slug}': {e}")
             return False
 
     def _apply_level_config(self, level_data: Any) -> None:

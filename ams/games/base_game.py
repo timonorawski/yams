@@ -23,6 +23,9 @@ import pygame
 from ams.games.game_state import GameState
 from ams.games.palette import GamePalette
 from ams.games.quiver import QuiverState, create_quiver
+from ams.logging import get_logger
+
+log = get_logger('base_game')
 
 if TYPE_CHECKING:
     from ams.games.levels import LevelLoader, LevelGroup
@@ -493,7 +496,7 @@ class BaseGame(ABC):
                 self._current_group = self._level_loader.load_group(level_group)
                 level = self._current_group.current_level
             except (FileNotFoundError, ValueError) as e:
-                print(f"Failed to load level group '{level_group}': {e}")
+                log.error(f"Failed to load level group '{level_group}': {e}")
 
         # Load specific level if specified
         if level and self._level_loader:
@@ -532,7 +535,7 @@ class BaseGame(ABC):
             self._apply_level_config(self._current_level_data)
             return True
         except (FileNotFoundError, ValueError) as e:
-            print(f"Failed to load level '{slug}': {e}")
+            log.error(f"Failed to load level '{slug}': {e}")
             return False
 
     def _apply_level_config(self, level_data: Any) -> None:

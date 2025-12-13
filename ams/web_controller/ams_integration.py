@@ -15,6 +15,9 @@ from dataclasses import dataclass
 from enum import Enum, auto
 
 from .server import WebController, GameState, SessionInfo
+from ams.logging import get_logger
+
+log = get_logger('web_integration')
 
 
 def get_local_ips() -> List[str]:
@@ -178,7 +181,7 @@ class AMSWebIntegration:
     def start(self):
         """Start the web controller server."""
         self.web_controller.start()
-        print(f"\nWeb controller available at: {self.web_controller.url}")
+        log.info(f"Web controller available at: {self.web_controller.url}")
 
         # Initialize with mouse backend (no calibration needed)
         self._create_backend('mouse')
@@ -393,10 +396,10 @@ class AMSWebIntegration:
         # Check game over
         from ams.games import GameState as GS
         if self.current_game.state == GS.GAME_OVER:
-            print(f"\nGAME OVER! Final Score: {self.current_game.get_score()}")
+            log.info(f"GAME OVER! Final Score: {self.current_game.get_score()}")
             self._handle_stop_game({})
         elif hasattr(GS, 'WON') and self.current_game.state == GS.WON:
-            print(f"\nYOU WIN! Final Score: {self.current_game.get_score()}")
+            log.info(f"YOU WIN! Final Score: {self.current_game.get_score()}")
             self._handle_stop_game({})
 
     def _broadcast_state(self):
@@ -548,7 +551,7 @@ class AMSWebIntegration:
                     })
 
         except Exception as e:
-            print(f"Warning: Failed to enumerate levels for {game_class.NAME}: {e}")
+            log.warning(f"Failed to enumerate levels for {game_class.NAME}: {e}")
 
         return levels, level_groups
 
@@ -564,7 +567,7 @@ class AMSWebIntegration:
         if self.current_game:
             return {'error': 'Cannot change backend while game is running'}
 
-        print(f"\nSwitching backend to: {backend_type}")
+        log.info(f"Switching backend to: {backend_type}")
 
         # Cleanup old backend
         if self.detection_backend:
@@ -586,7 +589,7 @@ class AMSWebIntegration:
         if self.current_game:
             return {'error': 'Cannot change pacing while game is running'}
 
-        print(f"\nSetting pacing to: {pacing}")
+        log.info(f"Setting pacing to: {pacing}")
         self.pacing = pacing
         self._update_session_info()
 
@@ -603,7 +606,7 @@ class AMSWebIntegration:
             self._update_session_info()
             return {'calibrated': True, 'message': 'Mouse backend needs no calibration'}
 
-        print("\nRunning calibration...")
+        log.info("Running calibration...")
         self.state = ControllerState.CALIBRATING
 
         try:
@@ -613,10 +616,10 @@ class AMSWebIntegration:
             )
 
             self.calibrated = result.success
-            print(f"Calibration complete! Success: {result.success}")
+            log.info(f"Calibration complete! Success: {result.success}")
 
         except Exception as e:
-            print(f"Calibration error: {e}")
+            log.error(f"Calibration error: {e}")
             self.calibrated = False
 
         self.state = ControllerState.IDLE
@@ -659,7 +662,7 @@ class AMSWebIntegration:
         if level_group:
             game_kwargs['level_group'] = level_group
 
-        print(f"\nLaunching game: {game_slug} with config: {game_kwargs}")
+        log.info(f"Launching game: {game_slug} with config: {game_kwargs}")
 
         try:
             # Create game instance with config
@@ -694,9 +697,7 @@ class AMSWebIntegration:
             return result
 
         except Exception as e:
-            print(f"Failed to launch game: {e}")
-            import traceback
-            traceback.print_exc()
+            log.exception(f"Failed to launch game: {e}")
             self.current_game = None
             self.current_game_name = None
             return {'error': str(e)}
@@ -795,9 +796,9 @@ class AMSWebIntegration:
                         calibration_manager = CalibrationManager(CalibrationConfig())
                         calibration_manager.load_calibration(calib_path)
                         self.calibrated = True
-                        print(f"Loaded existing calibration from {calib_path}")
+                        log.info(f"Loaded existing calibration from {calib_path}")
                     except Exception as e:
-                        print(f"Warning: Could not load calibration: {e}")
+                        log.warning(f"Could not load calibration: {e}")
                         self.calibrated = False
                 else:
                     self.calibrated = False
@@ -811,7 +812,7 @@ class AMSWebIntegration:
                 )
 
             except Exception as e:
-                print(f"Failed to create laser backend: {e}, falling back to mouse")
+                log.error(f"Failed to create laser backend: {e}, falling back to mouse")
                 self._create_backend('mouse')
                 return
 
@@ -833,9 +834,9 @@ class AMSWebIntegration:
                         calibration_manager = CalibrationManager(CalibrationConfig())
                         calibration_manager.load_calibration(calib_path)
                         self.calibrated = True
-                        print(f"Loaded existing calibration from {calib_path}")
+                        log.info(f"Loaded existing calibration from {calib_path}")
                     except Exception as e:
-                        print(f"Warning: Could not load calibration: {e}")
+                        log.warning(f"Could not load calibration: {e}")
                         self.calibrated = False
                 else:
                     self.calibrated = False
@@ -866,7 +867,7 @@ class AMSWebIntegration:
                 )
 
             except Exception as e:
-                print(f"Failed to create object backend: {e}, falling back to mouse")
+                log.error(f"Failed to create object backend: {e}, falling back to mouse")
                 self._create_backend('mouse')
                 return
 
@@ -876,7 +877,7 @@ class AMSWebIntegration:
             session_name="web_controlled_session"
         )
 
-        print(f"Backend created: {backend_type}")
+        log.info(f"Backend created: {backend_type}")
 
     def _cleanup_backend(self):
         """Clean up current backend."""
