@@ -44,6 +44,40 @@ jobs:
             -v \
             -x
 
+  game-engine-tests:
+    name: Game Engine Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libsdl2-dev libsdl2-image-dev libsdl2-mixer-dev libsdl2-ttf-dev
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest
+
+      - name: Run game engine interaction tests
+        env:
+          SDL_VIDEODRIVER: dummy
+          SDL_AUDIODRIVER: dummy
+        run: |
+          pytest ams/games/game_engine/tests/ \
+            --tb=short \
+            -v
+
   browser-tests:
     name: Browser/JS Tests
     runs-on: ubuntu-latest
