@@ -28,6 +28,7 @@ import sys
 
 from fs.multifs import MultiFS
 from fs.osfs import OSFS
+from fs.memoryfs import MemoryFS
 from fs.errors import ResourceNotFound
 
 
@@ -174,6 +175,29 @@ class ContentFS:
         self._multi_fs.add_fs('game', OSFS(str(game_path)), priority=self.PRIORITY_GAME)
         self._layers['game'] = (game_path, self.PRIORITY_GAME)
         return True
+
+    def add_memory_layer(self, name: str, priority: int = 75) -> MemoryFS:
+        """Add an in-memory filesystem layer.
+
+        Useful for testing where you want to inject virtual files
+        (like test game definitions) without touching the real filesystem.
+
+        Args:
+            name: Layer name (e.g., 'test')
+            priority: Layer priority (default 75, between game=50 and user=100)
+
+        Returns:
+            The MemoryFS instance - write files to it via mem_fs.writetext() etc.
+
+        Example:
+            mem = content_fs.add_memory_layer('test')
+            mem.makedirs('games/TestGame')
+            mem.writetext('games/TestGame/game.yaml', yaml_content)
+        """
+        mem_fs = MemoryFS()
+        self._multi_fs.add_fs(name, mem_fs, priority=priority)
+        self._layers[name] = (Path(f'<memory:{name}>'), priority)
+        return mem_fs
 
     def exists(self, path: str) -> bool:
         """Check if a path exists in any layer.

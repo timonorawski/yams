@@ -514,6 +514,296 @@ def run_quick_test(game_name: str, duration: float = 3.0) -> TestResult:
     return harness.run(duration=duration)
 
 
+class InlineGameHarness:
+    """Test harness for running games defined as inline YAML strings.
+
+    Allows defining minimal test games directly in test code without
+    needing files on disk. Uses ContentFS memory layer for virtual
+    game definitions.
+
+    Usage:
+        yaml_def = '''
+        name: "Test Ball"
+        screen_width: 400
+        screen_height: 300
+        entity_types:
+          ball:
+            width: 10
+            height: 10
+            color: white
+        player:
+          type: ball
+          spawn: [200, 150]
+        '''
+
+        harness = InlineGameHarness(yaml_def)
+        harness.backend.schedule_click(0.1, 200, 150)
+        result = harness.run(duration=1.0)
+        assert result.success
+    """
+
+    def __init__(
+        self,
+        game_yaml: str,
+        game_name: str = "TestGame",
+        width: int = 400,
+        height: int = 300,
+        headless: bool = True
+    ):
+        """Initialize with inline YAML game definition.
+
+        Args:
+            game_yaml: YAML string defining the game
+            game_name: Name for the test game (default "TestGame")
+            width: Display width
+            height: Display height
+            headless: If True, skip rendering (faster)
+        """
+        self.game_yaml = game_yaml
+        self.game_name = game_name
+        self.width = width
+        self.height = height
+        self.headless = headless
+        self.backend = TestDetectionBackend(width, height)
+
+        self._game = None
+        self._snapshots: List[StateSnapshot] = []
+        self._errors: List[str] = []
+        self._content_fs = None
+        self._temp_dir = None
+
+    def _create_game(self):
+        """Create game instance from inline YAML."""
+        from pathlib import Path
+        from ams.content_fs import ContentFS
+        from ams.games.game_engine import GameEngine
+        import tempfile
+        import os
+
+        # Create ContentFS with project root as core directory
+        core_dir = Path(__file__).parent.parent  # ams/ -> project root
+        self._content_fs = ContentFS(core_dir, add_user_layer=False)
+
+        # Create a temporary directory with the game.yaml
+        self._temp_dir = tempfile.mkdtemp(prefix='ams_test_game_')
+        game_yaml_path = Path(self._temp_dir) / 'game.yaml'
+        game_yaml_path.write_text(self.game_yaml)
+
+        # Add temp directory as game layer
+        self._content_fs.add_game_layer(Path(self._temp_dir))
+
+        # Create game class using existing factory
+        game_class = GameEngine.from_yaml(game_yaml_path)
+
+        return game_class(content_fs=self._content_fs)
+
+    def cleanup(self):
+        """Clean up temporary resources."""
+        if self._temp_dir:
+            import shutil
+            try:
+                shutil.rmtree(self._temp_dir)
+            except Exception:
+                pass
+            self._temp_dir = None
+
+    def _capture_snapshot(self, frame: int) -> StateSnapshot:
+        """Capture current game state."""
+        entities = {}
+
+        # Get entities from game's behavior engine (GameEngine)
+        if hasattr(self._game, '_behavior_engine'):
+            for entity in self._game._behavior_engine.get_alive_entities():
+                entities[entity.id] = {
+                    "type": entity.entity_type,
+                    "x": entity.x,
+                    "y": entity.y,
+                    "vx": getattr(entity, 'vx', 0),
+                    "vy": getattr(entity, 'vy', 0),
+                }
+        # Fallback: try lua engine directly
+        elif hasattr(self._game, '_lua') and self._game._lua:
+            for entity in self._game._lua.get_all_entities():
+                entities[entity.id] = {
+                    "type": entity.entity_type,
+                    "x": entity.x,
+                    "y": entity.y,
+                    "vx": getattr(entity, 'vx', 0),
+                    "vy": getattr(entity, 'vy', 0),
+                }
+
+        # Get game state
+        game_state = "playing"
+        if hasattr(self._game, 'state'):
+            game_state = str(self._game.state)
+        elif hasattr(self._game, '_get_internal_state'):
+            game_state = str(self._game._get_internal_state())
+
+        # Get score and lives
+        score = self._game.get_score() if hasattr(self._game, 'get_score') else 0
+        lives = 3
+        if hasattr(self._game, '_lives'):
+            lives = self._game._lives
+        elif hasattr(self._game, 'lives'):
+            lives = self._game.lives
+
+        return StateSnapshot(
+            time=self.backend.elapsed,
+            frame=frame,
+            score=score,
+            lives=lives,
+            entities=entities,
+            game_state=game_state
+        )
+
+    def run(
+        self,
+        duration: float = 5.0,
+        dt: float = 1/60,
+        snapshot_interval: float = 0.1,
+        stop_on_game_over: bool = True
+    ) -> TestResult:
+        """Run the game test.
+
+        Args:
+            duration: Maximum test duration in seconds
+            dt: Time step per frame (default 60fps)
+            snapshot_interval: How often to capture state (seconds)
+            stop_on_game_over: Stop early if game ends
+
+        Returns:
+            TestResult with captured data
+        """
+        import pygame
+
+        # Initialize pygame minimally
+        if not pygame.get_init():
+            pygame.init()
+
+        # Create a small hidden surface for headless mode
+        if self.headless:
+            screen = pygame.Surface((self.width, self.height))
+        else:
+            screen = pygame.display.set_mode((self.width, self.height))
+
+        # Create game
+        try:
+            self._game = self._create_game()
+        except Exception as e:
+            import traceback
+            self._errors.append(f"Failed to create game: {e}\n{traceback.format_exc()}")
+            return TestResult(
+                duration=0,
+                frames=0,
+                final_score=0,
+                final_lives=0,
+                final_state="error",
+                entities_at_end=[],
+                snapshots=[],
+                events_fired=0,
+                errors=self._errors
+            )
+
+        # Reset backend timing
+        self.backend.reset()
+        self._snapshots = []
+
+        frame = 0
+        events_fired = 0
+        last_snapshot = -snapshot_interval
+
+        # Run game loop
+        while self.backend.elapsed < duration:
+            # Update backend (advances time)
+            self.backend.update(dt)
+
+            # Poll events from backend
+            events = self.backend.poll_events()
+            events_fired += len(events)
+
+            # Update pointer in game's interaction engine
+            if hasattr(self._game, '_interaction_engine'):
+                px, py, active = self.backend.get_pointer()
+                self._game._interaction_engine.update_pointer(px, py, active)
+
+            # Convert to InputEvents and pass to game
+            if events and hasattr(self._game, 'handle_input'):
+                from ams.games.input.input_event import InputEvent
+                from models import Vector2D, EventType
+                input_events = []
+                for e in events:
+                    ie = InputEvent(
+                        position=Vector2D(x=e.x * self.width, y=e.y * self.height),
+                        timestamp=e.timestamp,
+                        event_type=EventType.HIT
+                    )
+                    input_events.append(ie)
+                try:
+                    self._game.handle_input(input_events)
+                except Exception as ex:
+                    self._errors.append(f"Frame {frame}: handle_input error: {ex}")
+
+            # Update game
+            try:
+                self._game.update(dt)
+            except Exception as e:
+                self._errors.append(f"Frame {frame}: update error: {e}")
+
+            # Capture snapshot periodically
+            if self.backend.elapsed - last_snapshot >= snapshot_interval:
+                try:
+                    snapshot = self._capture_snapshot(frame)
+                    self._snapshots.append(snapshot)
+                    last_snapshot = self.backend.elapsed
+                except Exception as e:
+                    self._errors.append(f"Frame {frame}: snapshot error: {e}")
+
+            # Render (even headless, to ensure render code runs)
+            if not self.headless:
+                try:
+                    self._game.render(screen)
+                    pygame.display.flip()
+                except Exception as e:
+                    self._errors.append(f"Frame {frame}: render error: {e}")
+
+            # Check for game over
+            if stop_on_game_over:
+                state = self._snapshots[-1].game_state if self._snapshots else "playing"
+                if state in ("won", "lost", "game_over", "GameState.WON", "GameState.LOST"):
+                    break
+
+            frame += 1
+
+        # Final snapshot
+        try:
+            final_snap = self._capture_snapshot(frame)
+            self._snapshots.append(final_snap)
+        except:
+            final_snap = self._snapshots[-1] if self._snapshots else StateSnapshot(
+                time=0, frame=0, score=0, lives=0, entities={}, game_state="error"
+            )
+
+        # Build result
+        entities_at_end = list(set(
+            e["type"] for e in final_snap.entities.values()
+        )) if final_snap.entities else []
+
+        # Clean up temp directory
+        self.cleanup()
+
+        return TestResult(
+            duration=self.backend.elapsed,
+            frames=frame,
+            final_score=final_snap.score,
+            final_lives=final_snap.lives,
+            final_state=final_snap.game_state,
+            entities_at_end=entities_at_end,
+            snapshots=self._snapshots,
+            events_fired=events_fired,
+            errors=self._errors
+        )
+
+
 if __name__ == "__main__":
     # Test the backend itself
     print("Testing TestDetectionBackend...")
