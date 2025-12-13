@@ -1,0 +1,20 @@
+description: Track pointer X position (paddle follows mouse)
+lua: |
+  local action = {}
+
+  function action.execute(entity_id, target_id, modifier, context)
+    -- context contains: trigger, target, target_x, target_y, target_active, distance, angle
+    -- Get pointer X position (pointer is registered as a system entity)
+    local pointer_x = ams.get_x(target_id)
+
+    -- Get entity width to center it on pointer
+    local width = ams.get_width(entity_id)
+    local screen_width = ams.get_screen_width()
+
+    -- Clamp to screen bounds
+    local new_x = math.max(0, math.min(screen_width - width, pointer_x - width / 2))
+
+    ams.set_x(entity_id, new_x)
+  end
+
+  return action

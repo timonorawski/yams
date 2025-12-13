@@ -366,17 +366,20 @@ enemy_spawner:
 
 ## Action Handlers
 
-Actions are Lua scripts that receive interaction context:
+Actions are Lua scripts in `lua/interaction_action/` that receive the interacting entities, user config, and runtime context as separate arguments:
 
 ```lua
--- lua/actions/bounce_reflect.lua
-local action = {}
+-- lua/interaction_action/bounce_reflect.lua.yaml
+description: Ball bounces off brick with reflection
+lua: |
+  local action = {}
 
-function action.execute(entity_id, other_id, interaction)
-    local angle = interaction.angle
-    local speed_increase = interaction.modifier.speed_increase or 0
+  function action.execute(entity_id, other_id, modifier, context)
+    -- context contains: trigger, target, target_x, target_y, target_active, distance, angle
+    local speed_increase = modifier.speed_increase or 0
 
     -- Reflect based on collision angle
+    local angle = context.angle or 0
     if angle > 45 and angle < 135 then
         ams.set_vy(entity_id, -ams.get_vy(entity_id))
     else
@@ -384,20 +387,55 @@ function action.execute(entity_id, other_id, interaction)
     end
 
     -- Apply speed boost
-    local speed = ams.get_speed(entity_id)
-    ams.set_speed(entity_id, speed + speed_increase)
-end
+    local vx = ams.get_vx(entity_id)
+    local vy = ams.get_vy(entity_id)
+    local speed = math.sqrt(vx * vx + vy * vy)
+    local new_speed = speed + speed_increase
+    local scale = new_speed / speed
+    ams.set_vx(entity_id, vx * scale)
+    ams.set_vy(entity_id, vy * scale)
+  end
 
-return action
+  return action
 ```
 
-Interaction context available to handlers:
-- `interaction.distance` - computed distance
-- `interaction.angle` - angle from A to B
-- `interaction.trigger` - "enter", "exit", or "continuous"
-- `interaction.modifier` - config from YAML
-- `interaction.a` - entity A attributes
-- `interaction.b` - entity B attributes
+### Function Signature
+
+```lua
+function action.execute(entity_id, other_id, modifier, context)
+```
+
+| Argument | Description |
+|----------|-------------|
+| `entity_id` | ID of entity A (the one with the interaction defined) |
+| `other_id` | ID of entity B (the target entity) |
+| `modifier` | User-defined config from YAML `modifier:` block |
+| `context` | Runtime context computed by the interaction engine |
+
+### Modifier (User Config)
+
+The `modifier` table contains values from the YAML definition:
+
+```yaml
+action: bounce_reflect
+modifier:
+  speed_increase: 5
+  max_speed: 600
+```
+
+### Context (Runtime Data)
+
+The `context` table contains computed interaction data:
+
+| Field | Description |
+|-------|-------------|
+| `trigger` | Trigger mode: "enter", "exit", or "continuous" |
+| `target` | Target entity type name |
+| `target_x` | Entity B's x position |
+| `target_y` | Entity B's y position |
+| `target_active` | Entity B's active state (for pointer) |
+| `distance` | Computed distance between entities |
+| `angle` | Angle from A to B (degrees) |
 
 ## Migration from Legacy Systems
 

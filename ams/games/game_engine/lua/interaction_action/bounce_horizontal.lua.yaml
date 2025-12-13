@@ -1,0 +1,24 @@
+description: Bounce off vertical walls (reflect X velocity)
+lua: |
+  local action = {}
+
+  function action.execute(entity_id, screen_id, modifier, context)
+    -- context contains: trigger, target, target_x, target_y, target_active, distance, angle
+    local vx = ams.get_vx(entity_id)
+    ams.set_vx(entity_id, -vx)
+
+    -- Clamp position to screen bounds
+    local x = ams.get_x(entity_id)
+    local width = ams.get_width(entity_id)
+    local screen_width = ams.get_screen_width()
+
+    if x < 0 then
+      ams.set_x(entity_id, 1)
+    elseif x + width > screen_width then
+      ams.set_x(entity_id, screen_width - width - 1)
+    end
+
+    ams.play_sound("wall_bounce")
+  end
+
+  return action

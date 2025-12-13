@@ -10,7 +10,7 @@ Concrete implementations (e.g., GameEntity) add domain-specific attributes
 like position, velocity, visuals, subroutine attachments, etc.
 """
 
-from abc import ABC
+from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -32,3 +32,9 @@ class Entity(ABC):
 
     # Custom properties (scripts can read/write arbitrary state)
     properties: dict[str, Any] = field(default_factory=dict)
+
+    @property
+    @abstractmethod
+    def renderable(self) -> bool:
+        """Whether this entity should be rendered."""
+        ...

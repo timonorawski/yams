@@ -1,0 +1,47 @@
+description: Launch ball from paddle on click
+lua: |
+  local action = {}
+
+  function action.execute(entity_id, target_id, modifier, context)
+    -- context contains: trigger, target, target_x, target_y, target_active, distance, angle
+    -- Get angle range from modifier or use defaults
+    local angle_min = -120
+    local angle_max = -60
+    if modifier and modifier.angle_range then
+      angle_min = modifier.angle_range[1]
+      angle_max = modifier.angle_range[2]
+    end
+
+    -- Get speed from modifier or default
+    local speed = 300
+    if modifier and modifier.speed then
+      speed = modifier.speed
+    end
+
+    -- Random angle in range
+    local angle = ams.random_range(angle_min, angle_max)
+    local rad = math.rad(angle)
+
+    -- Get paddle position for ball spawn
+    local paddle_x = ams.get_x(entity_id)
+    local paddle_width = ams.get_width(entity_id)
+    local paddle_y = ams.get_y(entity_id)
+
+    -- Spawn ball above paddle center
+    local ball_x = paddle_x + paddle_width / 2 - 8  -- 8 = half ball width
+    local ball_y = paddle_y - 20
+
+    -- Spawn ball with velocity
+    local vx = math.cos(rad) * speed
+    local vy = math.sin(rad) * speed
+
+    ams.spawn("ball", ball_x, ball_y, {
+      vx = vx,
+      vy = vy
+    })
+
+    -- Clear ball_attached flag
+    ams.set_property(entity_id, "ball_attached", false)
+  end
+
+  return action

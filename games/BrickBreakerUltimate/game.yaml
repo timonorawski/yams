@@ -37,23 +37,62 @@ assets:
 
 entity_types:
 
+  # paddle: Active paddle (after ball is launched)
   paddle:
     width: 120
     height: 15
     color: blue
     tags: [player]
-    properties:
-      ball_attached: false
+    behaviors: [paddle]  # Smooth movement toward target
+    behavior_config:
+      paddle:
+        speed: 500
+        stop_threshold: 1.0
+    render:
+      - shape: rectangle
+        color: blue
+        fill: true
+      - shape: rectangle
+        color: [100, 100, 255]
+        fill: false
+        line_width: 2
 
     interactions:
       pointer:
-        - because: continuous
-          action: track_pointer_x
-
+        # On any click, set paddle target
         - when:
             b.active: true
-            a.ball_attached: true
-          action: launch_ball
+          action: set_target_x
+
+  # paddle_ready: Composite entity showing paddle+ball, transforms on click
+  paddle_ready:
+    extends: paddle
+    tags: [player]
+    render:
+      # Paddle body
+      - shape: rectangle
+        color: blue
+        fill: true
+      - shape: rectangle
+        color: [100, 100, 255]
+        fill: false
+        line_width: 2
+      # Attached ball (centered above)
+      - shape: circle
+        color: white
+        fill: true
+        offset: [52, -20]  # center of paddle width (120/2 - 8), above
+        size: [16, 16]
+
+    interactions:
+      pointer:
+        # On click, set target AND launch
+        - when:
+            b.active: true
+          action: set_target_x
+        - when:
+            b.active: true
+          action: launch_transform
           modifier:
             angle_range: [-120, -60]
             speed: 300
@@ -63,9 +102,16 @@ entity_types:
     height: 16
     color: white
     tags: [ball]
-    properties:
-      speed: 300
-      max_speed: 600
+    behaviors: [ball]  # Handles velocity-based movement
+    behavior_config:
+      ball:
+        speed: 300
+        max_speed: 600
+        speed_increase: 5
+    render:
+      - shape: circle
+        color: white
+        fill: true
 
     interactions:
       paddle:
@@ -98,10 +144,31 @@ entity_types:
     height: 25
     color: gray
     tags: [enemy, brick]
-    properties:
-      hits_remaining: 1
-      max_hits: 1
-      points: 100
+    behaviors: [brick]
+    behavior_config:
+      brick:
+        hits: 1
+        points: 100
+    render:
+      # Base brick fill
+      - shape: rectangle
+        color: $color  # Uses entity.color
+        fill: true
+      # Outline
+      - shape: rectangle
+        color: white
+        fill: false
+        line_width: 1
+      # Damage overlay - darkens brick based on damage taken
+      - shape: rectangle
+        color: [0, 0, 0]
+        fill: true
+        alpha: $damage_ratio  # 0 = no damage, approaches 1 as damage increases
+        # Only show for multi-hit bricks
+        when:
+          property: brick_max_hits
+          compare: greater_than
+          value: 1
 
     interactions:
       ball:
@@ -114,22 +181,28 @@ entity_types:
   brick_red:
     extends: brick
     color: red
-    properties:
-      points: 500
+    behavior_config:
+      brick:
+        points: 500
 
   brick_silver:
     extends: brick
     color: silver
-    properties:
-      hits_remaining: 3
-      max_hits: 3
-      points: 400
+    behavior_config:
+      brick:
+        hits: 3
+        points: 400
 
   projectile:
     width: 8
     height: 8
     color: red
+    behaviors: [projectile]
     tags: [projectile, hazard]
+    render:
+      - shape: circle
+        color: red
+        fill: true
 
     interactions:
       paddle:
@@ -148,10 +221,8 @@ entity_types:
 # =============================================================================
 
 player:
-  type: paddle
+  type: paddle_ready  # Start with paddle_ready (ball attached visually)
   spawn: [340, 550]
-  properties:
-    ball_attached: true  # Start with ball attached
 
 # =============================================================================
 # Default Layout

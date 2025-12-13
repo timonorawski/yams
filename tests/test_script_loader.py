@@ -368,8 +368,8 @@ lua: |
         assert "gravity" in names
         assert "bounce" in names
 
-    def test_load_directory_loads_both_formats(self, tmp_path):
-        """Loading directory loads both .lua.yaml and .lua files."""
+    def test_load_directory_only_loads_yaml(self, tmp_path):
+        """Loading directory only loads .lua.yaml files, ignores .lua and other files."""
         (tmp_path / "yaml_script.lua.yaml").write_text("""
 type: behavior
 lua: return {}
@@ -380,20 +380,18 @@ lua: return {}
         loader = ScriptLoader(validate=False)
         scripts = loader.load_directory(tmp_path)
 
-        # Loads both .lua.yaml and .lua files (not .txt)
-        assert len(scripts) == 2
-        names = {s.name for s in scripts}
-        assert "yaml_script" in names
-        assert "legacy_script" in names
+        # Only loads .lua.yaml files (not .lua or .txt)
+        assert len(scripts) == 1
+        assert scripts[0].name == "yaml_script"
 
-    def test_load_directory_prefers_yaml_over_lua(self, tmp_path):
-        """When both .lua.yaml and .lua exist, prefer .lua.yaml."""
-        (tmp_path / "same.lua.yaml").write_text("""
+    def test_load_directory_ignores_lua_files(self, tmp_path):
+        """Loading directory ignores .lua files even if no .lua.yaml version exists."""
+        (tmp_path / "yaml_only.lua.yaml").write_text("""
 type: behavior
 description: From YAML
 lua: return {}
 """)
-        (tmp_path / "same.lua").write_text("-- From .lua\nlocal b = {}\nreturn b")
+        (tmp_path / "lua_only.lua").write_text("-- From .lua\nlocal b = {}\nreturn b")
 
         loader = ScriptLoader(validate=False)
         scripts = loader.load_directory(tmp_path)

@@ -1,0 +1,21 @@
+description: Bounce off horizontal walls (reflect Y velocity)
+lua: |
+  local action = {}
+
+  function action.execute(entity_id, screen_id, modifier, context)
+    -- context contains: trigger, target, target_x, target_y, target_active, distance, angle
+    local vy = ams.get_vy(entity_id)
+    ams.set_vy(entity_id, -vy)
+
+    -- Clamp position to screen bounds
+    local y = ams.get_y(entity_id)
+    local height = ams.get_height(entity_id)
+
+    if y < 0 then
+      ams.set_y(entity_id, 1)
+    end
+
+    ams.play_sound("wall_bounce")
+  end
+
+  return action

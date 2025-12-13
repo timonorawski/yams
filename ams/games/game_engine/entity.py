@@ -64,6 +64,11 @@ class GameEntity(Entity):
         default=None, repr=False
     )
 
+    @property
+    def renderable(self) -> bool:
+        """Whether this entity should be rendered."""
+        return self.visible
+
     def get_rect(self) -> tuple[float, float, float, float]:
         """Return (x, y, width, height) for collision detection."""
         return (self.x, self.y, self.width, self.height)
@@ -247,3 +252,36 @@ class GameEntity(Entity):
             return str(value)
 
         return re.sub(r'\{(\w+)\}', replace_placeholder, sprite_name)
+
+
+@dataclass
+class SystemEntity(Entity):
+    """A lightweight entity for system entities (pointer, screen, etc.).
+
+    These entities are registered in LuaEngine so Lua scripts can use
+    ams.get_x("pointer") etc. consistently with game entities.
+    """
+
+    # Transform (position and size)
+    x: float = 0.0
+    y: float = 0.0
+    width: float = 1.0
+    height: float = 1.0
+
+    # Velocity (for compatibility with rollback system)
+    vx: float = 0.0
+    vy: float = 0.0
+
+    # Active state (e.g., pointer is clicked)
+    active: bool = False
+
+    @property
+    def renderable(self) -> bool:
+        """System entities are not rendered."""
+        return False
+
+    def update(self, x: float, y: float, active: bool = False) -> None:
+        """Update system entity state."""
+        self.x = x
+        self.y = y
+        self.active = active

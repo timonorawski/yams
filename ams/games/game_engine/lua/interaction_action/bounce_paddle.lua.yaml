@@ -1,0 +1,49 @@
+description: Ball bounces off paddle with angle based on hit position
+lua: |
+  local action = {}
+
+  function action.execute(ball_id, paddle_id, modifier, context)
+    -- context contains: trigger, target, target_x, target_y, target_active, distance, angle
+    -- Get max angle from modifier (default 60 degrees)
+    local max_angle = 60
+    if modifier and modifier.max_angle then
+      max_angle = modifier.max_angle
+    end
+
+    -- Get ball and paddle positions
+    local ball_x = ams.get_x(ball_id)
+    local ball_width = ams.get_width(ball_id)
+    local ball_center_x = ball_x + ball_width / 2
+
+    local paddle_x = ams.get_x(paddle_id)
+    local paddle_width = ams.get_width(paddle_id)
+    local paddle_center_x = paddle_x + paddle_width / 2
+
+    -- Calculate hit position (-1 to 1, where 0 is center)
+    local hit_pos = (ball_center_x - paddle_center_x) / (paddle_width / 2)
+    hit_pos = math.max(-1, math.min(1, hit_pos))
+
+    -- Calculate bounce angle (-max_angle to +max_angle from vertical)
+    -- Negative Y is up, so we want angles like -120 to -60
+    local angle = -90 + (hit_pos * max_angle)
+    local rad = math.rad(angle)
+
+    -- Get current speed
+    local vx = ams.get_vx(ball_id)
+    local vy = ams.get_vy(ball_id)
+    local speed = math.sqrt(vx * vx + vy * vy)
+
+    -- Set new velocity
+    ams.set_vx(ball_id, math.cos(rad) * speed)
+    ams.set_vy(ball_id, math.sin(rad) * speed)
+
+    -- Move ball above paddle to prevent re-collision
+    local paddle_y = ams.get_y(paddle_id)
+    local ball_height = ams.get_height(ball_id)
+    ams.set_y(ball_id, paddle_y - ball_height - 1)
+
+    -- Play sound
+    ams.play_sound("paddle_hit")
+  end
+
+  return action

@@ -1,0 +1,14 @@
+description: Set paddle_target_x property from pointer position (for smooth paddle movement)
+lua: |
+  local action = {}
+
+  function action.execute(entity_id, target_id, modifier, context)
+    -- context contains: trigger, target, target_x, target_y, target_active, distance, angle
+    -- Get pointer X position
+    local pointer_x = ams.get_x(target_id)
+
+    -- Set paddle_target_x property for paddle behavior to use
+    ams.set_prop(entity_id, "paddle_target_x", pointer_x)
+  end
+
+  return action

@@ -115,7 +115,13 @@ class ScriptValidationError(Exception):
         self.errors = errors or []
         super().__init__(message)
 
-
+VALID_SUBROUTINE_TYPES = {'behavior', 'collision_action', 'generator', 'input_action', 'interaction_action'}
+VALID_HOOK_TYPES = {
+    'behavior': {'on_spawn', 'on_update', 'on_destroy', 'on_hit'},
+    'collision_action': {'execute'},
+    'generator': {'generate'},
+    'input_action': {'execute'},
+}
 class ScriptLoader:
     """
     Load and validate Lua scripts from .lua and .lua.yaml files.
@@ -131,14 +137,8 @@ class ScriptLoader:
         strict: If True, raise on validation errors; if False, warn and continue
     """
 
-    VALID_TYPES = {'behavior', 'collision_action', 'generator', 'input_action'}
 
-    VALID_HOOKS = {
-        'behavior': {'on_spawn', 'on_update', 'on_destroy', 'on_hit'},
-        'collision_action': {'execute'},
-        'generator': {'generate'},
-        'input_action': {'execute'},
-    }
+    
 
     def __init__(
         self,
@@ -180,13 +180,10 @@ class ScriptLoader:
 
     def load_file(self, path: Union[str, Path]) -> ScriptMetadata:
         """
-        Load a script from a file.
-
-        Supports both .lua and .lua.yaml extensions. For .lua files,
-        metadata is inferred from the path.
+        Load a script from a .lua.yaml file.
 
         Args:
-            path: Path to the script file
+            path: Path to the .lua.yaml script file
 
         Returns:
             ScriptMetadata with parsed content
@@ -194,6 +191,7 @@ class ScriptLoader:
         Raises:
             FileNotFoundError: If file doesn't exist
             ScriptValidationError: If validation fails (in strict mode)
+            ValueError: If file is not a .lua.yaml file
         """
         path = Path(path)
 
@@ -201,13 +199,9 @@ class ScriptLoader:
             raise FileNotFoundError(f"Script not found: {path}")
 
         if path.suffix == '.yaml' and path.stem.endswith('.lua'):
-            # .lua.yaml file
             return self._load_yaml_file(path)
-        elif path.suffix == '.lua':
-            # Legacy .lua file
-            return self._load_lua_file(path)
         else:
-            raise ValueError(f"Unknown script extension: {path.suffix}")
+            raise ValueError(f"Only .lua.yaml files are supported, got: {path}")
 
     def _load_yaml_file(self, path: Path) -> ScriptMetadata:
         """Load a .lua.yaml file."""
@@ -239,9 +233,9 @@ class ScriptLoader:
                 path=str(path)
             )
 
-        if script_type not in self.VALID_TYPES:
+        if script_type not in VALID_SUBROUTINE_TYPES:
             raise ScriptValidationError(
-                f"Invalid type '{script_type}', must be one of {self.VALID_TYPES}",
+                f"Invalid type '{script_type}', must be one of {VALID_SUBROUTINE_TYPES}",
                 path=str(path)
             )
 
@@ -269,66 +263,6 @@ class ScriptLoader:
             source_path=str(path),
             source_format='lua.yaml',
         )
-
-    def _load_lua_file(self, path: Path) -> ScriptMetadata:
-        """Load a legacy .lua file (code only, metadata inferred)."""
-        with open(path, 'r') as f:
-            code = f.read()
-
-        # Infer name from filename
-        name = path.stem  # 'animate'
-
-        # Infer type from parent directory
-        parent_dir = path.parent.name
-        type_mapping = {
-            'behavior': 'behavior',
-            'behaviors': 'behavior',
-            'collision_action': 'collision_action',
-            'collision_actions': 'collision_action',
-            'generator': 'generator',
-            'generators': 'generator',
-            'input_action': 'input_action',
-            'input_actions': 'input_action',
-        }
-        script_type = type_mapping.get(parent_dir, 'behavior')
-
-        # Try to extract description from leading comment
-        description = self._extract_description_from_lua(code)
-
-        return ScriptMetadata(
-            name=name,
-            type=script_type,
-            code=code,
-            description=description,
-            source_path=str(path),
-            source_format='lua',
-        )
-
-    def _extract_description_from_lua(self, code: str) -> Optional[str]:
-        """Extract description from Lua comment block."""
-        lines = code.strip().split('\n')
-
-        # Check for --[[ block comment ]]
-        if lines and lines[0].strip().startswith('--[['):
-            description_lines = []
-            for line in lines[1:]:
-                if ']]' in line:
-                    break
-                description_lines.append(line)
-            if description_lines:
-                # Take first non-empty line as description
-                for line in description_lines:
-                    stripped = line.strip()
-                    if stripped and not stripped.startswith('Config') and not stripped.startswith('Usage'):
-                        return stripped
-
-        # Check for -- single line comment
-        elif lines and lines[0].strip().startswith('--'):
-            first_comment = lines[0].strip()[2:].strip()
-            if first_comment:
-                return first_comment
-
-        return None
 
     def _validate_against_schema(self, content: Dict, path: Path) -> None:
         """Validate content against JSON schema."""
@@ -361,9 +295,9 @@ class ScriptLoader:
         Returns:
             ScriptMetadata with parsed content
         """
-        if script_type not in self.VALID_TYPES:
+        if script_type not in VALID_SUBROUTINE_TYPES:
             raise ScriptValidationError(
-                f"Invalid type '{script_type}', must be one of {self.VALID_TYPES}"
+                f"Invalid type '{script_type}', must be one of {VALID_SUBROUTINE_TYPES}"
             )
 
         code = definition.get('lua')
@@ -389,13 +323,11 @@ class ScriptLoader:
         script_type: Optional[str] = None,
     ) -> List[ScriptMetadata]:
         """
-        Load all scripts from a directory.
-
-        Prefers .lua.yaml files over .lua files when both exist.
+        Load all .lua.yaml scripts from a directory.
 
         Args:
             directory: Path to directory
-            script_type: Override type (otherwise inferred from directory name)
+            script_type: Override type (otherwise inferred from file content)
 
         Returns:
             List of ScriptMetadata objects
@@ -406,36 +338,18 @@ class ScriptLoader:
             return []
 
         scripts = []
-        seen_names = set()
 
-        # First pass: .lua.yaml files (preferred)
         for path in directory.glob('*.lua.yaml'):
             try:
                 script = self._load_yaml_file(path)
                 if script_type:
                     script.type = script_type
                 scripts.append(script)
-                seen_names.add(script.name)
             except Exception as e:
                 if self.strict:
                     raise
                 import warnings
                 warnings.warn(f"Failed to load {path}: {e}")
-
-        # Second pass: .lua files (only if no .lua.yaml version)
-        for path in directory.glob('*.lua'):
-            name = path.stem
-            if name not in seen_names:
-                try:
-                    script = self._load_lua_file(path)
-                    if script_type:
-                        script.type = script_type
-                    scripts.append(script)
-                except Exception as e:
-                    if self.strict:
-                        raise
-                    import warnings
-                    warnings.warn(f"Failed to load {path}: {e}")
 
         return scripts
 
@@ -446,9 +360,7 @@ class ScriptLoader:
         search_paths: List[Union[str, Path]],
     ) -> Optional[ScriptMetadata]:
         """
-        Find and load a script by name.
-
-        Searches in order: .lua.yaml then .lua in each search path.
+        Find and load a .lua.yaml script by name.
 
         Args:
             name: Script name
@@ -464,24 +376,14 @@ class ScriptLoader:
             # Try type-specific subdirectory
             type_dir = base_path / script_type
             if type_dir.is_dir():
-                # Try .lua.yaml first
                 yaml_path = type_dir / f"{name}.lua.yaml"
                 if yaml_path.exists():
                     return self.load_file(yaml_path)
-
-                # Fall back to .lua
-                lua_path = type_dir / f"{name}.lua"
-                if lua_path.exists():
-                    return self.load_file(lua_path)
 
             # Try base directory
             yaml_path = base_path / f"{name}.lua.yaml"
             if yaml_path.exists():
                 return self.load_file(yaml_path)
-
-            lua_path = base_path / f"{name}.lua"
-            if lua_path.exists():
-                return self.load_file(lua_path)
 
         return None
 

@@ -365,24 +365,33 @@ class TestBrickBreakerUltimate:
 
     def test_paddle_interactions(self, brick_breaker_data):
         """Parse paddle interactions from BrickBreakerUltimate."""
+        # Active paddle has 1 pointer interaction (set_target_x on click)
         paddle = brick_breaker_data.get("paddle", {})
         interactions_data = paddle.get("interactions", {})
-
         interactions = parse_interactions(interactions_data, "paddle")
 
-        # Should have 2 pointer interactions
+        pointer_interactions = [i for i in interactions if i.target == "pointer"]
+        assert len(pointer_interactions) == 1
+        assert pointer_interactions[0].action == "set_target_x"
+        assert pointer_interactions[0].filter.entity_b_attrs["active"].exact is True
+
+    def test_paddle_ready_interactions(self, brick_breaker_data):
+        """Parse paddle_ready interactions from BrickBreakerUltimate."""
+        # paddle_ready has 2 pointer interactions (set_target_x + launch_transform)
+        paddle_ready = brick_breaker_data.get("paddle_ready", {})
+        interactions_data = paddle_ready.get("interactions", {})
+        interactions = parse_interactions(interactions_data, "paddle_ready")
+
         pointer_interactions = [i for i in interactions if i.target == "pointer"]
         assert len(pointer_interactions) == 2
 
-        # First: continuous tracking
-        tracking = next(i for i in pointer_interactions if i.trigger == TriggerMode.CONTINUOUS)
-        assert tracking.action == "track_pointer_x"
+        actions = {i.action for i in pointer_interactions}
+        assert "set_target_x" in actions
+        assert "launch_transform" in actions
 
-        # Second: launch ball on click
-        launch = next(i for i in pointer_interactions if i.trigger == TriggerMode.ENTER)
-        assert launch.action == "launch_ball"
-        assert launch.filter.entity_b_attrs["active"].exact is True
-        assert launch.filter.entity_a_attrs["ball_attached"].exact is True
+        # Both trigger on click (b.active: true)
+        for interaction in pointer_interactions:
+            assert interaction.filter.entity_b_attrs["active"].exact is True
 
     def test_ball_interactions(self, brick_breaker_data):
         """Parse ball interactions from BrickBreakerUltimate."""

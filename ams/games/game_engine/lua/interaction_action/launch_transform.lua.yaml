@@ -1,0 +1,38 @@
+description: Transform paddle_ready into paddle and spawn ball (for brick breaker launch)
+lua: |
+  local action = {}
+
+  function action.execute(entity_id, target_id, modifier, context)
+    -- context contains: trigger, target, target_x, target_y, target_active, distance, angle
+    -- Get paddle position for ball spawn
+    local paddle_x = ams.get_x(entity_id)
+    local paddle_y = ams.get_y(entity_id)
+    local paddle_width = ams.get_width(entity_id)
+
+    -- Transform paddle_ready into paddle
+    ams.transform(entity_id, "paddle")
+
+    -- Calculate ball spawn position (centered above paddle)
+    local ball_x = paddle_x + (paddle_width / 2) - 8  -- center, minus half ball width
+    local ball_y = paddle_y - 20  -- above paddle
+
+    -- Get launch parameters from modifier
+    local angle_range = modifier.angle_range or {-120, -60}
+    local speed = modifier.speed or 300
+
+    -- Random angle within range
+    local angle = ams.random_range(angle_range[1], angle_range[2])
+
+    -- Convert angle to velocity (angle 0 = up, negative = left of up)
+    local rad = math.rad(angle)
+    local vx = speed * math.sin(rad)
+    local vy = speed * math.cos(rad)  -- cos for y since 0 = up
+
+    -- Spawn ball with velocity
+    ams.spawn("ball", ball_x, ball_y, {
+      vx = vx,
+      vy = vy
+    })
+  end
+
+  return action

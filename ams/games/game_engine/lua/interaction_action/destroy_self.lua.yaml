@@ -1,0 +1,10 @@
+description: Destroy the entity (e.g., projectile exits screen)
+lua: |
+  local action = {}
+
+  function action.execute(entity_id, target_id, modifier, context)
+    -- context contains: trigger, target, target_x, target_y, target_active, distance, angle
+    ams.destroy(entity_id)
+  end
+
+  return action

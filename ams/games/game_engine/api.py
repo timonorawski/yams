@@ -27,16 +27,21 @@ class GameLuaAPI(LuaAPIBase):
     Extends LuaAPIBase with GameEntity operations. All methods operate
     on entities by ID to maintain the sandbox boundary.
 
-    The spawn_handler is set by GameEngine to route spawning to the game engine.
+    The spawn_handler and transform_handler are set by GameEngine during setup.
     """
 
     def __init__(self, engine: 'LuaEngine'):
         super().__init__(engine)
         self._spawn_handler: Optional[Callable] = None
+        self._transform_handler: Optional[Callable] = None
 
     def set_spawn_handler(self, handler: Callable) -> None:
         """Set the spawn handler (called by GameEngine during setup)."""
         self._spawn_handler = handler
+
+    def set_transform_handler(self, handler: Callable) -> None:
+        """Set the transform handler (called by GameEngine during setup)."""
+        self._transform_handler = handler
 
     def register_api(self, ams_namespace) -> None:
         """Register game API methods on the ams.* namespace."""
@@ -66,6 +71,7 @@ class GameLuaAPI(LuaAPIBase):
         ams_namespace.set_health = self.set_health
         ams_namespace.is_alive = self.is_alive
         ams_namespace.destroy = self.destroy
+        ams_namespace.transform = self.transform
 
         # Spawning and queries
         ams_namespace.spawn = self.spawn
@@ -202,6 +208,28 @@ class GameLuaAPI(LuaAPIBase):
         entity = self._engine.get_entity(entity_id)
         if entity:
             entity.destroy()
+
+    @profiling.profile("lua_api", "ams.transform")
+    def transform(self, entity_id: str, into_type: str) -> bool:
+        """Transform entity into another type, keeping position and ID.
+
+        Args:
+            entity_id: ID of entity to transform
+            into_type: Entity type to transform into
+
+        Returns:
+            True if transform succeeded
+        """
+        if not self._transform_handler:
+            print("[GameLuaAPI] No transform handler registered")
+            return False
+
+        entity = self._engine.get_entity(entity_id)
+        if not entity:
+            return False
+
+        result = self._transform_handler(entity, into_type)
+        return result is not None
 
     # =========================================================================
     # Entity Spawning

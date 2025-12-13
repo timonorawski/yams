@@ -55,9 +55,30 @@ def validate_game_yaml(data: Dict[str, Any], source_path: Optional[Path] = None)
 
     try:
         # Create resolver with local schema store for external $ref
+        # Map both filename and relative path forms that might appear in $ref
         schema_store = {}
+
+        # Load schemas from schemas/ directory
         for schema_file in _SCHEMAS_DIR.glob('*.json'):
-            schema_store[schema_file.name] = load_schema(schema_file)
+            loaded = load_schema(schema_file)
+            schema_store[schema_file.name] = loaded
+            # Also map by $id if present
+            if '$id' in loaded:
+                schema_store[loaded['$id']] = loaded
+
+        # Load schemas from lua/ directory (referenced by game.schema.json)
+        # The game.schema.json uses $ref: "../lua/lua_script_inline.schema.json"
+        # which resolves to https://ams.games/lua/... based on game.schema.json's $id
+        lua_dir = _SCHEMAS_DIR.parent / 'lua'
+        for schema_file in lua_dir.glob('*.schema.json'):
+            loaded = load_schema(schema_file)
+            # Map by relative path as used in $ref: "../lua/..."
+            schema_store[f"../lua/{schema_file.name}"] = loaded
+            # Map by resolved URL (relative to game.schema.json's $id)
+            schema_store[f"https://ams.games/lua/{schema_file.name}"] = loaded
+            # Also map by $id if present
+            if '$id' in loaded:
+                schema_store[loaded['$id']] = loaded
 
         resolver = RefResolver.from_schema(schema, store=schema_store)
         jsonschema.validate(data, schema, resolver=resolver)
@@ -70,6 +91,13 @@ def validate_game_yaml(data: Dict[str, Any], source_path: Optional[Path] = None)
             raise SchemaValidationError(error_msg, errors=[str(e)], path=source_path) from e
     except jsonschema.SchemaError as e:
         error_msg = f"Invalid schema: {e.message}"
+        if SKIP_VALIDATION:
+            print(f"[GameEngine] Warning: {error_msg}")
+        else:
+            raise SchemaValidationError(error_msg) from e
+    except (OSError, IOError) as e:
+        # Handle network errors (e.g., offline mode trying to fetch remote schemas)
+        error_msg = f"Schema validation failed (network error): {e}"
         if SKIP_VALIDATION:
             print(f"[GameEngine] Warning: {error_msg}")
         else:

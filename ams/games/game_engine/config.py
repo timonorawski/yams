@@ -136,6 +136,10 @@ class EntityTypeConfig:
     on_parent_destroy: Optional[TransformConfig] = None  # Transform when parent entity is destroyed
     on_update: List[OnUpdateTransform] = field(default_factory=list)  # Conditional transforms
 
+    # Unified interactions (replaces collision_behaviors, input_mapping, lose_conditions)
+    # Raw dict preserved for InteractionEngine registration
+    interactions: Dict[str, Any] = field(default_factory=dict)
+
 
 @dataclass
 class InputAction:

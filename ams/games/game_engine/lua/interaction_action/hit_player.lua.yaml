@@ -1,0 +1,19 @@
+description: Projectile hits player - deal damage and destroy projectile
+lua: |
+  local action = {}
+
+  function action.execute(projectile_id, player_id, modifier, context)
+    -- context contains: trigger, target, target_x, target_y, target_active, distance, angle
+    -- Play sound if specified
+    if modifier and modifier.sound then
+      ams.play_sound(modifier.sound)
+    end
+
+    -- Destroy the projectile
+    ams.destroy(projectile_id)
+
+    -- Set was_hit flag on player (triggers lose condition)
+    ams.set_property(player_id, "was_hit", true)
+  end
+
+  return action

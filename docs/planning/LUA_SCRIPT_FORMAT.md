@@ -27,8 +27,10 @@
 - `follow_parent.lua.yaml`, `gravity.lua.yaml`, `oscillate.lua.yaml`
 - `paddle.lua.yaml`, `projectile.lua.yaml`, `rope_link.lua.yaml`, `shoot.lua.yaml`
 
-**Collision Actions** (4 files in `ams/games/game_engine/lua/collision_action/`):
-- `bounce_paddle.lua.yaml`, `bounce_reflect.lua.yaml`, `hit_player.lua.yaml`, `take_damage.lua.yaml`
+**Interaction Actions** (12 files in `ams/games/game_engine/lua/interaction_action/`):
+- `ball_lost.lua.yaml`, `bounce_horizontal.lua.yaml`, `bounce_paddle.lua.yaml`, `bounce_reflect.lua.yaml`
+- `bounce_vertical.lua.yaml`, `destroy_self.lua.yaml`, `hit_player.lua.yaml`, `launch_ball.lua.yaml`
+- `launch_transform.lua.yaml`, `set_target_x.lua.yaml`, `take_damage.lua.yaml`, `track_pointer_x.lua.yaml`
 
 **Generators** (2 files in `ams/games/game_engine/lua/generator/`):
 - `color_blend.lua.yaml`, `grid_position.lua.yaml`
@@ -55,7 +57,7 @@ This document specifies the YAML format for Lua scripts that includes machine-re
 
 ```yaml
 # yaml-language-server: $schema=../lua_script.schema.json
-type: behavior              # Required: behavior | collision_action | generator | input_action
+type: behavior              # Required: behavior | interaction_action | generator | input_action
 name: animate               # Optional: defaults to filename
 description: |              # Optional: human-readable description
   Cycle through animation frames...
@@ -123,18 +125,22 @@ config:
     default: 100
 ```
 
-### collision_action
+### interaction_action
 
-Two-entity interaction handlers triggered by collision rules.
+Two-entity interaction handlers triggered by the unified interactions system.
 
 **Valid hooks**: `execute`
 
-**Signature**: `execute(entity_a_id, entity_b_id, modifier)`
+**Signature**: `execute(entity_a_id, entity_b_id, modifier, context)`
 
-**Config source**: `modifier` table from collision_behaviors YAML
+**Arguments**:
+- `entity_a_id` - Entity with the interaction defined
+- `entity_b_id` - Target entity
+- `modifier` - User config from YAML `modifier:` block
+- `context` - Runtime data: `trigger`, `target`, `target_x`, `target_y`, `target_active`, `distance`, `angle`
 
 ```yaml
-type: collision_action
+type: interaction_action
 provides:
   hooks: [execute]
 config:  # Documents the modifier fields
@@ -283,18 +289,19 @@ entity_types:
     color: {call: random_color, args: {saturation: 0.8}}
 ```
 
-### Example: Inline Collision Action
+### Example: Inline Interaction Action
 
 ```yaml
 # game.yaml
-inline_collision_actions:
+inline_interaction_actions:
   explode_on_contact:
     description: Destroy both entities and spawn particles
     provides:
       hooks: [execute]
     lua: |
       local explode_on_contact = {}
-      function explode_on_contact.execute(a_id, b_id, modifier)
+      function explode_on_contact.execute(a_id, b_id, modifier, context)
+        -- context contains: trigger, target, target_x, target_y, target_active, distance, angle
         local x = ams.get_x(a_id)
         local y = ams.get_y(a_id)
         for i = 1, 5 do
@@ -305,17 +312,20 @@ inline_collision_actions:
       end
       return explode_on_contact
 
-collision_behaviors:
+entity_types:
   bomb:
-    enemy:
-      action: explode_on_contact
+    interactions:
+      enemy:
+        when:
+          distance: 0
+        action: explode_on_contact
 ```
 
 ### game.yaml Integration Points
 
 New top-level keys in game.yaml:
 - `inline_behaviors: {name: script_def, ...}`
-- `inline_collision_actions: {name: script_def, ...}`
+- `inline_interaction_actions: {name: script_def, ...}`
 - `inline_generators: {name: script_def, ...}`
 - `inline_input_actions: {name: script_def, ...}`
 
@@ -357,7 +367,7 @@ Migration is **complete**. All phases have been successfully implemented:
 | `ams/games/game_engine/engine.py` | **Done** | `_load_inline_scripts()` parses inline sections |
 | `games/browser/lua_bridge.py` | **Done** | Loads `.lua.json` files in browser (converted from `.lua.yaml`) |
 | `ams/games/game_engine/lua/behavior/*.lua.yaml` | **Done** | All 14 behavior scripts migrated |
-| `ams/games/game_engine/lua/collision_action/*.lua.yaml` | **Done** | All 4 collision action scripts migrated |
+| `ams/games/game_engine/lua/interaction_action/*.lua.yaml` | **Done** | All 12 interaction action scripts |
 | `ams/games/game_engine/lua/generator/*.lua.yaml` | **Done** | All 2 generator scripts migrated |
 
 ## Example: Full Behavior

@@ -29,14 +29,24 @@ from ams import profiling
 if TYPE_CHECKING:
     from ams.content_fs import ContentFS
 
-# Try to import ScriptLoader for .lua.yaml support
-try:
-    from ams.games.game_engine.lua.script_loader import ScriptLoader, ScriptMetadata
-    HAS_SCRIPT_LOADER = True
-except ImportError:
-    HAS_SCRIPT_LOADER = False
-    ScriptLoader = None
-    ScriptMetadata = None
+# ScriptLoader for .lua.yaml support - loaded lazily to avoid circular import
+HAS_SCRIPT_LOADER = False
+ScriptLoader = None
+ScriptMetadata = None
+
+def _init_script_loader():
+    """Lazy init ScriptLoader to avoid circular import at module load time."""
+    global HAS_SCRIPT_LOADER, ScriptLoader, ScriptMetadata
+    if HAS_SCRIPT_LOADER or ScriptLoader is not None:
+        return  # Already initialized
+    try:
+        from ams.games.game_engine.lua.script_loader import ScriptLoader as SL, ScriptMetadata as SM
+        ScriptLoader = SL
+        ScriptMetadata = SM
+        HAS_SCRIPT_LOADER = True
+    except ImportError as e:
+        print(f"[LuaEngine] ScriptLoader import failed: {e}")
+        HAS_SCRIPT_LOADER = False
 
 
 class LifecycleProvider(Protocol):
@@ -358,44 +368,6 @@ class LuaEngine:
     # Generic Subroutine Loading
     # =========================================================================
 
-    def load_subroutine(self, sub_type: str, name: str, content_path: str) -> bool:
-        """Load a Lua subroutine from ContentFS.
-
-        Args:
-            sub_type: Subroutine type (e.g., 'behavior', 'collision_action')
-            name: Subroutine name (used as key)
-            content_path: ContentFS path to .lua file
-
-        Returns:
-            True if loaded successfully
-        """
-        if name in self._subroutines[sub_type]:
-            return True  # Already loaded
-
-        if not self._content_fs.exists(content_path):
-            print(f"[LuaEngine] Subroutine not found: {content_path}")
-            return False
-
-        try:
-            code = self._content_fs.readtext(content_path)
-            result = self._lua.execute(code)
-
-            # Convention: script returns a table, or defines global with same name
-            if result is None:
-                g = self._lua.globals()
-                result = getattr(g, name, None)
-
-            if result is None:
-                print(f"[LuaEngine] Subroutine {name} did not return a table")
-                return False
-
-            self._subroutines[sub_type][name] = result
-            return True
-
-        except Exception as e:
-            print(f"[LuaEngine] Error loading {sub_type}/{name}: {e}")
-            return False
-
     def load_inline_subroutine(self, sub_type: str, name: str, lua_code: str) -> bool:
         """Load an inline Lua subroutine from a code string.
 
@@ -425,10 +397,7 @@ class LuaEngine:
             return False
 
     def load_subroutines_from_dir(self, sub_type: str, content_dir: str) -> int:
-        """Load all .lua and .lua.yaml files from a ContentFS directory.
-
-        Prefers .lua.yaml files over .lua files when both exist (more metadata).
-        Uses ScriptLoader for .lua.yaml files when available.
+        """Load all .lua.yaml files from a ContentFS directory.
 
         Args:
             sub_type: Subroutine type (e.g., 'behavior', 'collision_action')
@@ -441,25 +410,12 @@ class LuaEngine:
         if not self._content_fs.exists(content_dir):
             return count
 
-        seen_names = set()
-
-        # First pass: .lua.yaml files (preferred, have metadata)
         for item in self._content_fs.listdir(content_dir):
             if item.endswith('.lua.yaml'):
                 name = item[:-9]  # Remove .lua.yaml extension
                 content_path = f'{content_dir}/{item}'
                 if self._load_yaml_subroutine(sub_type, name, content_path):
-                    seen_names.add(name)
                     count += 1
-
-        # Second pass: .lua files (only if no .lua.yaml version exists)
-        for item in self._content_fs.listdir(content_dir):
-            if item.endswith('.lua'):
-                name = item[:-4]  # Remove .lua extension
-                if name not in seen_names:
-                    content_path = f'{content_dir}/{item}'
-                    if self.load_subroutine(sub_type, name, content_path):
-                        count += 1
 
         return count
 
@@ -477,24 +433,27 @@ class LuaEngine:
         if name in self._subroutines[sub_type]:
             return True  # Already loaded
 
+        # Lazy init ScriptLoader (avoids circular import at module load time)
+        _init_script_loader()
+
         if not HAS_SCRIPT_LOADER:
             # Fall back to treating as raw Lua (just extract code)
-            print(f"[LuaEngine] ScriptLoader not available, skipping {content_path}")
+            print(f"[LuaEngine._load_yaml_subroutine] ScriptLoader not available, skipping {content_path}")
             return False
 
         if not self._content_fs.exists(content_path):
-            print(f"[LuaEngine] Subroutine not found: {content_path}")
+            print(f"[LuaEngine._load_yaml_subroutine] Subroutine not found: {content_path}")
             return False
 
         try:
             # Read YAML content
             yaml_content = self._content_fs.readtext(content_path)
 
-            # Parse with ScriptLoader
-            import yaml
-            data = yaml.safe_load(yaml_content)
+            # Parse YAML using ams.yaml (handles both YAML and JSON formats)
+            from ams.yaml import loads as yaml_loads
+            data = yaml_loads(yaml_content, format='yaml')
 
-            # Create ScriptMetadata
+            # Create ScriptMetadata via ScriptLoader
             loader = ScriptLoader(validate=False)  # Schema validation optional
             script = loader.load_inline(name, sub_type, data)
 
@@ -506,14 +465,16 @@ class LuaEngine:
                 result = getattr(g, name, None)
 
             if result is None:
-                print(f"[LuaEngine] Subroutine {name} did not return a table")
+                print(f"[LuaEngine._load_yaml_subroutine] Subroutine {name} did not return a table")
                 return False
 
             self._subroutines[sub_type][name] = result
+            print(f"[LuaEngine._load_yaml_subroutine] Subroutine loaded: [{sub_type}][{name}] from {content_path}")
+
             return True
 
         except Exception as e:
-            print(f"[LuaEngine] Error loading {sub_type}/{name}.lua.yaml: {e}")
+            print(f"[LuaEngine._load_yaml_subroutine] Error loading {sub_type}/{name}.lua.yaml: {e}")
             return False
 
     def get_subroutine(self, sub_type: str, name: str) -> Optional[Any]:
@@ -535,7 +496,8 @@ class LuaEngine:
         entity_a: Entity,
         entity_b: Entity,
         modifier: Optional[dict[str, Any]] = None,
-        default_path: str = 'lua/collision_action'
+        default_path: str = 'lua/collision_action',
+        sub_type: str = 'collision_action'
     ) -> bool:
         """
         Execute a collision action between two entities.
@@ -546,17 +508,18 @@ class LuaEngine:
             entity_b: Second entity in collision
             modifier: Optional config dict passed to the action
             default_path: Default ContentFS directory to look for actions
+            sub_type: Subroutine type (e.g., 'collision_action', 'interaction_action')
 
         Returns:
             True if action executed successfully
         """
-        # Load action if not already loaded
-        if not self.has_subroutine('collision_action', action_name):
-            content_path = f'{default_path}/{action_name}.lua'
-            if not self.load_subroutine('collision_action', action_name, content_path):
+        # Load action if not already loaded (.lua.yaml format only)
+        if not self.has_subroutine(sub_type, action_name):
+            yaml_path = f'{default_path}/{action_name}.lua.yaml'
+            if not self._load_yaml_subroutine(sub_type, action_name, yaml_path):
                 return False
 
-        action = self.get_subroutine('collision_action', action_name)
+        action = self.get_subroutine(sub_type, action_name)
         if not action:
             return False
 
@@ -576,6 +539,80 @@ class LuaEngine:
 
         except Exception as e:
             print(f"[LuaEngine] Error executing collision action {action_name}: {e}")
+            print(f"  entity_a: {entity_a.id} (type={entity_a.entity_type})")
+            print(f"  entity_b: {entity_b.id} (type={entity_b.entity_type})")
+            if modifier:
+                print(f"  modifier: {modifier}")
+            return False
+
+    @profiling.profile("lua_engine", "Interaction Action")
+    def execute_interaction_action(
+        self,
+        action_name: str,
+        entity_a: Entity,
+        entity_b: Entity,
+        modifier: Optional[dict[str, Any]] = None,
+        context: Optional[dict[str, Any]] = None,
+    ) -> bool:
+        """
+        Execute an interaction action between two entities.
+
+        This is the unified interactions system entry point. Actions receive:
+        - entity_a_id, entity_b_id: The interacting entities
+        - modifier: User-defined config from YAML
+        - context: Runtime context (trigger, distance, angle, target position)
+
+        Args:
+            action_name: Name of the interaction action to execute
+            entity_a: Source entity
+            entity_b: Target entity (or system entity stub)
+            modifier: Optional config dict from YAML
+            context: Runtime context (trigger, distance, angle, target_x/y, etc.)
+
+        Returns:
+            True if action executed successfully
+        """
+        # Load action if not already loaded
+        if not self.has_subroutine('interaction_action', action_name):
+            yaml_path = f'lua/interaction_action/{action_name}.lua.yaml'
+            if not self._load_yaml_subroutine('interaction_action', action_name, yaml_path):
+                return False
+
+        action = self.get_subroutine('interaction_action', action_name)
+        if not action:
+            return False
+
+        execute_fn = getattr(action, 'execute', None)
+        if not execute_fn:
+            print(f"[LuaEngine] Interaction action {action_name} has no execute function")
+            return False
+
+        try:
+            # Convert dicts to Lua tables
+            lua_modifier = self._lua.table_from(modifier) if modifier else self._lua.table()
+            lua_context = self._lua.table_from(context) if context else self._lua.table()
+
+            execute_fn(entity_a.id, entity_b.id, lua_modifier, lua_context)
+            return True
+
+        except Exception as e:
+            print(f"[LuaEngine] Error executing interaction action {action_name}: {e}")
+            print(f"  entity_a: {entity_a.id} (type={entity_a.entity_type})")
+            print(f"  entity_b: {entity_b.id} (type={entity_b.entity_type})")
+            if modifier:
+                print(f"  modifier: {modifier}")
+            if context:
+                print(f"  context: {context}")
+            import traceback
+            exc = e
+            if exc:
+                tb_lines = traceback.format_exception(type(exc), exc, exc.__traceback__)
+            else:
+                tb_lines = traceback.format_exc().split('\n')
+
+            for line in tb_lines:
+                if line.strip():
+                    print(line)
             return False
 
     @profiling.profile("lua_engine", "Input Action")
@@ -600,10 +637,10 @@ class LuaEngine:
         Returns:
             True if action executed successfully
         """
-        # Load action if not already loaded
+        # Load action if not already loaded (.lua.yaml format only)
         if not self.has_subroutine('input_action', action_name):
-            content_path = f'{default_path}/{action_name}.lua'
-            if not self.load_subroutine('input_action', action_name, content_path):
+            yaml_path = f'{default_path}/{action_name}.lua.yaml'
+            if not self._load_yaml_subroutine('input_action', action_name, yaml_path):
                 return False
 
         action = self.get_subroutine('input_action', action_name)
@@ -648,10 +685,10 @@ class LuaEngine:
         Usage in YAML:
             property: {call: "grid_position", args: {row: 1, col: 5}}
         """
-        # Load generator if not already loaded
+        # Load generator if not already loaded (.lua.yaml format only)
         if not self.has_subroutine('generator', name):
-            content_path = f'{default_path}/{name}.lua'
-            if not self.load_subroutine('generator', name, content_path):
+            yaml_path = f'{default_path}/{name}.lua.yaml'
+            if not self._load_yaml_subroutine('generator', name, yaml_path):
                 return None
 
         generator = self.get_subroutine('generator', name)

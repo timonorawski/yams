@@ -59,6 +59,8 @@ from ams.games.game_engine.config import (
 from ams.games.game_engine.renderer import GameEngineRenderer
 from ams.games.game_engine.rollback import RollbackStateManager, create_logger
 from ams import profiling
+from ams.interactions import InteractionEngine, Entity as InteractionEntity, LuaActionHandler
+from ams.games.game_engine.lua.script_loader import VALID_SUBROUTINE_TYPES
 
 if TYPE_CHECKING:
     from ams.content_fs import ContentFS
@@ -216,6 +218,22 @@ class GameEngine(BaseGame):
             api_class=GameLuaAPI,
         )
 
+        # Create interaction engine for unified interactions
+        self._interaction_engine = InteractionEngine(
+            screen_width=width,
+            screen_height=height,
+            lives=lives,
+        )
+
+        # Wire action handler to Lua engine
+        self._lua_action_handler = LuaActionHandler(self._behavior_engine)
+        self._interaction_engine.set_default_handler(self._lua_action_handler)
+
+        # Create system entities for Lua access (pointer, screen, etc.)
+        from ams.games.game_engine.entity import SystemEntity
+        self._pointer_entity = SystemEntity(id="pointer", entity_type="pointer")
+        self._behavior_engine.register_entity(self._pointer_entity)
+
         # Load subroutines from lua/{type}/ - ContentFS resolves game overrides automatically
         # Priority: game > engine > core (via ContentFS layering)
         self._load_subroutines()
@@ -226,11 +244,17 @@ class GameEngine(BaseGame):
             self._game_def = self._load_game_definition(self.GAME_DEF_FILE)
             # Load inline scripts after game definition (they can override file-based scripts)
             self._load_inline_scripts()
+            # Register entity types with InteractionEngine
+            self._register_entity_interactions()
 
         # Register spawn handler on API so Lua spawns use entity type config
         api = self._behavior_engine.api
         if hasattr(api, 'set_spawn_handler'):
             api.set_spawn_handler(self._lua_spawn_handler)
+
+        # Register transform handler on API so Lua can transform entities
+        if hasattr(api, 'set_transform_handler'):
+            api.set_transform_handler(self._transform_into_type)
 
         # Register destroy callback for orphan handling
         self._behavior_engine.set_destroy_callback(self._on_entity_destroyed)
@@ -271,8 +295,10 @@ class GameEngine(BaseGame):
             self._rollback_manager = None
             self._rollback_logger = None
 
-        # Spawn initial entities if no level loaded
-        if not self._behavior_engine.entities:
+        # Spawn initial entities if no game entities loaded (ignore system entities like pointer)
+        game_entities = [e for e in self._behavior_engine.entities.values()
+                         if e.renderable]
+        if not game_entities:
             self._spawn_initial_entities()
 
     def _load_game_definition(self, path: Path) -> GameDefinition:
@@ -394,6 +420,7 @@ class GameEngine(BaseGame):
                 on_destroy=on_destroy,
                 on_parent_destroy=on_parent_destroy,
                 on_update=on_update,
+                interactions=type_data.get('interactions', {}),
             )
 
         # Second pass: resolve inheritance
@@ -550,12 +577,12 @@ class GameEngine(BaseGame):
 
         Subroutine types loaded:
         - behavior: Entity lifecycle scripts
-        - collision_action: Collision handlers
+        - collision_action: Collision handlers (legacy)
+        - interaction_action: Unified interaction handlers
         - generator: Property generators
         """
-        subroutine_types = ['behavior', 'collision_action', 'generator']
 
-        for sub_type in subroutine_types:
+        for sub_type in VALID_SUBROUTINE_TYPES:
             lua_path = f'lua/{sub_type}'
             if self._content_fs.exists(lua_path):
                 self._behavior_engine.load_subroutines_from_dir(sub_type, lua_path)
@@ -605,6 +632,23 @@ class GameEngine(BaseGame):
                         print(f"[GameEngine] Loaded inline {sub_type}: {name} - {desc[:50]}")
                 else:
                     print(f"[GameEngine] Failed to load inline {sub_type}: {name}")
+
+    def _register_entity_interactions(self) -> None:
+        """Register entity type interactions with the InteractionEngine.
+
+        For each entity type that has an 'interactions' field, parses and
+        registers those interactions with the unified InteractionEngine.
+        """
+        if not self._game_def:
+            return
+
+        for entity_type, type_config in self._game_def.entity_types.items():
+            if type_config.interactions:
+                # Register with InteractionEngine - it handles parsing
+                self._interaction_engine.register_entity_type(
+                    entity_type,
+                    type_config.interactions
+                )
 
     def _parse_behaviors(self, entity_type: str, behaviors_data: List[Any]) -> List[str]:
         """Parse behaviors list, handling both file references and inline Lua.
@@ -1277,7 +1321,8 @@ class GameEngine(BaseGame):
         if sprite:
             overrides['sprite'] = sprite
         return self.spawn_entity(entity_type, x, y, **overrides)
-
+    
+    @profiling.profile("game_engine", "Spawn Entity")
     def spawn_entity(
         self,
         entity_type: str,
@@ -1343,6 +1388,18 @@ class GameEngine(BaseGame):
         # Register with LuaEngine (triggers on_entity_spawned via provider)
         self._behavior_engine.register_entity(entity)
 
+        # Register with InteractionEngine for unified interactions
+        interaction_entity = InteractionEntity(
+            id=entity.id,
+            entity_type=entity.entity_type,
+            x=entity.x,
+            y=entity.y,
+            width=entity.width,
+            height=entity.height,
+            attributes=entity.properties.copy(),
+        )
+        self._interaction_engine.add_entity(interaction_entity)
+
         return entity
 
     def get_entities_by_type(self, entity_type: str) -> List[Entity]:
@@ -1380,7 +1437,19 @@ class GameEngine(BaseGame):
             return
 
         for event in events:
-            # Apply declarative input_mapping
+            # Update InteractionEngine pointer for unified interactions
+            # 'hit' events are active clicks, 'move' events are passive positioning
+            is_active = event.event_type == 'hit'
+            self._interaction_engine.update_pointer(
+                event.position.x,
+                event.position.y,
+                active=is_active
+            )
+
+            # Update pointer system entity for Lua access via ams.get_x("pointer")
+            self._pointer_entity.update(event.position.x, event.position.y, is_active)
+
+            # Apply declarative input_mapping (legacy)
             self._apply_input_mapping(event)
             # Call subclass handler for any additional logic
             self._handle_player_input(event)
@@ -1505,6 +1574,7 @@ class GameEngine(BaseGame):
 
         # End profiling frame
         profiling.end_frame()
+        self._frame_count += 1
 
         # Increment frame counter
         self._frame_count += 1
@@ -1530,7 +1600,15 @@ class GameEngine(BaseGame):
         # Check on_update transforms (age-based, property-based, interval)
         self._check_on_update_transforms()
 
-        # Check collisions
+        # Sync entity positions to InteractionEngine
+        self._sync_entities_to_interaction_engine()
+
+        # Evaluate unified interactions (collisions, input, screen, timer)
+        # This replaces: _check_collisions, _apply_input_mapping (hit detection),
+        # and _check_lose_conditions (screen exit)
+        self._interaction_engine.evaluate(dt)
+
+        # Legacy collision check - fallback for games not yet migrated
         self._check_collisions()
 
         # Note: destroyed entities are handled via callback from LuaEngine
@@ -1857,6 +1935,9 @@ class GameEngine(BaseGame):
 
         Applies on_destroy transforms, scoring, and orphan handling.
         """
+        # Remove from InteractionEngine
+        self._interaction_engine.remove_entity(entity.id)
+
         if not self._game_def:
             return
 
@@ -1913,6 +1994,20 @@ class GameEngine(BaseGame):
                 child_config = self._game_def.entity_types.get(child.entity_type)
                 if child_config and child_config.on_parent_destroy:
                     self.apply_transform(child, child_config.on_parent_destroy)
+
+    def _sync_entities_to_interaction_engine(self) -> None:
+        """Sync entity positions and attributes to InteractionEngine.
+
+        Called each frame after behavior engine update to ensure
+        InteractionEngine has current entity state for filter evaluation.
+        """
+        for entity in self._behavior_engine.get_alive_entities():
+            self._interaction_engine.update_entity(
+                entity.id,
+                x=entity.x,
+                y=entity.y,
+                attributes=entity.properties,
+            )
 
     def _check_win_conditions(self) -> None:
         """Check if player has won based on game definition.
@@ -2244,9 +2339,9 @@ class GameEngine(BaseGame):
         # Update skin's elapsed time for $age property
         self._skin._elapsed_time = self._behavior_engine.elapsed_time
 
-        # Render all entities
+        # Render all renderable entities
         for entity in self._behavior_engine.get_alive_entities():
-            if entity.visible:
+            if entity.renderable:
                 self._skin.render_entity(entity, screen)
 
         # Render HUD

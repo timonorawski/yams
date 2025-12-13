@@ -42,6 +42,7 @@ from .engine import (
     Entity,
     ActionHandler,
 )
+from .lua_handler import LuaActionHandler
 
 __all__ = [
     'InteractionParser',
@@ -67,4 +68,5 @@ __all__ = [
     'InteractionEngine',
     'Entity',
     'ActionHandler',
+    'LuaActionHandler',
 ]

@@ -1,0 +1,20 @@
+description: Ball exited bottom of screen - lose a life and reset paddle
+lua: |
+  local action = {}
+
+  function action.execute(ball_id, screen_id, modifier, context)
+    -- context contains: trigger, target, target_x, target_y, target_active, distance, angle
+    -- Destroy the ball
+    ams.destroy(ball_id)
+
+    -- Lose a life
+    ams.lose_life()
+
+    -- Find paddle and transform back to paddle_ready state
+    local paddles = ams.get_entities_by_type("paddle")
+    for _, paddle_id in ipairs(paddles) do
+      ams.transform(paddle_id, "paddle_ready")
+    end
+  end
+
+  return action

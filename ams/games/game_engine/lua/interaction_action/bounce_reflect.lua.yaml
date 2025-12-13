@@ -1,0 +1,76 @@
+description: Ball bounces off brick with reflection
+lua: |
+  local action = {}
+
+  function action.execute(ball_id, brick_id, modifier, context)
+    -- context contains: trigger, target, target_x, target_y, target_active, distance, angle
+    -- Get speed increase from modifier
+    local speed_increase = 0
+    local max_speed = 600
+    if modifier then
+      speed_increase = modifier.speed_increase or 0
+      max_speed = modifier.max_speed or 600
+    end
+
+    -- Get positions and sizes
+    local ball_x = ams.get_x(ball_id)
+    local ball_y = ams.get_y(ball_id)
+    local ball_w = ams.get_width(ball_id)
+    local ball_h = ams.get_height(ball_id)
+    local ball_cx = ball_x + ball_w / 2
+    local ball_cy = ball_y + ball_h / 2
+
+    local brick_x = ams.get_x(brick_id)
+    local brick_y = ams.get_y(brick_id)
+    local brick_w = ams.get_width(brick_id)
+    local brick_h = ams.get_height(brick_id)
+    local brick_cx = brick_x + brick_w / 2
+    local brick_cy = brick_y + brick_h / 2
+
+    -- Get current velocity
+    local vx = ams.get_vx(ball_id)
+    local vy = ams.get_vy(ball_id)
+
+    -- Determine which side was hit based on overlap
+    local dx = ball_cx - brick_cx
+    local dy = ball_cy - brick_cy
+    local overlap_x = (ball_w / 2 + brick_w / 2) - math.abs(dx)
+    local overlap_y = (ball_h / 2 + brick_h / 2) - math.abs(dy)
+
+    if overlap_x < overlap_y then
+      -- Horizontal collision
+      vx = -vx
+      -- Push out
+      if dx > 0 then
+        ams.set_x(ball_id, brick_x + brick_w + 1)
+      else
+        ams.set_x(ball_id, brick_x - ball_w - 1)
+      end
+    else
+      -- Vertical collision
+      vy = -vy
+      -- Push out
+      if dy > 0 then
+        ams.set_y(ball_id, brick_y + brick_h + 1)
+      else
+        ams.set_y(ball_id, brick_y - ball_h - 1)
+      end
+    end
+
+    -- Apply speed increase
+    if speed_increase > 0 then
+      local speed = math.sqrt(vx * vx + vy * vy)
+      local new_speed = math.min(speed + speed_increase, max_speed)
+      local scale = new_speed / speed
+      vx = vx * scale
+      vy = vy * scale
+    end
+
+    ams.set_vx(ball_id, vx)
+    ams.set_vy(ball_id, vy)
+
+    -- Play sound
+    ams.play_sound("brick_hit")
+  end
+
+  return action

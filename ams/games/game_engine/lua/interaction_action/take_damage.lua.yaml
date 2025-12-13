@@ -1,0 +1,28 @@
+description: Entity takes damage from collision
+lua: |
+  local action = {}
+
+  function action.execute(entity_id, attacker_id, modifier, context)
+    -- context contains: trigger, target, target_x, target_y, target_active, distance, angle
+    -- Get damage amount from modifier
+    local amount = 1
+    if modifier and modifier.amount then
+      amount = modifier.amount
+    end
+
+    -- Get current hits remaining
+    local hits = ams.get_property(entity_id, "hits_remaining") or 1
+    hits = hits - amount
+
+    if hits <= 0 then
+      -- Destroy the entity
+      ams.destroy(entity_id)
+      ams.play_sound("brick_break")
+    else
+      -- Update hits remaining
+      ams.set_property(entity_id, "hits_remaining", hits)
+      ams.play_sound("brick_hit")
+    end
+  end
+
+  return action
