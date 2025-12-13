@@ -411,7 +411,8 @@ class InteractionEngine:
                         interaction,
                     ))
 
-        # If events fired and interaction is monotonic, unbind it
+        # If monotonic filter + enter trigger fired: delete the rule forever.
+        # The universe has spoken. (Transform resets.)
         if events and self._monotonic.can_unbind_after_fire(interaction):
             self._fired_monotonic.add((entity_a.id, int_key))
 
