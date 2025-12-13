@@ -1,0 +1,35 @@
+description: Stop paddle when it reaches its target_x position
+lua: |
+  local action = {}
+
+  function action.execute(entity_id, screen_id, modifier, context)
+    -- Get target from property (set by set_target_x)
+    local target_x = ams.get_prop(entity_id, "paddle_target_x")
+    if not target_x then
+      return  -- No target set
+    end
+
+    -- Get current position and velocity
+    local x = ams.get_x(entity_id)
+    local width = ams.get_width(entity_id)
+    local center_x = x + width / 2
+    local vx = ams.get_vx(entity_id)
+
+    -- Check if we've reached or passed the target
+    local dx = target_x - center_x
+    local threshold = modifier.threshold or 5.0
+
+    -- Stop if close enough OR if we've overshot (moving away from target)
+    local close_enough = math.abs(dx) < threshold
+    local overshot = (dx > 0 and vx < 0) or (dx < 0 and vx > 0)
+
+    if close_enough or overshot then
+      ams.set_vx(entity_id, 0)
+      -- Snap to target if close
+      if close_enough then
+        ams.set_x(entity_id, target_x - width / 2)
+      end
+    end
+  end
+
+  return action

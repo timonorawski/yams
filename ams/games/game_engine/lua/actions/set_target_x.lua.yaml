@@ -1,13 +1,37 @@
-description: Set paddle_target_x property from pointer position (for smooth paddle movement)
+description: Set paddle velocity to slide toward pointer position
 lua: |
   local action = {}
 
   function action.execute(entity_id, target_id, modifier, context)
     -- context contains: trigger, target, target_x, target_y, target_active, distance, angle
-    -- Get pointer X position
-    local pointer_x = ams.get_x(target_id)
+    -- Get movement speed from modifier (default 500 pixels/sec)
+    local speed = modifier.speed or 500
+    local stop_threshold = modifier.stop_threshold or 5.0
 
-    -- Set paddle_target_x property for paddle behavior to use
+    -- Get pointer X position from context
+    local pointer_x = context.target_x
+
+    -- Get paddle center position
+    local x = ams.get_x(entity_id)
+    local width = ams.get_width(entity_id)
+    local center_x = x + width / 2
+
+    -- Calculate direction and distance to target
+    local dx = pointer_x - center_x
+
+    -- Set velocity toward target (will be applied by physics)
+    if math.abs(dx) < stop_threshold then
+      -- Close enough, stop
+      ams.set_vx(entity_id, 0)
+    elseif dx > 0 then
+      -- Move right
+      ams.set_vx(entity_id, speed)
+    else
+      -- Move left
+      ams.set_vx(entity_id, -speed)
+    end
+
+    -- Store target for boundary checking
     ams.set_prop(entity_id, "paddle_target_x", pointer_x)
   end
 

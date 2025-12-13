@@ -53,19 +53,21 @@ entity_types:
         line_width: 2
 
     interactions:
+      # On click: start sliding toward click position
       pointer:
-        # On any click, set paddle target
         - when:
             b.active: true
           action: set_target_x
+          modifier:
+            speed: 500
+            stop_threshold: 5.0
 
-      # Continuous: move paddle toward target_x
-      level:
+      # Continuous: stop when reaching target
+      screen:
         because: continuous
-        action: move_toward_target
+        action: stop_at_target
         modifier:
-          speed: 500
-          stop_threshold: 1.0
+          threshold: 5.0
 
   # paddle_ready: Composite entity showing paddle+ball, transforms on click
   paddle_ready:
@@ -133,16 +135,19 @@ entity_types:
           because: exit
           action: ball_lost
 
-        # Bounce off left wall
+        # Bounce off left wall (continuous - action checks position)
         - edges: [left]
+          because: continuous
           action: bounce_horizontal
 
-        # Bounce off right wall
+        # Bounce off right wall (continuous - action checks position)
         - edges: [right]
+          because: continuous
           action: bounce_horizontal
 
-        # Bounce off top wall
+        # Bounce off top wall (continuous - action checks position)
         - edges: [top]
+          because: continuous
           action: bounce_vertical
 
   brick:

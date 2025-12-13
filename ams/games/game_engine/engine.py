@@ -2249,6 +2249,9 @@ class GameEngine(BaseGame):
         entity.behaviors = new_config.behaviors.copy()
         entity.behavior_config = dict(new_config.behavior_config)
 
+        # Sync entity type to interaction engine (clears trigger state for fresh interactions)
+        self._interaction_engine.transform_entity(entity.id, into_type)
+
         # Trigger on_spawn for new behaviors
         self.on_entity_spawned(entity, self._behavior_engine)
 

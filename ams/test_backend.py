@@ -194,6 +194,11 @@ class TestDetectionBackend(DetectionBackend):
         """Get events that should fire at current time."""
         events = []
 
+        # Reset active state each frame (clicks are momentary)
+        # Pointer position persists, but active only lasts one frame
+        was_active = self._pointer_active
+        self._pointer_active = False
+
         while self._last_event_index < len(self._scheduled):
             scheduled = self._scheduled[self._last_event_index]
             if scheduled.time <= self._elapsed:
