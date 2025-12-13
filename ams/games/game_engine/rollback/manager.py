@@ -135,13 +135,12 @@ class RollbackStateManager:
 
     def _capture_snapshot(self, game_engine: 'GameEngine') -> GameSnapshot:
         """Internal: Create snapshot from current game state."""
-        from ams.games.game_engine.entity import GameEntity
         lua_engine = game_engine._behavior_engine
 
         # Capture all entity states (skip system entities like pointer)
         entity_snapshots: Dict[str, EntitySnapshot] = {}
         for entity_id, entity in lua_engine.entities.items():
-            if isinstance(entity, GameEntity):
+            if entity_id != 'pointer':
                 entity_snapshots[entity_id] = EntitySnapshot.from_entity(entity)
 
         # Capture scheduled callbacks

@@ -412,13 +412,14 @@ class TestBrickBreakerUltimate:
         assert brick_int.modifier.get("speed_increase") == 5
 
         # Screen interactions (array syntax)
+        # 4 interactions: ball_lost, bounce_horizontal (left), bounce_horizontal (right), bounce_vertical (top)
         screen_ints = [i for i in interactions if i.target == "screen"]
-        assert len(screen_ints) == 3
+        assert len(screen_ints) == 4
 
-        actions = {i.action for i in screen_ints}
-        assert "ball_lost" in actions
-        assert "bounce_horizontal" in actions
-        assert "bounce_vertical" in actions
+        actions = [i.action for i in screen_ints]
+        assert actions.count("ball_lost") == 1
+        assert actions.count("bounce_horizontal") == 2  # left and right edges
+        assert actions.count("bounce_vertical") == 1    # top edge
 
     def test_brick_interactions(self, brick_breaker_data):
         """Parse brick interactions from BrickBreakerUltimate."""
