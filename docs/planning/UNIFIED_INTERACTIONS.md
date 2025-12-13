@@ -340,9 +340,9 @@ Some attributes may be computed on-demand (generators) - less efficient, but all
 
 **Decision:** Any attribute can be filtered. Compiler optimizes. Profiler exposes costs.
 
-### 4. Trigger Modes
+### 4. Trigger Modes (`because:`)
 
-Just another attribute on the interaction:
+The `because:` key specifies when the action fires. Named for readability: "fire this action *because* the condition entered/exited/continues."
 
 ```yaml
 interactions:
@@ -367,15 +367,15 @@ interactions:
       action: lose_life
 ```
 
-| Trigger | Behavior |
-|---------|----------|
+| `because:` | Behavior |
+|------------|----------|
 | `enter` | Once when filter becomes true (default) |
 | `exit` | Once when filter becomes false |
 | `continuous` | Every frame while filter is true |
 
 "Fire once ever" is handled by the action transforming the entity (destroy it, change a property so filter no longer matches, etc.) - not a trigger mode.
 
-**Decision:** Three trigger modes: `enter` (default), `exit`, `continuous`.
+**Decision:** `because:` with three modes: `enter` (default), `exit`, `continuous`.
 
 ### 5. Handler Signature
 
