@@ -1,0 +1,172 @@
+# BrickBreaker Ultimate - Unified Interactions Test
+#
+# This game definition validates the unified interactions system design.
+# All entity interactions (collisions, input, screen bounds) use the same model.
+
+name: "Brick Breaker Ultimate"
+description: "Brick breaker using unified interaction system"
+version: "0.1.0"
+
+screen_width: 800
+screen_height: 600
+background_color: [20, 20, 30]
+
+defaults:
+  lives: 3
+
+win_condition: destroy_all
+win_target_type: brick
+lose_on_player_death: true
+
+# =============================================================================
+# Assets
+# =============================================================================
+
+assets:
+  sounds:
+    paddle_hit: sounds/paddle_hit.wav
+    wall_bounce: sounds/wall_bounce.wav
+    brick_hit: sounds/brick_hit.wav
+    brick_break: sounds/brick_break.wav
+    shoot: sounds/shoot.wav
+    player_hit: sounds/player_hit.wav
+
+# =============================================================================
+# Entity Types (with interactions as entity property)
+# =============================================================================
+
+entity_types:
+
+  paddle:
+    width: 120
+    height: 15
+    color: blue
+    tags: [player]
+    properties:
+      ball_attached: false
+
+    interactions:
+      pointer:
+        - trigger: continuous
+          action: track_pointer_x
+
+        - when:
+            b.active: true
+            a.ball_attached: true
+          action: launch_ball
+          modifier:
+            angle_range: [-120, -60]
+            speed: 300
+
+  ball:
+    width: 16
+    height: 16
+    color: white
+    tags: [ball]
+    properties:
+      speed: 300
+      max_speed: 600
+
+    interactions:
+      paddle:
+        when:
+          distance: 0
+        action: bounce_paddle
+        modifier:
+          max_angle: 60
+
+      brick:
+        when:
+          distance: 0
+        action: bounce_reflect
+        modifier:
+          speed_increase: 5
+          max_speed: 600
+
+      screen:
+        - edges: [bottom]
+          action: ball_lost
+
+        - edges: [left, right]
+          action: bounce_horizontal
+
+        - edges: [top]
+          action: bounce_vertical
+
+  brick:
+    width: 70
+    height: 25
+    color: gray
+    tags: [enemy, brick]
+    properties:
+      hits_remaining: 1
+      max_hits: 1
+      points: 100
+
+    interactions:
+      ball:
+        when:
+          distance: 0
+        action: take_damage
+        modifier:
+          amount: 1
+
+  brick_red:
+    extends: brick
+    color: red
+    properties:
+      points: 500
+
+  brick_silver:
+    extends: brick
+    color: silver
+    properties:
+      hits_remaining: 3
+      max_hits: 3
+      points: 400
+
+  projectile:
+    width: 8
+    height: 8
+    color: red
+    tags: [projectile, hazard]
+
+    interactions:
+      paddle:
+        when:
+          distance: 0
+        action: hit_player
+        modifier:
+          sound: player_hit
+
+      screen:
+        edges: [top, bottom, left, right]
+        action: destroy_self
+
+# =============================================================================
+# Player Configuration
+# =============================================================================
+
+player:
+  type: paddle
+  spawn: [340, 550]
+  properties:
+    ball_attached: true  # Start with ball attached
+
+# =============================================================================
+# Default Layout
+# =============================================================================
+
+default_layout:
+  name: "Classic"
+  brick_grid:
+    start_x: 65
+    start_y: 60
+    cols: 10
+    rows: 5
+    row_types:
+      - brick
+      - brick
+      - brick_red
+      - brick_red
+      - brick_silver
