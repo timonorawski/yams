@@ -547,8 +547,97 @@ All questions resolved. The unified model:
 
 Four system entities: `pointer`, `screen`, `level`, `game`
 
-## Next Steps
+## Implementation Plan
 
-1. Implement interaction engine
-2. Migrate existing games
-3. Remove old systems (collision_behaviors, input_mapping, behaviors, lose_conditions)
+### Phase 1: Core Interaction Engine
+
+```
+ams/interactions/
+├── __init__.py
+├── engine.py          # InteractionEngine - main loop
+├── filter.py          # Filter evaluation
+├── trigger.py         # Trigger state (enter/exit tracking)
+├── system_entities.py # pointer, screen, level, game
+└── spatial.py         # Spatial partitioning (later optimization)
+```
+
+**InteractionEngine responsibilities:**
+1. Parse `interactions` from entity types
+2. Each frame: evaluate all interaction filters
+3. Track trigger states (was filter true last frame?)
+4. Fire actions on trigger conditions
+5. Manage system entities
+
+### Phase 2: System Entities
+
+| Entity | Implementation |
+|--------|----------------|
+| `pointer` | Updated by input system each frame |
+| `screen` | Static bounds, edge detection via angle |
+| `level` | Implicit, tracks entity membership |
+| `game` | Properties: lives, score, state |
+
+### Phase 3: Filter Evaluation
+
+```python
+class Filter:
+    def evaluate(self, entity_a, entity_b, context) -> bool:
+        # Check distance
+        # Check angle
+        # Check entity attributes (a.*, b.*)
+        # Check edges shorthand
+        pass
+```
+
+### Phase 4: Actions
+
+Unified action signature:
+```python
+def execute(entity_id: str, other_id: str, interaction: dict):
+    # interaction.distance, interaction.angle, interaction.modifier, etc.
+    pass
+```
+
+### Decisions
+
+1. **InteractionEngine as module** - attaches to GameEngine
+   - GameEngine becomes game state + entity arbitrator
+   - InteractionEngine handles all interaction logic
+
+2. **Big bang approach** - build engine with tests, then attach
+   - Games are small, migrate all at once
+
+3. **Parser first** - validate syntax before engine exists
+
+### Build Order
+
+1. ✅ YAML schema for `interactions` format
+2. ✅ Parser + tests (validate BrickBreakerUltimate)
+3. ✅ System entities (pointer, screen, level, game, time)
+4. ✅ Filter evaluator + tests
+5. ✅ Trigger state manager + tests
+6. ✅ Action dispatch + InteractionEngine
+7. ⬜ Attach to GameEngine
+8. ⬜ Migrate all games
+9. ⬜ Remove old systems
+10. ⬜ Spatial optimization (later)
+
+## Implementation Status
+
+**Completed (179 tests):**
+
+| Module | File | Tests | Purpose |
+|--------|------|-------|---------|
+| Parser | `ams/interactions/parser.py` | 45 | Parse YAML interactions to dataclasses |
+| Schema | `ams/interactions/schemas/interaction.schema.json` | - | JSON schema validation |
+| System Entities | `ams/interactions/system_entities.py` | 39 | pointer, screen, level, game, time |
+| Filter | `ams/interactions/filter.py` | 43 | Distance/angle calculation, filter evaluation |
+| Trigger | `ams/interactions/trigger.py` | 31 | Enter/exit/continuous state tracking |
+| Engine | `ams/interactions/engine.py` | 21 | Main orchestrator + action dispatch |
+
+**Next Steps:**
+
+1. Integrate with existing `GameEngine` in `ams/games/game_engine/`
+2. Create action handlers for existing behaviors (bounce, destroy, etc.)
+3. Migrate games to unified format
+4. Remove legacy collision/behavior systems

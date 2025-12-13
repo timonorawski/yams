@@ -1,0 +1,139 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://ams.games/schemas/interaction.schema.json",
+  "title": "AMS Interaction Definition",
+  "description": "Schema for entity interactions in the unified interaction system",
+
+  "$defs": {
+    "filter_value": {
+      "description": "A filter value - exact match or comparison operator",
+      "oneOf": [
+        { "type": "string" },
+        { "type": "number" },
+        { "type": "boolean" },
+        {
+          "type": "object",
+          "properties": {
+            "lt": { "type": "number", "description": "Less than" },
+            "gt": { "type": "number", "description": "Greater than" },
+            "lte": { "type": "number", "description": "Less than or equal" },
+            "gte": { "type": "number", "description": "Greater than or equal" },
+            "between": {
+              "type": "array",
+              "items": { "type": "number" },
+              "minItems": 2,
+              "maxItems": 2,
+              "description": "Between [min, max]"
+            },
+            "in": {
+              "type": "array",
+              "description": "Value in set"
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+
+    "filter": {
+      "type": "object",
+      "description": "Filter conditions for when interaction triggers",
+      "properties": {
+        "distance": {
+          "$ref": "#/$defs/filter_value",
+          "description": "Distance between entities (0 = collision)"
+        },
+        "from": {
+          "type": "string",
+          "enum": ["edge", "center"],
+          "default": "edge",
+          "description": "Measure distance from edge or center of entity A"
+        },
+        "to": {
+          "type": "string",
+          "enum": ["edge", "center"],
+          "default": "edge",
+          "description": "Measure distance to edge or center of entity B"
+        },
+        "angle": {
+          "$ref": "#/$defs/filter_value",
+          "description": "Angle from A to B (0=right, 90=up, 180=left, 270=down)"
+        },
+        "because": {
+          "type": "string",
+          "enum": ["transform", "spawn", "destroy"],
+          "description": "Filter on lifecycle trigger cause"
+        }
+      },
+      "patternProperties": {
+        "^a\\.": {
+          "$ref": "#/$defs/filter_value",
+          "description": "Filter on entity A attribute"
+        },
+        "^b\\.": {
+          "$ref": "#/$defs/filter_value",
+          "description": "Filter on entity B attribute"
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "interaction": {
+      "type": "object",
+      "description": "A single interaction definition",
+      "properties": {
+        "when": {
+          "$ref": "#/$defs/filter",
+          "description": "Conditions that must be true for interaction to fire"
+        },
+        "trigger": {
+          "type": "string",
+          "enum": ["enter", "exit", "continuous"],
+          "default": "enter",
+          "description": "When to fire: enter (on become true), exit (on become false), continuous (every frame while true)"
+        },
+        "edges": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["top", "bottom", "left", "right"]
+          },
+          "description": "Shorthand for screen edge interactions - expands to angle filter"
+        },
+        "action": {
+          "type": "string",
+          "description": "Action to execute (Lua script name or inline)"
+        },
+        "modifier": {
+          "type": "object",
+          "description": "Configuration passed to the action",
+          "additionalProperties": true
+        }
+      },
+      "required": ["action"],
+      "additionalProperties": false
+    },
+
+    "interaction_target": {
+      "description": "Interactions with a target entity type - single or array",
+      "oneOf": [
+        { "$ref": "#/$defs/interaction" },
+        {
+          "type": "array",
+          "items": { "$ref": "#/$defs/interaction" },
+          "minItems": 1
+        }
+      ]
+    },
+
+    "interactions": {
+      "type": "object",
+      "description": "Map of target entity type to interaction(s)",
+      "additionalProperties": {
+        "$ref": "#/$defs/interaction_target"
+      }
+    }
+  },
+
+  "$ref": "#/$defs/interactions"
+}
