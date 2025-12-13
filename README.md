@@ -24,7 +24,7 @@ I wanted my kids to grow up with games that train:
 - proprioception and bilateral coordination
 - the pure neuroplastic rocket fuel that only comes from physical cause → visible effect in the same half-second
 
-So I built a system where the duck dies because the arrow you shot actually hit it in the real world, at the exact moment your brain predicted it would.
+So I built a system where you can make a game like duck hunt, but instead of a light rifle, the duck dies because the arrow you shot actually hit it in the real world, at the exact moment your brain predicted it would.
 That’s not nostalgia.
 That’s brain-building in its most fun possible form.
 Every game on this platform is engineered from the ground up to be creatable by children (drag-and-drop (coming) → YAML → optional tiny safe Lua), instantly playable in a browser, and magically accurate when you play it with real projectiles on a real wall or archery target.
