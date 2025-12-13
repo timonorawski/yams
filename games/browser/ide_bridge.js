@@ -129,8 +129,12 @@
             },
 
             // Called by Python to send log
-            notifyLog: function(level, message) {
-                sendToIDE('log', {level: level, message: message});
+            notifyLog: function(level, message, module) {
+                sendToIDE('log', {
+                    level: level || 'INFO',
+                    message: message,
+                    module: module || 'Engine'
+                });
             },
 
             // Check if there are pending messages

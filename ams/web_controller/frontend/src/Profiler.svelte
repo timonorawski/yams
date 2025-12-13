@@ -129,7 +129,7 @@
       {/if}
       <input
         type="file"
-        accept=".json,.ndjson,.profile"
+        accept=".json,.ndjson,.profile,.jsonl"
         class="hidden"
         bind:this={fileInput}
         on:change={handleFileSelect}

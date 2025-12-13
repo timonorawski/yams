@@ -6,6 +6,7 @@
   import FileTree from './lib/ide/FileTree.svelte';
   import PreviewFrame from './lib/ide/PreviewFrame.svelte';
   import EmbeddedCodeEditor from './lib/ide/EmbeddedCodeEditor.svelte';
+  import LogPanel from './lib/ide/LogPanel.svelte';
 
   // Project config
   let projectName = 'default';
@@ -70,6 +71,24 @@
 
   // Reference to PreviewFrame for imperative actions
   let previewFrame;
+
+  // Log panel state
+  let logs = [];
+  let showLogs = true;
+  let logPanelHeight = 150; // pixels
+
+  function handleLog(event) {
+    logs = [...logs, event.detail];
+  }
+
+  function handleClearLogs() {
+    logs = [];
+  }
+
+  function handleTruncateLogs(event) {
+    // Logs are being truncated by LogPanel
+    logs = logs.slice(-200);
+  }
 
   // Load project on mount
   onMount(async () => {
@@ -673,9 +692,39 @@
         aria-orientation="vertical"
       ></div>
 
-      <!-- Preview pane -->
+      <!-- Preview pane with logs -->
       <div class="flex flex-col overflow-hidden" style="width: {100 - splitPosition}%">
-        <PreviewFrame {projectFiles} />
+        <!-- Preview -->
+        <div class="flex-1 overflow-hidden" style="height: {showLogs ? `calc(100% - ${logPanelHeight}px)` : '100%'}">
+          <PreviewFrame {projectFiles} on:log={handleLog} />
+        </div>
+
+        <!-- Log Panel Toggle & Content -->
+        {#if showLogs}
+          <div class="border-t border-base-300" style="height: {logPanelHeight}px">
+            <div class="flex items-center justify-between px-2 py-1 bg-base-200 border-b border-base-300">
+              <span class="text-xs uppercase text-base-content/50 font-semibold">Console</span>
+              <button
+                class="btn btn-xs btn-ghost"
+                on:click={() => showLogs = false}
+                title="Hide console"
+              >
+                ▼
+              </button>
+            </div>
+            <div style="height: calc(100% - 28px)">
+              <LogPanel {logs} on:clear={handleClearLogs} on:truncate={handleTruncateLogs} />
+            </div>
+          </div>
+        {:else}
+          <button
+            class="flex items-center gap-2 px-3 py-1 bg-base-200 border-t border-base-300 text-xs text-base-content/60 hover:bg-base-300"
+            on:click={() => showLogs = true}
+          >
+            <span>▲</span>
+            <span>Console ({logs.length} logs)</span>
+          </button>
+        {/if}
       </div>
     </div>
   </div>

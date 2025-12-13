@@ -155,7 +155,12 @@
         break;
 
       case 'log':
-        dispatch('log', { level: msg.level, message: msg.message });
+        dispatch('log', {
+          level: msg.level,
+          message: msg.message,
+          module: msg.module,
+          timestamp: msg.timestamp || Date.now()
+        });
         break;
 
       case 'pong':

@@ -422,6 +422,11 @@ class BrowserGameRuntime:
                     document.head.appendChild(script);
                 })();
             ''')
+
+            # Set up log forwarding to IDE
+            from ide_bridge import setup_ide_logging
+            setup_ide_logging()
+
         except Exception as e:
             js_log(f"[BrowserGameRuntime] IDE bridge init failed: {e}")
 

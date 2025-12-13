@@ -9,11 +9,97 @@ This is the Python half of the IDE↔Engine communication bridge.
 The JS half (ide_bridge.js) receives postMessage and calls these functions.
 """
 import json
+import logging
 import sys
 from typing import TYPE_CHECKING, Callable, Optional
 
 if TYPE_CHECKING:
     from ams.content_fs_browser import ContentFSBrowser
+
+
+class IDELogHandler(logging.Handler):
+    """
+    Forward Python logs to IDE via postMessage.
+
+    Captures logs from ams.* and games.* loggers and sends them
+    to the IDE's LogPanel for real-time display.
+    """
+
+    # Map Python log levels to IDE levels
+    LEVEL_MAP = {
+        logging.DEBUG: 'DEBUG',
+        logging.INFO: 'INFO',
+        logging.WARNING: 'WARN',
+        logging.ERROR: 'ERROR',
+        logging.CRITICAL: 'ERROR',
+    }
+
+    def __init__(self):
+        super().__init__()
+        self._enabled = True
+
+    def emit(self, record: logging.LogRecord):
+        """Forward log record to IDE."""
+        if not self._enabled:
+            return
+
+        if sys.platform != "emscripten":
+            return
+
+        try:
+            import platform as browser_platform
+
+            level = self.LEVEL_MAP.get(record.levelno, 'INFO')
+            message = record.getMessage()
+            module = record.name
+
+            # Call JavaScript notifyLog
+            browser_platform.window.ideBridge.notifyLog(level, message, module)
+        except Exception:
+            # Silently ignore errors to avoid infinite loops
+            pass
+
+    def disable(self):
+        """Temporarily disable log forwarding."""
+        self._enabled = False
+
+    def enable(self):
+        """Re-enable log forwarding."""
+        self._enabled = True
+
+
+# Global log handler instance
+_ide_log_handler: Optional[IDELogHandler] = None
+
+
+def setup_ide_logging():
+    """
+    Set up log forwarding to IDE.
+
+    Call this after the IDE bridge is initialized to start
+    forwarding Python logs to the IDE's LogPanel.
+    """
+    global _ide_log_handler
+
+    if sys.platform != "emscripten":
+        return
+
+    if _ide_log_handler is not None:
+        return  # Already set up
+
+    _ide_log_handler = IDELogHandler()
+    _ide_log_handler.setLevel(logging.DEBUG)
+
+    # Add handler to relevant loggers
+    for logger_name in ['ams', 'games', 'browser']:
+        logger = logging.getLogger(logger_name)
+        logger.addHandler(_ide_log_handler)
+
+    # Also add to root logger to catch everything
+    root_logger = logging.getLogger()
+    root_logger.addHandler(_ide_log_handler)
+
+    print("[IDEBridge] Log forwarding to IDE enabled")
 
 
 # Global reference to the bridge instance
