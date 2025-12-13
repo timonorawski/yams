@@ -209,7 +209,7 @@ class TestEngineEvaluation:
         """Continuous trigger fires every frame."""
         engine.register_entity_type("paddle", {
             "pointer": {
-                "trigger": "continuous",
+                "because": "continuous",
                 "action": "track_pointer"
             }
         })
@@ -236,7 +236,7 @@ class TestEngineEvaluation:
         engine.register_entity_type("ball", {
             "brick": {
                 "when": {"distance": 0},
-                "trigger": "enter",
+                "because": "enter",
                 "action": "bounce"
             }
         })
@@ -299,7 +299,7 @@ class TestEngineLifecycle:
         """Lifecycle spawn triggers level enter interaction."""
         engine.register_entity_type("ball", {
             "level": {
-                "trigger": "enter",
+                "because": "enter",
                 "action": "initialize_ball"
             }
         })
@@ -317,7 +317,7 @@ class TestEngineLifecycle:
         """Lifecycle update triggers level continuous interaction."""
         engine.register_entity_type("ball", {
             "level": {
-                "trigger": "continuous",
+                "because": "continuous",
                 "action": "apply_physics"
             }
         })
@@ -334,7 +334,7 @@ class TestEngineLifecycle:
         """Lifecycle destroy triggers level exit interaction."""
         engine.register_entity_type("ball", {
             "level": {
-                "trigger": "exit",
+                "because": "exit",
                 "action": "spawn_particles"
             }
         })
@@ -352,7 +352,7 @@ class TestEngineLifecycle:
         """Because filter limits lifecycle triggers."""
         engine.register_entity_type("paddle", {
             "level": {
-                "trigger": "exit",
+                "because": "exit",
                 "when": {"because": "transform"},
                 "action": "transform_cleanup"
             }
@@ -421,7 +421,7 @@ class TestBrickBreakerScenario:
 
         engine.register_entity_type("paddle", {
             "pointer": {
-                "trigger": "continuous",
+                "because": "continuous",
                 "action": "track_pointer_x"
             }
         })

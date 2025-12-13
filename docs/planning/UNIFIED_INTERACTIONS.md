@@ -64,7 +64,7 @@ entity_types:
         when:
           distance: { lt: 100 }
         action: trigger_alert
-        trigger: enter
+        because: enter
 ```
 
 Benefits:
@@ -192,17 +192,17 @@ entity_types:
     interactions:
       # on_spawn = enter level
       level:
-        trigger: enter
+        because: enter
         action: initialize_velocity
 
       # on_update = continuous with level
       level:
-        trigger: continuous
+        because: continuous
         action: apply_physics
 
       # on_destroy = exit level
       level:
-        trigger: exit
+        because: exit
         action: spawn_particles
 ```
 
@@ -350,20 +350,20 @@ interactions:
     brick:
       when:
         distance: 0
-      trigger: enter        # Fire once when filter becomes true
+      because: enter        # Fire once when filter becomes true
       action: bounce
 
   player:
     danger_zone:
       when:
         distance: 0
-      trigger: continuous   # Fire every frame while true
+      because: continuous   # Fire every frame while true
       action: take_damage
 
   ball:
     screen:
       edges: [bottom]
-      trigger: enter        # Don't re-fire while still touching
+      because: enter        # Don't re-fire while still touching
       action: lose_life
 ```
 
@@ -446,13 +446,13 @@ See `games/BrickBreakerUltimate/game.yaml` - full brick breaker in unified inter
 | `collision_behaviors.brick.ball` | `interactions.brick.ball` |
 | `collision_behaviors.projectile.paddle` | `interactions.projectile.paddle` |
 | `lose_conditions[ball exited bottom]` | `interactions.ball.screen` with `edges: [bottom]` |
-| `input_mapping.paddle.target_x` | `interactions.paddle.pointer` with `trigger: continuous` |
+| `input_mapping.paddle.target_x` | `interactions.paddle.pointer` with `because: continuous` |
 | `input_mapping.paddle_ready.on_input` | `interactions.paddle.pointer` with `b.active: true` filter |
 
 ### Observations
 
 1. **Screen interactions are clean** - `edges: [bottom]` reads naturally
-2. **Input is unified** - pointer is just another entity, `trigger: continuous` for tracking
+2. **Input is unified** - pointer is just another entity, `because: continuous` for tracking
 3. **Click detection** - `b.active: true` filter on pointer
 4. **Multiple interactions per pair** - paddle has both continuous tracking AND click-to-launch
 5. **Wall bounces** - now explicit interactions, not hidden in behavior code
@@ -511,7 +511,7 @@ If needed, lifecycle triggers on transform can be explicit:
 paddle:
   interactions:
     level:
-      trigger: exit
+      because: exit
       when:
         because: transform    # Only fires on transform, not destroy
       action: cleanup_old_type
@@ -525,9 +525,9 @@ Behaviors are **replaced by interactions**:
 
 | Behavior Hook | Interaction Equivalent |
 |---------------|----------------------|
-| `on_spawn` | `level` + `trigger: enter` |
-| `on_update` | `level` + `trigger: continuous` |
-| `on_destroy` | `level` + `trigger: exit` |
+| `on_spawn` | `level` + `because: enter` |
+| `on_update` | `level` + `because: continuous` |
+| `on_destroy` | `level` + `because: exit` |
 | `on_hit` | entity + `distance: 0` |
 
 No more `behaviors: [ball, gravity]`. Just interactions.

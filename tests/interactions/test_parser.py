@@ -254,10 +254,10 @@ class TestParseInteractions:
         assert interactions[0].modifier == {"max_angle": 60}
 
     def test_trigger_mode(self):
-        """Parse explicit trigger mode."""
+        """Parse explicit trigger mode (because key)."""
         data = {
             "pointer": {
-                "trigger": "continuous",
+                "because": "continuous",
                 "action": "track_pointer_x"
             }
         }

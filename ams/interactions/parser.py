@@ -203,8 +203,8 @@ def _parse_interaction(target: str, data: Dict[str, Any], source_entity: str) ->
     # Parse filter
     filter_obj = _parse_filter(data.get('when'))
 
-    # Parse trigger mode
-    trigger_str = data.get('trigger', 'enter')
+    # Parse trigger mode (YAML key is 'because' for readability)
+    trigger_str = data.get('because', 'enter')
     trigger = TriggerMode(trigger_str)
 
     # Parse edges shorthand

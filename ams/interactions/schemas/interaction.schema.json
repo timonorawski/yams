@@ -86,7 +86,7 @@
           "$ref": "#/$defs/filter",
           "description": "Conditions that must be true for interaction to fire"
         },
-        "trigger": {
+        "because": {
           "type": "string",
           "enum": ["enter", "exit", "continuous"],
           "default": "enter",
