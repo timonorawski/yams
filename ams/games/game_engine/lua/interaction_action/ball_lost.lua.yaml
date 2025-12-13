@@ -9,7 +9,7 @@ lua: |
 
     -- Transform paddle back to paddle_ready state
     -- The paddle_ready entity handles the life loss via its own interaction
-    local paddles = ams.get_entities_by_type("paddle")
+    local paddles = ams.get_entities_of_type("paddle")
     for _, paddle_id in ipairs(paddles) do
       ams.transform(paddle_id, "paddle_ready")
     end
