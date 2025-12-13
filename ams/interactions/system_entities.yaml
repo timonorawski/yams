@@ -1,0 +1,44 @@
+# System Entity Definitions
+#
+# These are virtual entities provided by the engine that participate
+# in interactions like any game entity.
+
+pointer:
+  description: Input position with bounds
+  attributes:
+    x: float
+    y: float
+    width: float
+    height: float
+    active: bool
+    input_type: string  # mouse, touch, object, laser
+
+screen:
+  description: Play area bounds
+  attributes:
+    x: float
+    y: float
+    width: float
+    height: float
+
+level:
+  description: Lifecycle entity (spawn/update/destroy)
+  attributes:
+    name: string
+    time: float
+
+game:
+  description: Game state
+  attributes:
+    lives: int
+    score: int
+    state: string  # playing, paused, won, lost
+  monotonic:
+    - score         # Score only increases
+
+time:
+  description: Timer for time-based interactions
+  monotonic: true   # All time attributes are monotonic
+  attributes:
+    elapsed: float  # Seconds since entity spawn
+    absolute: float # Seconds since level start

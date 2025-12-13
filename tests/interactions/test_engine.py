@@ -393,6 +393,114 @@ class TestEngineReset:
         assert engine.system.game.lives == 3  # Back to initial
 
 
+class TestMonotonicOptimization:
+    """Tests for monotonic interaction unbinding."""
+
+    def test_time_interaction_unbound_after_fire(self):
+        """Time interactions are unbound after firing (zero cost)."""
+        engine = InteractionEngine()
+
+        engine.register_entity_type("spawner", {
+            "time": {
+                "when": {"b.elapsed": {"gte": 1.0}},
+                "action": "spawn_enemy"
+            }
+        })
+
+        handler = MockHandler()
+        engine.register_action("spawn_enemy", handler)
+
+        spawner = Entity(id="spawner1", entity_type="spawner")
+        engine.add_entity(spawner)
+
+        # Time hasn't passed threshold
+        engine.evaluate(dt=0.5)
+        assert len(handler.calls) == 0
+
+        # Cross threshold - fires
+        engine.evaluate(dt=0.6)
+        assert len(handler.calls) == 1
+
+        # Subsequent frames - should NOT fire again (unbound)
+        engine.evaluate(dt=1.0)
+        engine.evaluate(dt=1.0)
+        assert len(handler.calls) == 1  # Still just 1
+
+    def test_transform_restores_time_interaction(self):
+        """Transform clears fired state, allowing re-fire."""
+        engine = InteractionEngine()
+
+        engine.register_entity_type("spawner", {
+            "time": {
+                "when": {"b.elapsed": {"gte": 0.5}},
+                "action": "spawn_enemy"
+            }
+        })
+
+        handler = MockHandler()
+        engine.register_action("spawn_enemy", handler)
+
+        spawner = Entity(id="spawner1", entity_type="spawner")
+        engine.add_entity(spawner)
+
+        # Fire once
+        engine.evaluate(dt=1.0)
+        assert len(handler.calls) == 1
+
+        # Transform to same type (reset)
+        engine.transform_entity("spawner1", "spawner")
+
+        # Need to reset system time for entity's elapsed
+        engine.system.time.reset_elapsed()
+
+        # Should fire again after threshold
+        engine.evaluate(dt=1.0)
+        assert len(handler.calls) == 2
+
+    def test_entity_attr_filter_not_unbound(self):
+        """Interactions with entity attr filters are NOT unbound.
+
+        When a.ready toggles, the enter trigger can fire again because
+        the interaction was not unbound (still being evaluated).
+        """
+        engine = InteractionEngine()
+
+        # Has a.ready filter - can't unbind
+        engine.register_entity_type("spawner", {
+            "time": {
+                "when": {
+                    "b.elapsed": {"gte": 0.5},
+                    "a.ready": True
+                },
+                "action": "spawn_enemy"
+            }
+        })
+
+        handler = MockHandler()
+        engine.register_action("spawn_enemy", handler)
+
+        spawner = Entity(
+            id="spawner1",
+            entity_type="spawner",
+            attributes={"ready": True}
+        )
+        engine.add_entity(spawner)
+
+        # Fire once
+        engine.evaluate(dt=1.0)
+        assert len(handler.calls) == 1
+
+        # Change ready to False - filter no longer matches
+        engine.update_entity("spawner1", x=0, y=0, attributes={"ready": False})
+        engine.evaluate(dt=0.1)
+        assert len(handler.calls) == 1  # No new fire
+
+        # Change ready back to True - filter matches again, enter fires!
+        engine.update_entity("spawner1", x=0, y=0, attributes={"ready": True})
+        engine.evaluate(dt=0.1)
+        assert len(handler.calls) == 2  # Fired again (not unbound)
+
+
 class TestBrickBreakerScenario:
     """Integration test with BrickBreaker-like game."""
 

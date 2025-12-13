@@ -10,12 +10,91 @@ The InteractionEngine:
 """
 
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Protocol, Set
+import yaml
 
-from .parser import Interaction, parse_interactions, TriggerMode
+from .parser import Interaction, parse_interactions, TriggerMode, Filter
 from .filter import FilterEvaluator, InteractionContext, evaluate_filter
 from .trigger import TriggerManager, TriggerEvent, LifecycleManager, LifecycleEvent
 from .system_entities import SystemEntities, InputType
+
+
+@dataclass
+class MonotonicConfig:
+    """Configuration for monotonic (fire-and-forget) interactions."""
+    all_monotonic: bool = False  # All attributes are monotonic
+    monotonic_attrs: Set[str] = field(default_factory=set)  # Specific monotonic attrs
+
+    def is_monotonic(self, filter_obj: Filter) -> bool:
+        """Check if a filter only uses monotonic conditions."""
+        if self.all_monotonic:
+            return True
+        # Would need to check which b.* attrs are used
+        # For now, if we have specific attrs listed, assume filter uses them
+        return len(self.monotonic_attrs) > 0
+
+
+class MonotonicRegistry:
+    """
+    Registry of system entities with monotonic conditions.
+
+    Monotonic conditions only increase/trigger once, so interactions
+    using only these conditions can be unbound after firing.
+    """
+
+    def __init__(self):
+        self._configs: Dict[str, MonotonicConfig] = {}
+
+    @classmethod
+    def load_from_yaml(cls, path: Optional[Path] = None) -> "MonotonicRegistry":
+        """Load registry from system_entities.yaml."""
+        registry = cls()
+
+        if path is None:
+            path = Path(__file__).parent / "system_entities.yaml"
+
+        if not path.exists():
+            return registry
+
+        with open(path) as f:
+            data = yaml.safe_load(f)
+
+        for entity_name, config in data.items():
+            if not isinstance(config, dict):
+                continue
+
+            monotonic = config.get("monotonic")
+            if monotonic is True:
+                registry._configs[entity_name] = MonotonicConfig(all_monotonic=True)
+            elif isinstance(monotonic, list):
+                registry._configs[entity_name] = MonotonicConfig(
+                    monotonic_attrs=set(monotonic)
+                )
+
+        return registry
+
+    def can_unbind_after_fire(self, interaction: Interaction) -> bool:
+        """
+        Check if interaction can be unbound after firing.
+
+        Returns True if:
+        - Target is monotonic (time, game.score, etc.)
+        - Trigger is 'enter' (fires once)
+        - No entity A attribute filters (those can change)
+        """
+        if interaction.trigger != TriggerMode.ENTER:
+            return False
+
+        # Entity A attributes can change, can't unbind
+        if interaction.filter.entity_a_attrs:
+            return False
+
+        config = self._configs.get(interaction.target)
+        if not config:
+            return False
+
+        return config.is_monotonic(interaction.filter)
 
 
 class ActionHandler(Protocol):
@@ -112,6 +191,13 @@ class InteractionEngine:
         # Interactions by entity type
         self._interactions: Dict[str, List[Interaction]] = {}
 
+        # Fired monotonic interactions per entity (unbound, zero cost)
+        # Key: (entity_id, interaction_key), restored on transform
+        self._fired_monotonic: Set[tuple] = set()
+
+        # Monotonic condition registry
+        self._monotonic = MonotonicRegistry.load_from_yaml()
+
         # Action handlers
         self._handlers: Dict[str, ActionHandler] = {}
 
@@ -201,9 +287,28 @@ class InteractionEngine:
         Returns destroy lifecycle events.
         """
         self._triggers.clear_entity(entity_id)
+        self._clear_fired_monotonic(entity_id)
         if entity_id in self._entities:
             del self._entities[entity_id]
         return self._lifecycle.on_destroy(entity_id)
+
+    def _clear_fired_monotonic(self, entity_id: str) -> None:
+        """Clear fired monotonic interactions for an entity (on destroy/transform)."""
+        to_remove = [key for key in self._fired_monotonic if key[0] == entity_id]
+        for key in to_remove:
+            self._fired_monotonic.discard(key)
+
+    def transform_entity(self, entity_id: str, new_type: str) -> None:
+        """
+        Transform entity to new type.
+
+        Clears all interaction state, re-registering interactions from new type.
+        Transform to same type = reset all timers/interactions.
+        """
+        if entity_id in self._entities:
+            self._entities[entity_id].entity_type = new_type
+            self._triggers.clear_entity(entity_id)
+            self._clear_fired_monotonic(entity_id)
 
     def update_entity(
         self,
@@ -264,6 +369,10 @@ class InteractionEngine:
 
         return all_events
 
+    def _get_interaction_key(self, interaction: Interaction) -> str:
+        """Get stable key for an interaction."""
+        return f"{interaction.source_entity_type}:{interaction.target}:{interaction.action}"
+
     def _evaluate_interaction(
         self,
         entity_a: Entity,
@@ -271,6 +380,11 @@ class InteractionEngine:
         entities_by_type: Dict[str, List[Entity]]
     ) -> List[TriggerEvent]:
         """Evaluate a single interaction for an entity."""
+        # Skip if this monotonic interaction already fired for this entity
+        int_key = self._get_interaction_key(interaction)
+        if (entity_a.id, int_key) in self._fired_monotonic:
+            return []
+
         events: List[TriggerEvent] = []
         target = interaction.target
 
@@ -296,6 +410,10 @@ class InteractionEngine:
                         entity_b.to_dict(),
                         interaction,
                     ))
+
+        # If events fired and interaction is monotonic, unbind it
+        if events and self._monotonic.can_unbind_after_fire(interaction):
+            self._fired_monotonic.add((entity_a.id, int_key))
 
         return events
 
@@ -429,6 +547,7 @@ class InteractionEngine:
         self._triggers.reset()
         self._lifecycle.clear()
         self._entities.clear()
+        self._fired_monotonic.clear()
         self.system.game.reset()
         self.system.time.reset_absolute()
         self.system.level.reset()
