@@ -232,6 +232,25 @@ class LuaEngine:
         """
         self._lifecycle_provider = provider
 
+    def _to_lua_table(self, obj: Any) -> Any:
+        """Recursively convert Python dict/list to Lua table.
+
+        This ensures nested structures use Lua's 1-based indexing for arrays,
+        avoiding the 0-based Python list proxy issue with lupa.
+        """
+        if isinstance(obj, dict):
+            lua_table = self._lua.table()
+            for key, value in obj.items():
+                lua_table[key] = self._to_lua_table(value)
+            return lua_table
+        elif isinstance(obj, (list, tuple)):
+            lua_table = self._lua.table()
+            for i, value in enumerate(obj):
+                lua_table[i + 1] = self._to_lua_table(value)  # Lua 1-based indexing
+            return lua_table
+        else:
+            return obj
+
     def _validate_sandbox(self) -> None:
         """Validate that the Lua sandbox is properly locked down.
 
@@ -532,7 +551,7 @@ class LuaEngine:
             # Convert modifier dict to Lua table if provided
             lua_modifier = None
             if modifier:
-                lua_modifier = self._lua.table_from(modifier)
+                lua_modifier = self._to_lua_table(modifier)
 
             execute_fn(entity_a.id, entity_b.id, lua_modifier)
             return True
@@ -588,9 +607,9 @@ class LuaEngine:
             return False
 
         try:
-            # Convert dicts to Lua tables
-            lua_modifier = self._lua.table_from(modifier) if modifier else self._lua.table()
-            lua_context = self._lua.table_from(context) if context else self._lua.table()
+            # Convert dicts to Lua tables (recursive to handle nested lists with 1-based indexing)
+            lua_modifier = self._to_lua_table(modifier) if modifier else self._lua.table()
+            lua_context = self._to_lua_table(context) if context else self._lua.table()
 
             execute_fn(entity_a.id, entity_b.id, lua_modifier, lua_context)
             return True
