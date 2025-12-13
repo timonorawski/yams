@@ -142,11 +142,13 @@ interactions:
       because: exit
       action: ball_lost
 
-    # Edge bouncing (fires on collision with edge)
+    # Edge bouncing (continuous - action checks if at edge)
     - edges: [left, right]
+      because: continuous
       action: bounce_horizontal
 
     - edges: [top]
+      because: continuous
       action: bounce_vertical
 ```
 
@@ -439,11 +441,13 @@ entity_types:
         - when:
             b.active: true
           action: set_target_x
-      level:
+          modifier:
+            speed: 500
+      screen:
         because: continuous
-        action: move_toward_target
+        action: stop_at_target
         modifier:
-          speed: 500
+          threshold: 5.0
 
   ball:
     width: 16
@@ -469,8 +473,10 @@ entity_types:
           because: exit
           action: ball_lost
         - edges: [left, right]
+          because: continuous
           action: bounce_horizontal
         - edges: [top]
+          because: continuous
           action: bounce_vertical
 
   brick:
@@ -569,6 +575,65 @@ from ams.test_backend import run_quick_test
 result = run_quick_test('YourGame', duration=3.0)
 ```
 
+## Key Patterns
+
+### Continuous Screen Interactions (Not Lifecycle Hooks)
+
+The idiomatic way to express ongoing behaviors is through **entity-to-entity interactions with continuous triggers**, not lifecycle hooks. Screen is a system entity that every entity can interact with.
+
+**Pattern: Stop paddle at target position**
+```yaml
+paddle:
+  interactions:
+    pointer:
+      - when:
+          b.active: true
+        action: set_target_x   # Sets velocity + stores target in property
+        modifier:
+          speed: 500
+
+    screen:
+      because: continuous      # Fires every frame
+      action: stop_at_target   # Checks if reached target, stops if so
+      modifier:
+        threshold: 5.0
+```
+
+The `stop_at_target` action runs every frame and checks if the paddle has reached its setpoint. This is preferred over lifecycle hooks because it uses the unified interaction model.
+
+### Edge Bouncing Requires `because: continuous`
+
+Edge interactions like `edges: [top]` expand to direction filter + `distance: 0`. Since distance is edge-to-edge, an entity **inside** the screen always has `distance: 0` (overlapping). The default ENTER trigger fires once on spawn, not at edges.
+
+**Wrong** (bounces once on spawn, never again):
+```yaml
+screen:
+  - edges: [top]
+    action: bounce_vertical
+```
+
+**Correct** (checks every frame, action determines if at edge):
+```yaml
+screen:
+  - edges: [top]
+    because: continuous
+    action: bounce_vertical
+```
+
+The `bounce_vertical` action checks if the entity is actually at the top edge before bouncing.
+
+### Pointer Context Values
+
+For pointer interactions, use `context.target_x` and `context.target_y` in Lua actions - not `ams.get_x(target_id)`. The pointer is a system entity without physical coordinates.
+
+```lua
+function action.execute(entity_id, target_id, modifier, context)
+  local pointer_x = context.target_x  -- Correct
+  local pointer_y = context.target_y
+  -- NOT: ams.get_x(target_id)  -- Won't work for pointer
+end
+```
+
 ## Troubleshooting
 
 - **Entity not appearing**: Check `spawn` position and `render` definition
@@ -576,3 +641,5 @@ result = run_quick_test('YourGame', duration=3.0)
 - **Click not registering**: Ensure `b.active: true` in pointer interaction
 - **Ball falling through**: Use `because: exit` for screen exit detection, not `edges`
 - **Ball going wrong direction**: Check velocity sign - screen y increases downward
+- **Ball escapes at wall**: Edge bouncing needs `because: continuous` (see Key Patterns)
+- **Paddle doesn't stop**: Use continuous screen interaction with stop_at_target pattern
