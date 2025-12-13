@@ -336,7 +336,20 @@ player:
       action: clear_alert
 ```
 
-### Timed Spawner
+### One-Shot Timer
+
+```yaml
+powerup:
+  interactions:
+    time:
+      when:
+        elapsed: {gte: 10.0}    # 10 seconds after spawn
+      action: expire_powerup    # Fires once, then never again
+```
+
+### Repeating Timer (Interval)
+
+Transform to same type resets all state, including elapsed time:
 
 ```yaml
 enemy_spawner:
@@ -344,10 +357,11 @@ enemy_spawner:
     time:
       when:
         elapsed: {gte: 3.0}
-      action: spawn_and_reset
-      modifier:
-        entity_type: enemy
-        reset_timer: true
+      action: spawn_and_restart
+
+# Action does:
+#   ams.spawn("enemy", x, y)
+#   ams.transform(entity_id, "enemy_spawner")  -- resets elapsed to 0
 ```
 
 ## Action Handlers
