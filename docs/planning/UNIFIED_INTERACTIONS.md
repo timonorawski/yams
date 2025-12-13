@@ -377,6 +377,8 @@ interactions:
 
 **Decision:** `because:` with three modes: `enter` (default), `exit`, `continuous`.
 
+**Optimization:** When a `because: enter` interaction fires on a monotonic condition (time thresholds, score thresholds), unbind it completely from the evaluation loop. Zero overhead after firing. Transform re-registers all interactions from the type definition.
+
 ### 5. Handler Signature
 
 Uniform signature for all interaction handlers:
