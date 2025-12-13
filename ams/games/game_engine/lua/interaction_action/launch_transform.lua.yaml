@@ -28,11 +28,8 @@ lua: |
     local vx = speed * math.sin(rad)
     local vy = speed * math.cos(rad)  -- cos for y since 0 = up
 
-    -- Spawn ball with velocity
-    ams.spawn("ball", ball_x, ball_y, {
-      vx = vx,
-      vy = vy
-    })
+    -- Spawn ball with velocity (signature: type, x, y, vx, vy)
+    ams.spawn("ball", ball_x, ball_y, vx, vy)
   end
 
   return action

@@ -440,7 +440,7 @@ ams.get_children(id), ams.has_parent(id)
 
 ### Value Conversion
 
-The `@lua_safe_return` decorator ensures Lua receives only safe types:
+The `@lua_safe_function` decorator ensures Lua receives only safe types:
 
 ```python
 def _to_lua_value(value, lua_runtime):

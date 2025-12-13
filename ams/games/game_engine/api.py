@@ -13,7 +13,7 @@ Extends LuaAPIBase with game entity operations:
 
 from typing import Any, Callable, Optional, TYPE_CHECKING
 
-from ams.lua.api import LuaAPIBase, lua_safe_return
+from ams.lua.api import LuaAPIBase, lua_safe_function
 from ams import profiling
 
 if TYPE_CHECKING:
@@ -242,11 +242,29 @@ class GameLuaAPI(LuaAPIBase):
     # =========================================================================
 
     @profiling.profile("lua_api", "ams.spawn")
+    @lua_safe_function
     def spawn(self, entity_type: str, x: float, y: float,
-              vx: float = 0.0, vy: float = 0.0,
+              vx: Any = 0.0, vy: float = 0.0,
               width: float = 32.0, height: float = 32.0,
               color: str = "white", sprite: str = "") -> Optional[str]:
-        """Spawn a new entity. Returns the new entity's ID."""
+        """Spawn a new entity. Returns the new entity's ID.
+
+        Accepts either:
+        - Individual params: spawn(type, x, y, vx, vy, ...)
+        - Options table: spawn(type, x, y, {vx=1, vy=2, ...})
+
+        The @lua_safe_function decorator converts Lua tables to Python dicts.
+        """
+        # Handle options table passed as 4th argument
+        if isinstance(vx, dict):
+            opts = vx
+            vx = opts.get('vx', 0.0)
+            vy = opts.get('vy', 0.0)
+            width = opts.get('width', width)
+            height = opts.get('height', height)
+            color = opts.get('color', color)
+            sprite = opts.get('sprite', sprite)
+
         if not self._spawn_handler:
             print("[GameLuaAPI] No spawn handler registered")
             return None
@@ -264,7 +282,7 @@ class GameLuaAPI(LuaAPIBase):
     # Entity Queries
     # =========================================================================
 
-    @lua_safe_return
+    @lua_safe_function
     def get_entities_of_type(self, entity_type: str) -> list[str]:
         """Get IDs of all entities of a given type.
 
@@ -273,7 +291,7 @@ class GameLuaAPI(LuaAPIBase):
         return [e.id for e in self._engine.entities.values()
                 if e.entity_type == entity_type and e.alive]
 
-    @lua_safe_return
+    @lua_safe_function
     def get_entities_by_tag(self, tag: str) -> list[str]:
         """Get IDs of all entities with a given tag.
 
@@ -282,7 +300,7 @@ class GameLuaAPI(LuaAPIBase):
         return [e.id for e in self._engine.entities.values()
                 if tag in e.tags and e.alive]
 
-    @lua_safe_return
+    @lua_safe_function
     def get_all_entity_ids(self) -> list[str]:
         """Get IDs of all alive entities.
 
@@ -393,7 +411,7 @@ class GameLuaAPI(LuaAPIBase):
         """Detach entity from its parent."""
         self.set_parent(entity_id, "")
 
-    @lua_safe_return
+    @lua_safe_function
     def get_children(self, entity_id: str) -> list[str]:
         """Get IDs of all child entities."""
         entity = self._engine.get_entity(entity_id)

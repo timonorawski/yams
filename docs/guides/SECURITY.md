@@ -155,10 +155,10 @@ If validation fails, the engine **refuses to start**. This catches regressions i
 
 ### Layer 6: Lua-Safe Return Values
 
-API methods that return collections use `@lua_safe_return` decorator to convert Python objects to Lua-native types:
+API methods that return collections use `@lua_safe_function` decorator to convert Python objects to Lua-native types:
 
 ```python
-@lua_safe_return
+@lua_safe_function
 def get_entities_of_type(self, entity_type: str) -> list[str]:
     # Returns Python list
     return [e.id for e in entities if e.entity_type == entity_type]

@@ -2,8 +2,8 @@
 Lua API helpers and base class.
 
 This module provides:
-- Value conversion utilities for Lua-safe returns
-- @lua_safe_return decorator
+- Value conversion utilities for Lua↔Python type conversion
+- @lua_safe_function decorator (bidirectional conversion)
 - LuaAPIBase with property access, math, and logging
 
 Domain-specific API classes (like GameLuaAPI) extend this base.
@@ -66,19 +66,66 @@ def _to_lua_value(value: Any, lua_runtime) -> Any:
     )
 
 
-def lua_safe_return(method: Callable) -> Callable:
-    """Decorator that converts return values to Lua-safe types.
+def _from_lua_value(value: Any) -> Any:
+    """Convert a Lua value to idiomatic Python.
 
-    Wraps methods on LuaAPI classes to ensure they only return:
-    - Primitives (None, bool, int, float, str)
-    - Lua-native tables (for lists/dicts)
+    Handles:
+    - Primitives: pass through (None, bool, int, float, str)
+    - Lua tables: convert to dict or list depending on keys
+    - Lua userdata: attempt to extract underlying value
 
-    This prevents Lua from receiving raw Python objects which have
-    different semantics (0-indexed lists, no ipairs support, etc.).
+    This ensures API methods receive Python types, not Lua proxies.
+    """
+    if value is None:
+        return None
+    if isinstance(value, (bool, int, float, str)):
+        return value
+
+    # Check if it's a Lua table (lupa._LuaTable)
+    type_name = type(value).__name__
+    if 'LuaTable' in type_name or 'Lua' in type_name:
+        try:
+            # Try to convert to dict/list
+            # Check if it's array-like (consecutive integer keys starting at 1)
+            keys = list(value.keys()) if hasattr(value, 'keys') else []
+            if keys and all(isinstance(k, int) for k in keys):
+                # Array-like: convert to list (Lua 1-indexed → Python 0-indexed)
+                max_key = max(keys)
+                result = []
+                for i in range(1, max_key + 1):
+                    item = value[i] if i in keys else None
+                    result.append(_from_lua_value(item))
+                return result
+            else:
+                # Dict-like: convert to dict
+                result = {}
+                for k in keys:
+                    result[k] = _from_lua_value(value[k])
+                return result
+        except Exception:
+            # If conversion fails, return as-is
+            return value
+
+    return value
+
+
+def lua_safe_function(method: Callable) -> Callable:
+    """Decorator for Lua API methods - converts args and return values.
+
+    Handles both directions:
+    - Args: Lua tables → Python dicts/lists (1-indexed → 0-indexed)
+    - Returns: Python dicts/lists → Lua tables (0-indexed → 1-indexed)
+
+    This ensures clean boundaries between Lua and Python types.
     """
     @wraps(method)
     def wrapper(self, *args, **kwargs):
-        result = method(self, *args, **kwargs)
+        # Convert Lua args to Python
+        converted_args = tuple(_from_lua_value(arg) for arg in args)
+        converted_kwargs = {k: _from_lua_value(v) for k, v in kwargs.items()}
+        # Call method
+        result = method(self, *converted_args, **converted_kwargs)
+        # Convert Python result to Lua
         return _to_lua_value(result, self._lua)
     return wrapper
 
@@ -130,7 +177,7 @@ class LuaAPIBase:
     # Properties (custom key-value storage for behaviors)
     # =========================================================================
 
-    @lua_safe_return
+    @lua_safe_function
     def get_prop(self, entity_id: str, key: str) -> Any:
         """Get custom property from entity.
 
@@ -151,7 +198,7 @@ class LuaAPIBase:
     # Behavior Config (read-only, from YAML)
     # =========================================================================
 
-    @lua_safe_return
+    @lua_safe_function
     def get_config(self, entity_id: str, behavior_name: str, key: str, default: Any = None) -> Any:
         """Get behavior config value from YAML definition.
 
@@ -198,7 +245,3 @@ class LuaAPIBase:
     def log(self, message: str) -> None:
         """Log a debug message."""
         print(f"[Lua] {message}")
-
-
-# Backward compatibility alias
-LuaAPI = LuaAPIBase

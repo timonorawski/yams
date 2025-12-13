@@ -324,7 +324,7 @@ This pattern ensures:
 
 ### Layer 6: Return Value Conversion
 
-API methods that return collections use the `@lua_safe_return` decorator to convert Python objects to Lua-native types:
+API methods that return collections use the `@lua_safe_function` decorator to convert Python objects to Lua-native types:
 
 ```python
 def _to_lua_value(value: Any, lua_runtime) -> Any:
@@ -364,7 +364,7 @@ This ensures:
 
 ### Decorated Methods
 
-The following API methods use `@lua_safe_return`:
+The following API methods use `@lua_safe_function`:
 
 | Method | Returns | Conversion |
 |--------|---------|------------|
