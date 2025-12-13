@@ -24,6 +24,7 @@ Enable non-developers to create, edit, and share YAML-defined games directly in 
 > - IDE bridge (postMessage) for file transfer to engine
 > - **Hot reload**: Edit files → engine auto-reloads game in real-time
 > - WASM compatibility fixes (threading, JS/Python boundary)
+> - **Profile Viewer**: `/profiler` endpoint for analyzing game performance
 
 ---
 

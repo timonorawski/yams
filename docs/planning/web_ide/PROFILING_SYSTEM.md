@@ -1,18 +1,44 @@
 # YAMS Real-Time Semantic Profiling System
 **Project codename:** Yamslicer
-**Status:** Phase 1 complete (instrumentation + tests), Phase 2 pending (IDE visualization)
+**Status:** Phase 1 complete (instrumentation), Phase 2 in progress (viewer UI built)
 **Goal:** Let users press F9 and watch the game's execution in real time.
 
 ## Completion Status
 
 | Phase | Status | Description |
 |-------|--------|-------------|
-| Core Module | Done | `ams/profiling.py` with decorators, frame lifecycle, call tracking |
-| Instrumentation | Done | GameEngine, LuaEngine, GameLuaAPI instrumented |
-| Test Suite | Done | 40 tests in `tests/profiling/` |
-| CI Integration | Done | GitHub Actions runs profiling tests |
-| WebSocket Broadcast | Pending | Uses `ams.logging` sink system, ready for WebSocket |
-| IDE Panel | Pending | `ProfilerPanel.svelte` with flame graph visualization |
+| Core Module | ✅ Done | `ams/profiling.py` with decorators, frame lifecycle, call tracking |
+| Instrumentation | ✅ Done | GameEngine, LuaEngine, GameLuaAPI instrumented |
+| Test Suite | ✅ Done | 40 tests in `tests/profiling/` |
+| CI Integration | ✅ Done | GitHub Actions runs profiling tests |
+| WASM Compatibility | ✅ Done | Threading-safe for emscripten/browser |
+| **Profile Viewer UI** | ✅ Done | `/profiler` - file-based viewer with call tree + detail panel |
+| WebSocket Streaming | 🚧 Next | Real-time streaming from engine to IDE |
+| IDE Integration | Pending | Embed viewer in Author.svelte bottom panel |
+
+## Profile Viewer UI (Implemented)
+
+**Location:** `/profiler` endpoint
+
+**Features:**
+- File picker for JSON/NDJSON profile files
+- Frame list sidebar with timing bars (color-coded: green <16ms, yellow <33ms, red >33ms)
+- Call tree visualization with hierarchical nesting
+- Click-to-select detail panel showing:
+  - Duration & start time
+  - % of frame (visual bar)
+  - Module & function name
+  - Entity ID (if applicable)
+  - Flags (Lua Code, Lua Callback, Python)
+  - Call/Parent IDs
+  - Captured arguments
+- Color-coded by module type (Engine, Lua Engine, Lua Code, Lua Callback, Lua API)
+- Sample profile included at `/sample-profile.json`
+
+**Files:**
+- `ams/web_controller/frontend/profiler.html` - Entry point
+- `ams/web_controller/frontend/src/Profiler.svelte` - Main viewer component
+- `ams/web_controller/frontend/src/lib/profiler/CallNode.svelte` - Recursive call node
 
 ## 1. Core Philosophy
 

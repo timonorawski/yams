@@ -21,7 +21,7 @@
 | **Log streaming** | 🚧 Next | Engine logs to IDE panel via postMessage |
 | Config auto-generation | Not started | No UI generator from schemas |
 | Asset browser | Not started | Asset registry integration planned |
-| Profiler UI | Not started | No flame graph components |
+| **Profiler UI** | ✅ Working | `/profiler` - file viewer with call tree + detail panel |
 | Debugger UI | Not started | No breakpoints/stepping UI |
 | Tailwind/DaisyUI | ✅ Working | daisyUI components in use |
 
