@@ -11,16 +11,19 @@ lua: |
     end
 
     -- Get current hits remaining
-    local hits = ams.get_property(entity_id, "hits_remaining") or 1
+    local hits = ams.get_prop(entity_id, "hits_remaining") or 1
     hits = hits - amount
 
     if hits <= 0 then
+      -- Get points value before destroying
+      local points = ams.get_prop(entity_id, "points") or 100
+      ams.add_score(points)
       -- Destroy the entity
       ams.destroy(entity_id)
       ams.play_sound("brick_break")
     else
       -- Update hits remaining
-      ams.set_property(entity_id, "hits_remaining", hits)
+      ams.set_prop(entity_id, "hits_remaining", hits)
       ams.play_sound("brick_hit")
     end
   end

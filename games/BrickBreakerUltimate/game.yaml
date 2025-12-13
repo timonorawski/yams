@@ -87,23 +87,7 @@ entity_types:
         offset: [52, -20]  # center of paddle width (120/2 - 8), above
         size: [16, 16]
 
-    properties:
-      has_played: false
-
     interactions:
-      # On spawn/transform into paddle_ready, lose life if not first spawn
-      level:
-        - because: enter
-          when:
-            a.has_played: true
-          action: lose_life
-        # Mark that we've played (always runs on enter)
-        - because: enter
-          action: set_property
-          modifier:
-            property: has_played
-            value: true
-
       pointer:
         # On click, set target AND launch
         - when:
@@ -113,7 +97,7 @@ entity_types:
             b.active: true
           action: launch_transform
           modifier:
-            angle_range: [-120, -60]
+            angle_range: [-60, 60]  # Launch upward: left (-60°) to right (60°)
             speed: 300
 
   ball:
@@ -143,17 +127,22 @@ entity_types:
           max_speed: 600
 
       screen:
+        # Ball lost when exiting screen (bottom)
         - when:
-            distance: 1
+            distance: 0
           because: exit
           action: ball_lost
 
-        - when:
-            edges: [left, right]
+        # Bounce off left wall
+        - edges: [left]
           action: bounce_horizontal
 
-        - when:
-            edges: [top]
+        # Bounce off right wall
+        - edges: [right]
+          action: bounce_horizontal
+
+        # Bounce off top wall
+        - edges: [top]
           action: bounce_vertical
 
   brick:

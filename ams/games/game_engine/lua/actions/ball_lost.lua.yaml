@@ -1,14 +1,25 @@
-description: Ball exited bottom of screen - destroy ball and reset paddle
+description: Ball exited bottom of screen - destroy ball, lose life, reset paddle
 lua: |
   local action = {}
 
   function action.execute(ball_id, screen_id, modifier, context)
     -- context contains: trigger, target, target_x, target_y, target_active, distance, angle
+    -- Only trigger if ball actually exited the bottom (y > screen height)
+    local ball_y = ams.get_y(ball_id)
+    local screen_height = ams.get_screen_height()
+
+    if ball_y < screen_height then
+      -- Ball is still on screen, ignore spurious exit trigger
+      return
+    end
+
     -- Destroy the ball
     ams.destroy(ball_id)
 
-    -- Transform paddle back to paddle_ready state
-    -- The paddle_ready entity handles the life loss via its own interaction
+    -- Lose a life
+    ams.lose_life()
+
+    -- Transform paddle back to paddle_ready state (for next ball)
     local paddles = ams.get_entities_of_type("paddle")
     for _, paddle_id in ipairs(paddles) do
       ams.transform(paddle_id, "paddle_ready")

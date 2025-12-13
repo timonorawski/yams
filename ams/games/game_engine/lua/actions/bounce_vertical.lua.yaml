@@ -4,13 +4,23 @@ lua: |
 
   function action.execute(entity_id, screen_id, modifier, context)
     -- context contains: trigger, target, target_x, target_y, target_active, distance, angle
+    local y = ams.get_y(entity_id)
+    local height = ams.get_height(entity_id)
+    local screen_height = ams.get_screen_height()
     local vy = ams.get_vy(entity_id)
+
+    -- Only bounce if actually at top edge AND moving toward it
+    local at_top = y <= 0 and vy < 0
+
+    if not at_top then
+      -- Not at top edge or not moving toward it - ignore
+      return
+    end
+
+    -- Reflect velocity
     ams.set_vy(entity_id, -vy)
 
     -- Clamp position to screen bounds
-    local y = ams.get_y(entity_id)
-    local height = ams.get_height(entity_id)
-
     if y < 0 then
       ams.set_y(entity_id, 1)
     end

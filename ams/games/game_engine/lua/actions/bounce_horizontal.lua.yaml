@@ -4,14 +4,24 @@ lua: |
 
   function action.execute(entity_id, screen_id, modifier, context)
     -- context contains: trigger, target, target_x, target_y, target_active, distance, angle
-    local vx = ams.get_vx(entity_id)
-    ams.set_vx(entity_id, -vx)
-
-    -- Clamp position to screen bounds
     local x = ams.get_x(entity_id)
     local width = ams.get_width(entity_id)
     local screen_width = ams.get_screen_width()
+    local vx = ams.get_vx(entity_id)
 
+    -- Only bounce if actually at an edge AND moving toward that edge
+    local at_left = x <= 0 and vx < 0
+    local at_right = x + width >= screen_width and vx > 0
+
+    if not at_left and not at_right then
+      -- Not at edge or not moving toward edge - ignore
+      return
+    end
+
+    -- Reflect velocity
+    ams.set_vx(entity_id, -vx)
+
+    -- Clamp position to screen bounds
     if x < 0 then
       ams.set_x(entity_id, 1)
     elseif x + width > screen_width then

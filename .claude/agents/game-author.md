@@ -526,9 +526,53 @@ python ams_game.py --list-games
 python ams_game.py --game yourgame --level tutorial_01
 ```
 
+## Automated Testing
+
+Use the test harness for headless automated testing:
+
+```python
+from ams.test_backend import GameTestHarness, TestResult
+
+# Create harness for your game
+harness = GameTestHarness('YourGame', headless=True)
+
+# Schedule scripted inputs
+harness.backend.schedule_click(0.5, 400, 300)  # Click at t=0.5s, position (400,300)
+harness.backend.schedule_move(1.0, 200, 200)   # Move pointer at t=1.0s
+
+# Run test and capture state
+result = harness.run(duration=5.0, snapshot_interval=0.1)
+
+# Analyze results
+print(f"Final score: {result.final_score}")
+print(f"Lives: {result.final_lives}")
+print(f"Errors: {result.errors}")
+
+# Check entity trajectories
+ball_history = result.get_entity_history('ball')
+for h in ball_history:
+    print(f"t={h['time']:.2f}s: x={h['x']:.1f}, y={h['y']:.1f}, vy={h['vy']:.1f}")
+```
+
+### TestResult Properties
+- `duration`: Test duration in seconds
+- `frames`: Total frames simulated
+- `final_score`, `final_lives`, `final_state`: End state
+- `entities_at_end`: List of entity types present
+- `snapshots`: List of StateSnapshot with full entity data
+- `errors`: Any errors encountered
+- `get_entity_history(type)`: Get all snapshots of entities of a type
+
+### Quick Test Helper
+```python
+from ams.test_backend import run_quick_test
+result = run_quick_test('YourGame', duration=3.0)
+```
+
 ## Troubleshooting
 
 - **Entity not appearing**: Check `spawn` position and `render` definition
 - **Collision not working**: Verify `distance: 0` in interaction, check entity sizes
 - **Click not registering**: Ensure `b.active: true` in pointer interaction
 - **Ball falling through**: Use `because: exit` for screen exit detection, not `edges`
+- **Ball going wrong direction**: Check velocity sign - screen y increases downward
